@@ -148,11 +148,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'billing_page' %}active{% endif %}" href="{% url 'billing:billing_page' %}">
-                            <i class="fa-solid fa-bolt me-1 text-warning"></i> Quick Bill (பில்லிங்)
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'reports_dashboard' %}active{% endif %}" href="{% url 'billing:reports_dashboard' %}">
                             <i class="fa-solid fa-chart-line me-1 text-primary"></i> Reports (அறிக்கைகள்)
                         </a>
@@ -180,9 +175,6 @@
                 </ul>
 
                 <div class="d-flex align-items-center gap-3">
-                    <a href="{% url 'billing:billing_page' %}" class="btn btn-primary-custom d-none d-lg-inline-flex align-items-center gap-2">
-                        <i class="fa-solid fa-bolt"></i> Quick Bill
-                    </a>
                     
                     {% if user.is_authenticated %}
                         <div class="dropdown">

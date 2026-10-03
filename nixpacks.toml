@@ -1,0 +1,17 @@
+# Nixpacks configuration for Railway / Railpack
+[phases.setup]
+nixPkgs = ["python312"]
+
+[phases.install]
+cmds = [
+    "pip install --upgrade pip",
+    "pip install -r requirements.txt"
+]
+
+[phases.build]
+cmds = [
+    "cd backend && python manage.py collectstatic --noinput"
+]
+
+[start]
+cmd = "cd backend && python manage.py migrate && gunicorn billing_backend.wsgi:application --bind 0.0.0.0:$PORT"

@@ -29,7 +29,7 @@ DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
 # Allowed hosts for local and cloud deployment (e.g. Render)
 ALLOWED_HOSTS = ["*"]
 
-# CSRF Trusted Origins for Render and local desktop app
+# CSRF Trusted Origins for Render, Railway, and local desktop app
 CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:8000",
     "http://localhost:8000",
@@ -37,6 +37,8 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8765",
     "https://*.onrender.com",
     "https://*.render.com",
+    "https://*.railway.app",
+    "https://*.up.railway.app",
 ]
 custom_csrf = os.getenv("CSRF_TRUSTED_ORIGINS")
 if custom_csrf:
@@ -80,6 +82,20 @@ SESSION_SAVE_EVERY_REQUEST = True
 
 ROOT_URLCONF = "billing_backend.urls"
 
+# Django REST Framework configuration for Postman & API access
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.BasicAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.AllowAny",
+    ],
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+        "rest_framework.renderers.BrowsableAPIRenderer",
+    ],
+}
+
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -105,6 +121,7 @@ WSGI_APPLICATION = "billing_backend.wsgi.application"
 # 2. Local MySQL database
 # 3. Fallback to SQLite if MySQL is not available or USE_SQLITE=True
 DATABASE_URL = os.getenv("DATABASE_URL")
+IS_CLOUD = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RENDER") or os.getenv("DYNO"))
 USE_SQLITE = os.getenv("USE_SQLITE", "False").lower() in ("true", "1", "yes")
 
 LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH")
@@ -118,7 +135,14 @@ if DATABASE_URL:
             conn_health_checks=True,
         )
     }
-elif not USE_SQLITE:
+elif USE_SQLITE or (IS_CLOUD and not os.getenv("DB_HOST")):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": sqlite_db_file,
+        }
+    }
+else:
     # Default to MySQL
     DATABASES = {
         "default": {
@@ -132,13 +156,6 @@ elif not USE_SQLITE:
                 "charset": "utf8mb4",
                 "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
             },
-        }
-    }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": sqlite_db_file,
         }
     }
 

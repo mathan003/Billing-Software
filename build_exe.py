@@ -112,9 +112,9 @@ def build():
         try:
             if mathanhub_exe.exists():
                 os.remove(mathanhub_exe)
-        except Exception:
-            pass
-        shutil.copy2(dist_exe, mathanhub_exe)
+            shutil.copy2(dist_exe, mathanhub_exe)
+        except Exception as e:
+            print(f"[!] Note: MathanHub.exe is currently open ({e}), dist/SmartBillingPOS.exe is ready.")
 
         # Create zip package for distribution
         zip_output = base_dir / "SmartBillingPOS_Windows"

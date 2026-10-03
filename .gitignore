@@ -1,0 +1,28 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Windows / PyInstaller Builds & Executables
+build/
+dist/
+*.exe
+*.zip
+*.spec
+
+# Local databases & logs
+*.sqlite3
+*.db
+local_db/
+*.log
+
+# Environment variables
+.env
+.venv/
+env/
+venv/
+
+# Scratch & IDE
+.vscode/
+.idea/
+scratch/

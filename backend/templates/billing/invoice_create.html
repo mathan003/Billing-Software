@@ -231,5 +231,45 @@
     } else {
         createRow();
     }
+
+    // Auto-refresh product prices & catalog when Admin alters products on cloud
+    let _currentProductVersion = null;
+    async function autoRefreshProducts() {
+        try {
+            const res = await fetch("{% url 'billing:api-live-status' %}");
+            if (!res.ok) return;
+            const d = await res.json();
+            if (_currentProductVersion && d.products_version !== _currentProductVersion) {
+                const pullRes = await fetch("{% url 'billing:api-sync-pull' %}");
+                if (pullRes.ok) {
+                    const pullData = await pullRes.json();
+                    if (pullData.products) {
+                        productsData.length = 0;
+                        pullData.products.forEach(p => {
+                            productsData.push({
+                                id: p.id,
+                                name: (p.name_tamil ? p.name_tamil + ' / ' : '') + p.name,
+                                sku: p.sku,
+                                price: parseFloat(p.price),
+                                tax_percent: parseFloat(p.tax_percent),
+                                stock: parseFloat(p.stock_quantity)
+                            });
+                        });
+                        document.querySelectorAll('.product-select').forEach(sel => {
+                            const curVal = sel.value;
+                            let optionsHtml = '<option value="">-- Select Product --</option>';
+                            productsData.forEach(p => {
+                                const isSel = curVal == p.id ? 'selected' : '';
+                                optionsHtml += `<option value="${p.id}" data-price="${p.price}" data-tax="${p.tax_percent}" ${isSel}>${p.name} (₹${p.price})</option>`;
+                            });
+                            sel.innerHTML = optionsHtml;
+                        });
+                    }
+                }
+            }
+            _currentProductVersion = d.products_version;
+        } catch(e) {}
+    }
+    setInterval(autoRefreshProducts, 8000);
 </script>
 {% endblock %}

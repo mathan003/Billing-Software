@@ -39,10 +39,9 @@ class SessionSecurityMiddleware:
             if path.startswith(exempt):
                 return self.get_response(request)
 
-        # 2. Enforce authentication on all internal pages
+        # 2. Enforce authentication on all internal pages (clean login URL always)
         if not request.user.is_authenticated:
-            messages.info(request, "Security Protected: Internal application pages require an active login session.")
-            return redirect(f"/login/?next={request.path}")
+            return redirect("billing:login")
 
         # 3. Strict Admin-Only restriction for Admin Panel & Django Admin
         if path.startswith("/admin/") or path.startswith("/admin-panel/"):

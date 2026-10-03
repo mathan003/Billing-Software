@@ -22,6 +22,19 @@
 {% endblock %}
 
 {% block content %}
+<!-- Live Multi-Device Sync Indicator Bar -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="fw-bold mb-0 text-dark">Live Store Dashboard</h4>
+        <span class="text-muted small">Multi-device real-time sync with offline desktop POS & cloud</span>
+    </div>
+    <div>
+        <span id="liveSyncStatusBadge" class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill shadow-xs">
+            <i class="fa-solid fa-cloud-arrow-down me-1"></i> Live Cloud Sync Active
+        </span>
+    </div>
+</div>
+
 <!-- Top 4 Metrics Cards -->
 <div class="row g-3 mb-4">
     <!-- 1. Today's Total Sales Card (CLICKABLE -> Displays Today's Bills!) -->
@@ -34,7 +47,7 @@
                         <i class="fa-solid fa-indian-rupee-sign"></i>
                     </div>
                 </div>
-                <h3 class="fw-bold mb-0 text-primary">₹{{ today_sales|floatformat:2 }}</h3>
+                <h3 class="fw-bold mb-0 text-primary" id="dashTodaySales">₹{{ today_sales|floatformat:2 }}</h3>
                 <div class="d-flex justify-content-between align-items-center mt-2">
                     <span class="text-muted small">Today's billing revenue</span>
                     <span class="badge bg-primary text-white rounded-pill px-2 py-1" style="font-size: 11px;">
@@ -55,7 +68,7 @@
                         <i class="fa-solid fa-file-invoice"></i>
                     </div>
                 </div>
-                <h3 class="fw-bold mb-0 text-dark">{{ today_bills_count }}</h3>
+                <h3 class="fw-bold mb-0 text-dark" id="dashTodayBills">{{ today_bills_count }}</h3>
                 <div class="d-flex justify-content-between align-items-center mt-2">
                     <span class="text-muted small">Bills issued today</span>
                     <span class="badge bg-info-subtle text-info rounded-pill px-2 py-1" style="font-size: 11px;">Today</span>
@@ -73,7 +86,7 @@
                     <i class="fa-solid fa-hand-holding-dollar"></i>
                 </div>
             </div>
-            <h3 class="fw-bold mb-0 text-success">₹{{ today_customer_paid|floatformat:2 }}</h3>
+            <h3 class="fw-bold mb-0 text-success" id="dashTodayPaid">₹{{ today_customer_paid|floatformat:2 }}</h3>
             <div class="d-flex justify-content-between align-items-center mt-2">
                 <span class="text-muted small">Collected payments today</span>
                 <span class="badge bg-success-subtle text-success rounded-pill px-2 py-1" style="font-size: 11px;">
@@ -93,7 +106,7 @@
                         <i class="fa-solid fa-clock-rotate-left"></i>
                     </div>
                 </div>
-                <h3 class="fw-bold mb-0 text-danger">₹{{ total_pending_amount|floatformat:2 }}</h3>
+                <h3 class="fw-bold mb-0 text-danger" id="dashTotalPending">₹{{ total_pending_amount|floatformat:2 }}</h3>
                 <div class="d-flex justify-content-between align-items-center mt-2">
                     <span class="text-muted small">Outstanding customer dues</span>
                     <span class="badge bg-danger text-white rounded-pill px-2 py-1" style="font-size: 11px;">
@@ -133,8 +146,8 @@
         <div class="card border-0 shadow-sm rounded-4 p-4 text-white h-100" style="background: linear-gradient(135deg, #065f46 0%, #10b981 100%);">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h5 class="fw-bold mb-1"><i class="fa-solid fa-bolt me-2"></i>Instant Quick Bill (பில்லிங்)</h5>
-                    <p class="text-white-50 small mb-3">Select product, choose unit type, enter quantity and print bill in 1 click.</p>
+                    <h5 class="fw-bold mb-1"><i class="fa-solid fa-wand-magic-sparkles me-2"></i>Store Actions & Management</h5>
+                    <p class="text-white-50 small mb-3">Manage store reports, inventory statements, and cleanup records.</p>
                     <div class="d-flex flex-wrap gap-2">
                         <a href="{% url 'billing:billing_page' %}" class="btn btn-light fw-bold px-3 py-2 rounded-3 shadow-sm text-success">
                             <i class="fa-solid fa-receipt me-1"></i> Dedicated Terminal (Print & Save)
@@ -336,7 +349,7 @@
                         {% empty %}
                         <tr>
                             <td colspan="6" class="text-center py-4 text-muted">
-                                No invoices created yet. Use Quick Bill to issue your first invoice!
+                                No invoices created yet. Issue your first bill from the terminal above!
                             </td>
                         </tr>
                         {% endfor %}
@@ -441,7 +454,7 @@
                         <tr>
                             <td colspan="10" class="text-center py-4 text-muted">
                                 <i class="fa-solid fa-receipt fs-1 mb-2 opacity-50"></i>
-                                <div>No bills issued today yet. Use Quick Bill to generate today's first bill!</div>
+                                <div>No bills issued today yet. Generate today's first bill from the terminal!</div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -710,12 +723,17 @@
                 <ul class="nav nav-pills nav-fill mb-4 p-1 bg-light rounded-3" id="deleteDataTabs" role="tablist">
                     <li class="nav-item" role="presentation">
                         <button class="nav-link active fw-semibold py-2" id="del-by-customer-tab" data-bs-toggle="pill" data-bs-target="#del-by-customer-pane" type="button" role="tab">
-                            <i class="fa-solid fa-user-xmark me-2"></i> Particular Customer (குறிப்பிட்ட வாடிக்கையாளர்)
+                            <i class="fa-solid fa-user-xmark me-2"></i> Particular Customer (வாடிக்கையாளர்)
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link fw-semibold py-2" id="del-by-date-tab" data-bs-toggle="pill" data-bs-target="#del-by-date-pane" type="button" role="tab">
-                            <i class="fa-solid fa-calendar-xmark me-2"></i> Date to Date Range (தேதி முதல் தேதி வரை)
+                            <i class="fa-solid fa-calendar-xmark me-2"></i> Date Range (தேதி எல்லை)
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-semibold py-2 text-danger" id="del-all-bills-tab" data-bs-toggle="pill" data-bs-target="#del-all-bills-pane" type="button" role="tab">
+                            <i class="fa-solid fa-receipt me-2"></i> All Store Bills (அனைத்து பில்கள்)
                         </button>
                     </li>
                 </ul>
@@ -801,6 +819,33 @@
                             </div>
                         </form>
                     </div>
+
+                    <!-- Tab 3: Delete All Store Bills -->
+                    <div class="tab-pane fade" id="del-all-bills-pane" role="tabpanel">
+                        <form method="post" action="{% url 'billing:client_delete_data' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="delete_type" value="all_invoices">
+
+                            <div class="alert alert-danger border-0 rounded-3 p-3 mb-3 small">
+                                <div class="fw-bold mb-1"><i class="fa-solid fa-triangle-exclamation me-1"></i> Permanent Deletion Warning</div>
+                                This action will permanently delete <strong>ALL</strong> invoices and billing records issued by your shop. Customer contact cards will remain intact with balances reset to ₹0.00, and dashboard sales metrics will reset to ₹0.00.
+                            </div>
+
+                            <div class="form-check mb-4">
+                                <input class="form-check-input border-danger" type="checkbox" id="confirmAllBillsDelCheck" required>
+                                <label class="form-check-label text-danger small fw-semibold" for="confirmAllBillsDelCheck">
+                                    I confirm that I want to permanently delete all invoices and reset store sales to ₹0.00.
+                                </label>
+                            </div>
+
+                            <div class="d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-danger fw-bold px-4">
+                                    <i class="fa-solid fa-trash-can me-2"></i> Delete All Store Bills
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
@@ -860,5 +905,52 @@
     if (dashQty) dashQty.addEventListener("input", updateDashCalc);
     if (dashDiscount) dashDiscount.addEventListener("input", updateDashCalc);
     if (dashPaid) dashPaid.addEventListener("input", () => { dashPaid.dataset.autoFilled = "false"; });
+
+    // Live Auto-Sync poller for real-time dashboard updates across offline apps and web
+    let _lastLiveInvoicesCount = null;
+    async function pollLiveDashboard() {
+        try {
+            const res = await fetch("{% url 'billing:api-live-status' %}");
+            if (!res.ok) return;
+            const data = await res.json();
+
+            const salesEl = document.getElementById("dashTodaySales");
+            if (salesEl && data.today_sales !== undefined) {
+                salesEl.innerText = "₹" + parseFloat(data.today_sales).toFixed(2);
+            }
+
+            const billsEl = document.getElementById("dashTodayBills");
+            if (billsEl && data.today_bills_count !== undefined) {
+                billsEl.innerText = data.today_bills_count;
+            }
+
+            const paidEl = document.getElementById("dashTodayPaid");
+            if (paidEl && data.today_customer_paid !== undefined) {
+                paidEl.innerText = "₹" + parseFloat(data.today_customer_paid).toFixed(2);
+            }
+
+            const pendingEl = document.getElementById("dashTotalPending");
+            if (pendingEl && data.total_pending_amount !== undefined) {
+                pendingEl.innerText = "₹" + parseFloat(data.total_pending_amount).toFixed(2);
+            }
+
+            // Pulse badge when new offline bills are synced
+            if (_lastLiveInvoicesCount !== null && data.total_invoices > _lastLiveInvoicesCount) {
+                const badge = document.getElementById("liveSyncStatusBadge");
+                if (badge) {
+                    badge.className = "badge bg-success text-white px-3 py-2 rounded-pill shadow-sm";
+                    badge.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin me-1"></i> Data Synced Just Now';
+                    setTimeout(() => {
+                        badge.className = "badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill shadow-xs";
+                        badge.innerHTML = '<i class="fa-solid fa-cloud-arrow-down me-1"></i> Live Cloud Sync Active';
+                    }, 4000);
+                }
+            }
+            _lastLiveInvoicesCount = data.total_invoices;
+        } catch (err) {
+            // Server temporarily offline or disconnected
+        }
+    }
+    setInterval(pollLiveDashboard, 6000);
 </script>
 {% endblock %}

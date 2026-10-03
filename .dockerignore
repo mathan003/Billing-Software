@@ -1,0 +1,13 @@
+.git
+.github
+*.exe
+*.zip
+dist
+build
+windows_app
+scratch
+client_logos
+__pycache__
+*.pyc
+billing_local.sqlite3
+SmartBillingPOS.spec

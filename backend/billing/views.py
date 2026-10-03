@@ -55,7 +55,7 @@ def get_client_filter(request):
         return Q(pk__in=[])
     if is_admin_user(request.user):
         return Q()
-    return Q(client=request.user)
+    return Q(client=request.user) | Q(client__isnull=True)
 
 
 def get_client_user(request):
@@ -705,6 +705,38 @@ def invoice_detail(request, invoice_id):
     })
 
 
+def invoice_delete(request, invoice_id):
+    """
+    Permanently deletes an individual invoice, restores inventory product stock,
+    and updates customer balances and dashboard metrics.
+    """
+    if not request.user.is_authenticated:
+        return redirect("billing:login")
+    if request.method == "POST":
+        c_filter = get_client_filter(request)
+        invoice = get_object_or_404(Invoice.objects.filter(c_filter).prefetch_related("items"), pk=invoice_id)
+        inv_number = invoice.invoice_number
+        inv_uuid = str(invoice.invoice_uuid)
+
+        # Restore inventory stock
+        for item in invoice.items.all():
+            if item.product:
+                Product.objects.filter(pk=item.product.id).update(
+                    stock_quantity=F("stock_quantity") + item.quantity
+                )
+
+        invoice.items.all().delete()
+        invoice.delete()
+
+        log_activity(
+            request,
+            "INVOICE_DELETE",
+            f"User '{request.user.username}' deleted invoice #{inv_number} (UUID: {inv_uuid}). Stock restored."
+        )
+        messages.success(request, f"Invoice #{inv_number} deleted successfully and product stock restored.")
+    return redirect("billing:invoice_list")
+
+
 def invoice_edit(request, invoice_id):
     """
     Alter / Edit previous customer order & invoice:
@@ -1094,6 +1126,8 @@ def product_edit(request, product_id):
 
 def product_delete(request, product_id):
     """Remove product from catalog"""
+    if not request.user.is_authenticated:
+        return redirect("billing:login")
     if request.method == "POST":
         c_filter = get_client_filter(request)
         product = get_object_or_404(Product.objects.filter(c_filter), pk=product_id)
@@ -1616,6 +1650,31 @@ def client_delete_data(request):
                 f"User '{user_name}' deleted {inv_count} invoice(s) between {start_date_str} and {end_date_str}."
             )
             messages.success(request, f"Successfully deleted {inv_count} invoice(s) from {start_date_str} to {end_date_str}. Dashboard updated.")
+
+        elif delete_type == "all_invoices":
+            invoices = Invoice.objects.filter(c_filter)
+            inv_count = invoices.count()
+            invoices.delete()
+            log_activity(
+                request,
+                "DATA_CLEANUP",
+                f"User '{user_name}' deleted all {inv_count} store invoices."
+            )
+            messages.success(request, f"Successfully deleted all {inv_count} store invoices. Dashboard and sales figures reset to ₹0.00.")
+
+        elif delete_type == "wipe_all":
+            invoices = Invoice.objects.filter(c_filter)
+            inv_count = invoices.count()
+            invoices.delete()
+            customers = Customer.objects.filter(c_filter)
+            cust_count = customers.count()
+            customers.delete()
+            log_activity(
+                request,
+                "DATA_CLEANUP",
+                f"User '{user_name}' performed full data cleanup: deleted {inv_count} invoices and {cust_count} customers."
+            )
+            messages.success(request, f"Full store data reset completed: purged {inv_count} invoices and {cust_count} customers.")
 
         else:
             messages.error(request, "Invalid delete action specified.")
@@ -2168,12 +2227,13 @@ def customer_list(request):
     })
 
 
-@admin_required
 def customer_delete(request, customer_id):
     """
-    Admin manually deletes a customer record.
-    Customer records must NOT be deleted automatically; deletion is strictly performed manually by the admin.
+    Deletes a customer record.
+    Accessible to authenticated shop clients and administrators.
     """
+    if not request.user.is_authenticated:
+        return redirect("billing:login")
     if request.method == "POST":
         c_filter = get_client_filter(request)
         customer = get_object_or_404(Customer.objects.filter(c_filter), pk=customer_id)
@@ -2186,7 +2246,7 @@ def customer_delete(request, customer_id):
         log_activity(
             request,
             "CUSTOMER_DELETE",
-            f"Admin '{request.user.username}' manually deleted customer record '{cust_name}' (Phone: {cust_phone})."
+            f"User '{request.user.username}' deleted customer record '{cust_name}' (Phone: {cust_phone})."
         )
         messages.success(request, f"Customer record '{cust_name}' was deleted successfully.")
 

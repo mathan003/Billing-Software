@@ -1,5 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework.schemas import get_schema_view
+from rest_framework.renderers import JSONOpenAPIRenderer
 from . import views, api_views
 
 app_name = "billing"
@@ -24,6 +26,7 @@ urlpatterns = [
     path("invoices/", views.invoice_list, name="invoice_list"),
     path("invoices/<int:invoice_id>/", views.invoice_detail, name="invoice_detail"),
     path("invoices/<int:invoice_id>/edit/", views.invoice_edit, name="invoice_edit"),
+    path("invoices/<int:invoice_id>/delete/", views.invoice_delete, name="invoice_delete"),
     path("invoices/<int:invoice_id>/download/", views.invoice_download_pdf, name="invoice_download_pdf"),
     path("invoices/<int:invoice_id>/pay/", views.invoice_update_payment, name="invoice_update_payment"),
     path("invoices/<int:invoice_id>/discount/", views.invoice_apply_discount, name="invoice_apply_discount"),
@@ -89,9 +92,20 @@ urlpatterns = [
     path("admin-panel/branches/<int:branch_id>/edit/", views.branch_edit, name="branch_edit"),
     path("admin-panel/branches/<int:branch_id>/delete/", views.branch_delete, name="branch_delete"),
 
-    # Background REST API for Windows App auto-sync (No UI link displayed)
+    # Background REST API for Windows App auto-sync and real-time live poller
     path("api/health/", api_views.HealthCheckView.as_view(), name="api-health"),
+    path("api/live-status/", api_views.LiveStatusView.as_view(), name="api-live-status"),
     path("api/sync/push/", api_views.SyncPushView.as_view(), name="api-sync-push"),
     path("api/sync/pull/", api_views.SyncPullView.as_view(), name="api-sync-pull"),
+    path(
+        "api/schema/",
+        get_schema_view(
+            title="SmartBilling Cloud & POS API",
+            description="REST API documentation and endpoints for SmartBilling Windows Desktop App and Postman",
+            version="1.0.0",
+            renderer_classes=[JSONOpenAPIRenderer],
+        ),
+        name="openapi-schema",
+    ),
     path("api/", include(router.urls)),
 ]

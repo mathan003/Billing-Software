@@ -1,0 +1,301 @@
+{
+  "info": {
+    "_postman_id": "c1f7b8e2-45a1-4d3e-9b22-87f54c3bb6b0",
+    "name": "SmartBilling Cloud & POS API",
+    "description": "Comprehensive Postman collection for testing, managing, and verifying SmartBilling deployed backend (Render / Local / Cloud).\n\nIncludes Offline-to-Online Auto-Sync, Catalog Pull, Stock Deduction, Products, Customers, and Invoices.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000",
+      "type": "string",
+      "description": "Backend API root URL (e.g. http://127.0.0.1:8000 or https://your-service-name.onrender.com)"
+    }
+  ],
+  "item": [
+    {
+      "name": "01. System & Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/health/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "health", ""]
+            },
+            "description": "Checks server online status, server time, and application version."
+          },
+          "response": []
+        },
+        {
+          "name": "OpenAPI 3.0 Schema",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/schema/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "schema", ""]
+            },
+            "description": "Fetches the full OpenAPI 3.0 specification for the API. Can also be imported directly into Postman via Import -> Link."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02. Auto-Sync Engine (Windows POS)",
+      "item": [
+        {
+          "name": "Sync Pull (Fetch Catalog & Prices)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sync/pull/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sync", "pull", ""]
+            },
+            "description": "Pulls latest products, stock levels, and customer records from Cloud down to local cache."
+          },
+          "response": []
+        },
+        {
+          "name": "Sync Push (Batch Offline Bills & Deduct Stock)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": \"POSTMAN-CLIENT-001\",\n  \"invoices\": [\n    {\n      \"invoice_uuid\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n      \"invoice_number\": \"POS-BILL-1001\",\n      \"customer_name\": \"Ramesh Kumar\",\n      \"customer_phone\": \"9876543210\",\n      \"subtotal\": \"1000.00\",\n      \"tax_amount\": \"50.00\",\n      \"discount_amount\": \"0.00\",\n      \"grand_total\": \"1050.00\",\n      \"paid_amount\": \"1050.00\",\n      \"payment_method\": \"Cash\",\n      \"payment_status\": \"Paid\",\n      \"notes\": \"Created via Postman Sync Test\",\n      \"created_at\": \"2026-10-03T12:00:00Z\",\n      \"items\": [\n        {\n          \"product_sku\": \"SKU-RICE-01\",\n          \"product_name\": \"Ponni Rice 10kg\",\n          \"unit_price\": \"55.00\",\n          \"quantity\": \"10.00\",\n          \"tax_percent\": \"5.00\",\n          \"tax_amount\": \"27.50\",\n          \"discount_percent\": \"0.00\",\n          \"total_price\": \"577.50\"\n        }\n      ]\n    }\n  ],\n  \"products\": [],\n  \"customers\": [],\n  \"payments\": []\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sync/push/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sync", "push", ""]
+            },
+            "description": "Uploads offline-generated bills to Django MySQL/Postgres cloud. Automatically decrements cloud stock inventory and registers customer transactions idempotently."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03. Products Management",
+      "item": [
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/products/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", ""]
+            },
+            "description": "Lists all active products."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Products by Name / SKU",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/products/?search=Rice",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", ""],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Rice"
+                }
+              ]
+            },
+            "description": "Filters products by name or SKU keyword."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"SKU-POSTMAN-01\",\n  \"name\": \"Sunflower Oil 1L\",\n  \"name_tamil\": \"சூரியகாந்தி எண்ணெய் 1L\",\n  \"category\": \"Groceries\",\n  \"unit\": \"Pouch\",\n  \"price\": \"135.00\",\n  \"cost_price\": \"115.00\",\n  \"tax_percent\": \"5.00\",\n  \"stock_quantity\": \"120.00\",\n  \"is_active\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/products/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", ""]
+            },
+            "description": "Creates a new bilingual inventory product."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/products/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", "1", ""]
+            },
+            "description": "Retrieves product details by ID."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04. Customers Management",
+      "item": [
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/customers/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "customers", ""]
+            },
+            "description": "Lists all customer records."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Karthik Stores\",\n  \"phone\": \"9840198401\",\n  \"email\": \"karthik@example.com\",\n  \"address\": \"45 North Mada Street, Chennai\",\n  \"gst_number\": \"33BBBBB0000B1Z2\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/customers/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "customers", ""]
+            },
+            "description": "Registers a new customer / business account."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05. Invoices & Sales",
+      "item": [
+        {
+          "name": "List Invoices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/invoices/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "invoices", ""]
+            },
+            "description": "Fetches invoices history with line items."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Invoice Detail by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/invoices/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "invoices", "1", ""]
+            },
+            "description": "Fetches single invoice record with line items breakdown."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

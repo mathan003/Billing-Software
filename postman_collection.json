@@ -1,0 +1,101 @@
+{
+  "info": {
+    "name": "SmartBilling API Collection",
+    "_postman_id": "smartbilling-pos-api-v1",
+    "description": "Postman API Collection for SmartBilling POS & Cloud Server endpoints (Sync, Products, Customers, Invoices, Health)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "System Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/health/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "health", ""]
+        },
+        "description": "Heartbeat and health check for cloud server"
+      }
+    },
+    {
+      "name": "Sync Pull (Download Catalog)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/sync/pull/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "sync", "pull", ""]
+        },
+        "description": "Fetches latest products and customers catalog to sync with offline clients"
+      }
+    },
+    {
+      "name": "Sync Push (Upload Offline Bills)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"device_id\": \"POSTMAN-CLIENT-001\",\n  \"invoices\": [\n    {\n      \"invoice_uuid\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n      \"invoice_number\": \"INV-POSTMAN-001\",\n      \"customer_name\": \"Rajesh Kumar\",\n      \"customer_phone\": \"9876543210\",\n      \"subtotal\": \"500.00\",\n      \"tax_amount\": \"25.00\",\n      \"discount_amount\": \"0.00\",\n      \"grand_total\": \"525.00\",\n      \"paid_amount\": \"525.00\",\n      \"payment_method\": \"Cash\",\n      \"payment_status\": \"Paid\",\n      \"notes\": \"Test bill via Postman\",\n      \"created_at\": \"2026-10-03T12:00:00Z\",\n      \"items\": [\n        {\n          \"product_sku\": \"SKU-MOU-001\",\n          \"product_name\": \"Wireless Optical Mouse\",\n          \"unit_price\": \"499.00\",\n          \"quantity\": \"1\",\n          \"tax_percent\": \"5.00\",\n          \"tax_amount\": \"25.00\",\n          \"discount_percent\": \"0.00\",\n          \"total_price\": \"524.00\"\n        }\n      ]\n    }\n  ],\n  \"products\": [],\n  \"customers\": [],\n  \"payments\": []\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/sync/push/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "sync", "push", ""]
+        },
+        "description": "Batches and pushes offline generated invoices and payments to the cloud database"
+      }
+    },
+    {
+      "name": "Products - List All",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/products/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "products", ""]
+        }
+      }
+    },
+    {
+      "name": "Customers - List All",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/customers/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "customers", ""]
+        }
+      }
+    },
+    {
+      "name": "Invoices - List All",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/invoices/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "invoices", ""]
+        }
+      }
+    }
+  ]
+}

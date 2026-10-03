@@ -115,21 +115,8 @@ class SyncManager:
                     "items": items_data,
                 })
 
-            # Products modified locally
+            # Master cloud catalog is authoritative. Client only pushes offline bills and customers.
             products_payload = []
-            for p in Product.objects.all():
-                products_payload.append({
-                    "sku": p.sku,
-                    "name": p.name,
-                    "name_tamil": p.name_tamil,
-                    "category": p.category,
-                    "unit": p.unit,
-                    "price": str(p.price),
-                    "cost_price": str(p.cost_price),
-                    "tax_percent": str(p.tax_percent),
-                    "stock_quantity": str(p.stock_quantity),
-                    "is_active": p.is_active,
-                })
 
             # Customers modified locally
             customers_payload = []
@@ -142,7 +129,7 @@ class SyncManager:
                     "gst_number": c.gst_number or "",
                 })
 
-            if not invoices_payload and not products_payload and not customers_payload:
+            if not invoices_payload and not customers_payload:
                 return
 
             push_data = {
@@ -160,7 +147,7 @@ class SyncManager:
 
             if resp.status_code == 200:
                 result = resp.json()
-                synced_uuids = result.get("synced_invoices", [])
+                synced_uuids = result.get("synced_invoices", []) or result.get("synced_uuids", [])
                 if synced_uuids:
                     for inv in unsynced_invoices:
                         if str(inv.invoice_uuid) in synced_uuids:
@@ -172,8 +159,9 @@ class SyncManager:
 
     def _pull_cloud_data(self):
         try:
-            from billing.models import Product, Customer
+            from billing.models import Product, Customer, CompanySettings, Invoice
             from django.db import transaction
+            from django.db.models import Q
 
             resp = requests.get(f"{self.server_url}/api/sync/pull/", timeout=10.0)
             if resp.status_code != 200:
@@ -182,9 +170,26 @@ class SyncManager:
             data = resp.json()
             products = data.get("products", [])
             customers = data.get("customers", [])
+            company_data = data.get("company_settings")
 
             with transaction.atomic():
-                # Update products locally
+                # 1. Update company settings safely
+                if company_data:
+                    try:
+                        cs = CompanySettings.get_settings()
+                        cs.company_name = company_data.get("company_name") or cs.company_name
+                        cs.phone = company_data.get("phone") or cs.phone
+                        cs.email = company_data.get("email") or cs.email
+                        cs.address = company_data.get("address") or cs.address
+                        cs.gst_number = company_data.get("gst_number") or cs.gst_number
+                        cs.bank_name = company_data.get("bank_name") or cs.bank_name
+                        cs.account_number = company_data.get("account_number") or getattr(cs, "account_number", "")
+                        cs.ifsc_code = company_data.get("ifsc_code") or cs.ifsc_code
+                        cs.save()
+                    except Exception as ce:
+                        logger.debug(f"Error updating local company settings: {ce}")
+
+                # 2. Update products locally without touching existing invoice records
                 for p_data in products:
                     sku = p_data.get("sku")
                     if not sku:
@@ -211,10 +216,11 @@ class SyncManager:
                         prod.price = Decimal(str(p_data["price"]))
                         prod.cost_price = Decimal(str(p_data.get("cost_price", prod.cost_price)))
                         prod.tax_percent = Decimal(str(p_data.get("tax_percent", prod.tax_percent)))
+                        prod.stock_quantity = Decimal(str(p_data.get("stock_quantity", prod.stock_quantity)))
                         prod.is_active = p_data.get("is_active", prod.is_active)
                         prod.save()
 
-                # Update customers locally
+                # 3. Update customers locally
                 for c_data in customers:
                     phone = c_data.get("phone", "").strip()
                     if phone:
@@ -233,6 +239,31 @@ class SyncManager:
                             cust.address = c_data.get("address", cust.address)
                             cust.gst_number = c_data.get("gst_number", cust.gst_number)
                             cust.save()
+
+                # 4. Synchronize Web Deletions to Desktop App
+                if "active_invoice_uuids" in data:
+                    active_uuids = set(data.get("active_invoice_uuids", []))
+                    # Remove locally synced invoices that have been deleted on the web
+                    for inv in Invoice.objects.filter(notes__contains="[CLOUD_SYNCED]"):
+                        if str(inv.invoice_uuid) not in active_uuids:
+                            inv.items.all().delete()
+                            inv.delete()
+
+                if "active_customer_phones" in data:
+                    active_phones = set(data.get("active_customer_phones", []))
+                    for c in Customer.objects.all():
+                        if c.phone and c.phone not in active_phones:
+                            has_pending = c.invoices.filter(~Q(notes__contains="[CLOUD_SYNCED]")).exists()
+                            if not has_pending:
+                                c.invoices.all().delete()
+                                c.delete()
+
+                if "active_product_skus" in data:
+                    active_skus = set(data.get("active_product_skus", []))
+                    for p in Product.objects.filter(is_active=True):
+                        if p.sku not in active_skus:
+                            p.is_active = False
+                            p.save(update_fields=["is_active"])
 
         except Exception as e:
             logger.debug(f"Error during pull: {e}")

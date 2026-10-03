@@ -1,10 +1,14 @@
 import logging
 from decimal import Decimal
 from django.db import transaction
+from django.db.models import Sum, F
 from django.utils import timezone
 from rest_framework import status, views, viewsets
 from rest_framework.response import Response
-from .models import Product, Customer, Invoice, InvoiceItem, SyncLog
+from .models import (
+    Product, Customer, Invoice, InvoiceItem, SyncLog,
+    CompanySettings, SoftwareUpdate, Purchase, PaymentRecord
+)
 from .serializers import (
     ProductSerializer,
     CustomerSerializer,
@@ -17,9 +21,12 @@ logger = logging.getLogger(__name__)
 
 class HealthCheckView(views.APIView):
     """
-    Lightweight health check endpoint for Windows desktop app
+    Lightweight health check endpoint for Windows desktop app and Postman
     to check connectivity before auto-syncing.
     """
+    authentication_classes = []
+    permission_classes = []
+
     def get(self, request):
         return Response({
             "status": "online",
@@ -30,6 +37,8 @@ class HealthCheckView(views.APIView):
 
 
 class ProductViewSet(viewsets.ModelViewSet):
+    authentication_classes = []
+    permission_classes = []
     queryset = Product.objects.filter(is_active=True)
     serializer_class = ProductSerializer
 
@@ -45,6 +54,8 @@ class ProductViewSet(viewsets.ModelViewSet):
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
+    authentication_classes = []
+    permission_classes = []
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 
@@ -57,6 +68,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
 
 class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
+    authentication_classes = []
+    permission_classes = []
     queryset = Invoice.objects.prefetch_related("items").all()
     serializer_class = InvoiceSerializer
 
@@ -73,10 +86,13 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
 
 class SyncPushView(views.APIView):
     """
-    Receives batch of invoices created offline in the Windows Desktop App.
+    Receives batch of invoices created offline in the Windows Desktop App or Postman.
     Guarantees idempotency using invoice_uuid.
     Updates stock and creates customers if needed.
     """
+    authentication_classes = []
+    permission_classes = []
+
     def post(self, request):
         serializer = SyncPushRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -119,17 +135,11 @@ class SyncPushView(views.APIView):
                         }
                     )
                     if not created:
-                        product.name = p_data.get("name", product.name)
-                        product.name_tamil = p_data.get("name_tamil", product.name_tamil)
-                        product.category = p_data.get("category", product.category)
-                        product.unit = p_data.get("unit", product.unit)
-                        product.price = p_data["price"]
-                        product.cost_price = p_data.get("cost_price", product.cost_price)
-                        product.tax_percent = p_data.get("tax_percent", product.tax_percent)
-                        product.stock_quantity = p_data.get("stock_quantity", product.stock_quantity)
-                        product.is_active = p_data.get("is_active", product.is_active)
-                        product.save()
-                    synced_products.append(sku)
+                        # Cloud server is the master authority for existing product catalog & pricing.
+                        # Preserve admin prices against client pushes so admin edits are not reverted.
+                        pass
+                    else:
+                        synced_products.append(sku)
 
                 # 2. Sync Customers (created or altered offline)
                 for c_data in customers_data:
@@ -283,9 +293,12 @@ class SyncPushView(views.APIView):
 
 class SyncPullView(views.APIView):
     """
-    Supplies the Windows Desktop App with latest product catalog (active and inactive),
+    Supplies the Windows Desktop App and Postman with latest product catalog (active and inactive),
     prices, stock levels, customers, and recent invoices from Django server.
     """
+    authentication_classes = []
+    permission_classes = []
+
     def get(self, request):
         since_str = request.query_params.get("since")
         products_qs = Product.objects.all()
@@ -301,6 +314,25 @@ class SyncPullView(views.APIView):
         products_data = ProductSerializer(products_qs, many=True).data
         customers_data = CustomerSerializer(customers_qs, many=True).data
 
+        cs = CompanySettings.get_settings()
+        company_data = {
+            "company_name": getattr(cs, "company_name", "MathanHub"),
+            "phone": getattr(cs, "phone", ""),
+            "email": getattr(cs, "email", ""),
+            "address": getattr(cs, "address", ""),
+            "gst_number": getattr(cs, "gst_number", ""),
+            "bank_name": getattr(cs, "bank_name", ""),
+            "account_number": getattr(cs, "account_number", ""),
+            "ifsc_code": getattr(cs, "ifsc_code", ""),
+            "logo_base64": getattr(cs, "logo_base64", ""),
+            "watermark_base64": getattr(cs, "watermark_base64", ""),
+            "updated_at": cs.updated_at.isoformat() if (cs and hasattr(cs, "updated_at") and cs.updated_at) else "",
+        }
+
+        active_uuids = [str(u) for u in Invoice.objects.values_list("invoice_uuid", flat=True)]
+        active_customer_phones = list(Customer.objects.exclude(phone="").values_list("phone", flat=True))
+        active_product_skus = list(Product.objects.filter(is_active=True).values_list("sku", flat=True))
+
         return Response({
             "status": "success",
             "server_time": timezone.now().isoformat(),
@@ -308,4 +340,50 @@ class SyncPullView(views.APIView):
             "products": products_data,
             "customers_count": len(customers_data),
             "customers": customers_data,
+            "company_settings": company_data,
+            "active_invoice_uuids": active_uuids,
+            "active_customer_phones": active_customer_phones,
+            "active_product_skus": active_product_skus,
         })
+
+
+class LiveStatusView(views.APIView):
+    """
+    Real-time status endpoint for web dashboard and billing terminals.
+    Supplies live sales, invoice counts, customer collections, dues, and version timestamps
+    so browser screens and desktop clients update automatically without manual page reloads.
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        today = timezone.localtime().date()
+        today_invoices = Invoice.objects.filter(created_at__date=today)
+        today_sales = today_invoices.aggregate(s=Sum("grand_total"))["s"] or Decimal("0.00")
+        today_bills_count = today_invoices.count()
+        today_customer_paid = today_invoices.aggregate(s=Sum("paid_amount"))["s"] or Decimal("0.00")
+        total_invoices = Invoice.objects.count()
+
+        total_pending = Invoice.objects.filter(
+            payment_status__in=["Pending", "Partial"]
+        ).aggregate(p=Sum(F("grand_total") - F("paid_amount")))["p"] or Decimal("0.00")
+
+        latest_prod = Product.objects.order_by("-updated_at").first()
+        prod_ver = latest_prod.updated_at.isoformat() if (latest_prod and latest_prod.updated_at) else str(Product.objects.count())
+
+        cs = CompanySettings.get_settings()
+        company_ver = cs.updated_at.isoformat() if (cs and hasattr(cs, "updated_at") and cs.updated_at) else "v1"
+
+        return Response({
+            "status": "online",
+            "server_time": timezone.now().isoformat(),
+            "today_sales": str(today_sales),
+            "today_bills_count": today_bills_count,
+            "today_customer_paid": str(today_customer_paid),
+            "total_pending_amount": str(total_pending),
+            "total_invoices": total_invoices,
+            "products_count": Product.objects.count(),
+            "products_version": prod_ver,
+            "company_version": company_ver,
+        })
+

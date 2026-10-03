@@ -1,0 +1,349 @@
+{% extends "billing/base.html" %}
+
+{% block title %}Alter & Edit Bill #{{ invoice.invoice_number }} | MathanHub{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="fw-bold mb-0">Alter / Edit Customer Bill</h4>
+        <p class="text-muted small mb-0">Editing Invoice <strong>#{{ invoice.invoice_number }}</strong> • Adjust products, quantities, prices, or add/remove items</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'billing:invoice_detail' invoice.id %}" class="btn btn-outline-secondary">
+            <i class="fa-solid fa-arrow-left me-1"></i> Back to Receipt
+        </a>
+    </div>
+</div>
+
+<form method="post" id="editInvoiceForm">
+    {% csrf_token %}
+    <div class="row g-3">
+        <!-- Left Column: Customer & Items -->
+        <div class="col-12 col-lg-8">
+            <!-- Customer Card -->
+            <div class="card border-0 shadow-sm rounded-4 bg-white p-3 mb-3">
+                <h6 class="fw-bold mb-2 text-dark"><i class="fa-solid fa-user-check me-2 text-primary"></i>Customer Information</h6>
+                <div class="row g-2">
+                    <div class="col-12 col-md-5">
+                        <label class="form-label small fw-semibold">Select Customer</label>
+                        <select name="customer_id" id="customerSelect" class="form-select bg-light">
+                            <option value="">-- Choose Existing Customer --</option>
+                            {% for c in customers %}
+                                <option value="{{ c.id }}" data-name="{{ c.name }}" data-phone="{{ c.phone }}" {% if invoice.customer_id == c.id %}selected{% endif %}>
+                                    {{ c.name }}{% if c.phone %} ({{ c.phone }}){% endif %}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <label class="form-label small fw-semibold">Customer Name *</label>
+                        <input type="text" name="customer_name" id="customerName" class="form-control" value="{{ invoice.customer_name }}" required>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small fw-semibold">Phone Number</label>
+                        <input type="tel" name="customer_phone" id="customerPhone" class="form-control" value="{{ invoice.customer_phone|default:'' }}">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bill Line Items -->
+            <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-boxes-stacked me-2 text-primary"></i>Bill Line Items</h6>
+                    <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" id="addRowBtn">
+                        <i class="fa-solid fa-plus me-1"></i> Add Another Product
+                    </button>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle mb-0" id="itemsTable">
+                        <thead class="table-light small">
+                            <tr>
+                                <th style="min-width: 220px;">Product (பொருள்)</th>
+                                <th style="width: 110px;">Unit</th>
+                                <th style="width: 110px;">Unit Price (₹)</th>
+                                <th style="width: 110px;">Quantity</th>
+                                <th style="width: 120px;" class="text-end">Total (₹)</th>
+                                <th style="width: 50px;" class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsBody">
+                            {% for item in invoice.items.all %}
+                            <tr class="item-row">
+                                <td>
+                                    <select name="product_id[]" class="form-select product-select" required>
+                                        <option value="">-- Select Product --</option>
+                                        {% for p in products %}
+                                            <option value="{{ p.id }}" data-price="{{ p.price }}" data-unit="{{ p.unit }}" data-tax="{{ p.tax_percent }}" {% if item.product_id == p.id %}selected{% endif %}>
+                                                {{ p.display_name }} (₹{{ p.price }}/{{ p.unit }})
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="unit[]" class="form-select unit-select">
+                                        <option value="KG" {% if item.unit == "KG" %}selected{% endif %}>KG</option>
+                                        <option value="Pack" {% if item.unit == "Pack" %}selected{% endif %}>Pack</option>
+                                        <option value="Box" {% if item.unit == "Box" %}selected{% endif %}>Box</option>
+                                        <option value="Pcs" {% if item.unit == "Pcs" %}selected{% endif %}>Pcs</option>
+                                        <option value="Ltr" {% if item.unit == "Ltr" %}selected{% endif %}>Ltr</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control price-input text-end" value="{{ item.unit_price }}" required>
+                                </td>
+                                <td>
+                                    <!-- Unlimited quantities supported -->
+                                    <input type="number" step="0.01" min="0.01" name="quantity[]" class="form-control qty-input text-center fw-bold" value="{{ item.quantity }}" required>
+                                </td>
+                                <td class="text-end fw-bold row-total">
+                                    ₹{{ item.total_price|floatformat:2 }}
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-row-btn" title="Remove Item">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr class="item-row">
+                                <td>
+                                    <select name="product_id[]" class="form-select product-select" required>
+                                        <option value="">-- Select Product --</option>
+                                        {% for p in products %}
+                                            <option value="{{ p.id }}" data-price="{{ p.price }}" data-unit="{{ p.unit }}" data-tax="{{ p.tax_percent }}">
+                                                {{ p.display_name }} (₹{{ p.price }}/{{ p.unit }})
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="unit[]" class="form-select unit-select">
+                                        <option value="KG">KG</option>
+                                        <option value="Pack">Pack</option>
+                                        <option value="Box">Box</option>
+                                        <option value="Pcs">Pcs</option>
+                                        <option value="Ltr">Ltr</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control price-input text-end" value="0.00" required>
+                                </td>
+                                <td>
+                                    <input type="number" step="0.01" min="0.01" name="quantity[]" class="form-control qty-input text-center fw-bold" value="1" required>
+                                </td>
+                                <td class="text-end fw-bold row-total">₹0.00</td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-row-btn" title="Remove Item">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-3">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="addRowBtnBottom">
+                        <i class="fa-solid fa-plus me-1"></i> + Add Product to Bill
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Summary & Save -->
+        <div class="col-12 col-lg-4">
+            <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 sticky-top" style="top: 85px;">
+                <h6 class="fw-bold mb-3 text-dark"><i class="fa-solid fa-receipt me-2 text-primary"></i>Bill Summary</h6>
+
+                <div class="p-3 bg-light rounded-3 mb-3">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Subtotal:</span>
+                        <span class="fw-bold text-dark" id="dispSubtotal">₹{{ invoice.subtotal|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Tax Amount:</span>
+                        <span class="fw-bold text-dark" id="dispTax">₹{{ invoice.tax_amount|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2 text-warning-emphasis">
+                        <span>Discount Applied:</span>
+                        <span class="fw-bold" id="dispDiscount">- ₹{{ invoice.discount_amount|floatformat:2 }}</span>
+                    </div>
+                    <hr class="my-2">
+                    <div class="d-flex justify-content-between fs-5 fw-bold text-primary mb-2">
+                        <span>Grand Total:</span>
+                        <span id="dispGrandTotal">₹{{ invoice.grand_total|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between text-success fw-semibold small mb-1">
+                        <span>Amount Already Paid:</span>
+                        <span>₹{{ invoice.paid_amount|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between fs-6 fw-bold text-danger">
+                        <span>Remaining Balance:</span>
+                        <span id="dispBalance">₹{{ invoice.balance_amount|floatformat:2 }}</span>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Payment Mode</label>
+                    <select name="payment_method" class="form-select bg-light">
+                        <option value="Cash" {% if invoice.payment_method == "Cash" %}selected{% endif %}>Cash (ரொக்கம்)</option>
+                        <option value="Online" {% if invoice.payment_method == "Online" %}selected{% endif %}>Online Payment (UPI/GPay/Card)</option>
+                        <option value="Bank Transfer" {% if invoice.payment_method == "Bank Transfer" %}selected{% endif %}>Bank Transfer</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Order / Alteration Notes</label>
+                    <textarea name="notes" class="form-control" rows="2" placeholder="e.g. Order altered per customer request">{{ invoice.notes|default:'' }}</textarea>
+                </div>
+
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary-custom py-2 fw-bold">
+                        <i class="fa-solid fa-floppy-disk me-1"></i> Save Altered Bill
+                    </button>
+                    <a href="{% url 'billing:invoice_detail' invoice.id %}" class="btn btn-light border py-2">
+                        Cancel Changes
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- Template Row for Dynamic Addition -->
+<template id="rowTemplate">
+    <tr class="item-row">
+        <td>
+            <select name="product_id[]" class="form-select product-select" required>
+                <option value="">-- Select Product --</option>
+                {% for p in products %}
+                    <option value="{{ p.id }}" data-price="{{ p.price }}" data-unit="{{ p.unit }}" data-tax="{{ p.tax_percent }}">
+                        {{ p.display_name }} (₹{{ p.price }}/{{ p.unit }})
+                    </option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <select name="unit[]" class="form-select unit-select">
+                <option value="KG">KG</option>
+                <option value="Pack">Pack</option>
+                <option value="Box">Box</option>
+                <option value="Pcs">Pcs</option>
+                <option value="Ltr">Ltr</option>
+            </select>
+        </td>
+        <td>
+            <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control price-input text-end" value="0.00" required>
+        </td>
+        <td>
+            <input type="number" step="0.01" min="0.01" name="quantity[]" class="form-control qty-input text-center fw-bold" value="1" required>
+        </td>
+        <td class="text-end fw-bold row-total">₹0.00</td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-outline-danger remove-row-btn" title="Remove Item">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
+        </td>
+    </tr>
+</template>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const paidAmount = parseFloat("{{ invoice.paid_amount|default:'0' }}") || 0;
+    const discountAmount = parseFloat("{{ invoice.discount_amount|default:'0' }}") || 0;
+
+    function recalculate() {
+        let subtotal = 0;
+        let totalTax = 0;
+
+        document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+            const select = row.querySelector('.product-select');
+            const priceInput = row.querySelector('.price-input');
+            const qtyInput = row.querySelector('.qty-input');
+            const totalCell = row.querySelector('.row-total');
+
+            const price = parseFloat(priceInput.value) || 0;
+            const qty = parseFloat(qtyInput.value) || 0;
+            const selectedOpt = select.options[select.selectedIndex];
+            const taxPercent = selectedOpt ? parseFloat(selectedOpt.dataset.tax || 0) : 0;
+
+            const rowSub = price * qty;
+            const rowTax = (rowSub * taxPercent) / 100;
+            const rowTotal = rowSub + rowTax;
+
+            totalCell.textContent = '₹' + rowTotal.toFixed(2);
+            subtotal += rowSub;
+            totalTax += rowTax;
+        });
+
+        const grandTotal = Math.max(0, subtotal + totalTax - discountAmount);
+        const balance = Math.max(0, grandTotal - paidAmount);
+
+        document.getElementById('dispSubtotal').textContent = '₹' + subtotal.toFixed(2);
+        document.getElementById('dispTax').textContent = '₹' + totalTax.toFixed(2);
+        document.getElementById('dispGrandTotal').textContent = '₹' + grandTotal.toFixed(2);
+        document.getElementById('dispBalance').textContent = '₹' + balance.toFixed(2);
+    }
+
+    function attachRowEvents(row) {
+        const select = row.querySelector('.product-select');
+        const priceInput = row.querySelector('.price-input');
+        const unitSelect = row.querySelector('.unit-select');
+        const qtyInput = row.querySelector('.qty-input');
+        const removeBtn = row.querySelector('.remove-row-btn');
+
+        select.addEventListener('change', function() {
+            const opt = select.options[select.selectedIndex];
+            if (opt && opt.value) {
+                priceInput.value = parseFloat(opt.dataset.price || 0).toFixed(2);
+                if (opt.dataset.unit) unitSelect.value = opt.dataset.unit;
+            }
+            recalculate();
+        });
+
+        priceInput.addEventListener('input', recalculate);
+        qtyInput.addEventListener('input', recalculate);
+
+        removeBtn.addEventListener('click', function() {
+            const rows = document.querySelectorAll('#itemsBody .item-row');
+            if (rows.length > 1) {
+                row.remove();
+                recalculate();
+            } else {
+                alert('An invoice must have at least one product row.');
+            }
+        });
+    }
+
+    function addRow() {
+        const template = document.getElementById('rowTemplate');
+        const clone = template.content.cloneNode(true);
+        const newRow = clone.querySelector('.item-row');
+        document.getElementById('itemsBody').appendChild(newRow);
+        attachRowEvents(newRow);
+        recalculate();
+    }
+
+    document.getElementById('addRowBtn').addEventListener('click', addRow);
+    document.getElementById('addRowBtnBottom').addEventListener('click', addRow);
+
+    // Initial setup on all existing rows
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        attachRowEvents(row);
+    });
+
+    // Customer Select dropdown change
+    document.getElementById('customerSelect').addEventListener('change', function() {
+        const opt = this.options[this.selectedIndex];
+        if (opt && opt.value) {
+            document.getElementById('customerName').value = opt.dataset.name || '';
+            document.getElementById('customerPhone').value = opt.dataset.phone || '';
+        }
+    });
+
+    recalculate();
+</script>
+{% endblock %}

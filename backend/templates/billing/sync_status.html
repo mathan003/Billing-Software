@@ -1,0 +1,116 @@
+{% extends "billing/base.html" %}
+
+{% block title %}Sync Monitor | MathanHub Cloud{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="fw-bold mb-0">Offline / Online Synchronization Monitor</h4>
+        <p class="text-muted small mb-0">Tracks heartbeat and invoice push events from Windows Desktop POS</p>
+    </div>
+    <span class="badge bg-success-subtle text-success px-3 py-2 fs-6">
+        <i class="fa-solid fa-cloud-arrow-up me-1"></i> Sync Service Active
+    </span>
+</div>
+
+<!-- Stats Row -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-4">
+        <div class="card card-stat p-3">
+            <span class="text-secondary small fw-medium">Total Sync Events</span>
+            <h3 class="fw-bold mb-0 mt-1">{{ total_syncs }}</h3>
+            <span class="text-muted small">Lifetime sync requests</span>
+        </div>
+    </div>
+    <div class="col-6 col-md-4">
+        <div class="card card-stat p-3">
+            <span class="text-secondary small fw-medium">Windows App Invoices</span>
+            <h3 class="fw-bold mb-0 mt-1 text-primary">{{ windows_invoices }}</h3>
+            <span class="text-muted small">Invoices originated from desktop</span>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card card-stat p-3">
+            <span class="text-secondary small fw-medium">Last Sync Timestamp</span>
+            <h4 class="fw-bold mb-0 mt-1 text-success">
+                {% if last_sync %}
+                    {{ last_sync.created_at|date:"d M, H:i:s" }}
+                {% else %}
+                    No sync yet
+                {% endif %}
+            </h4>
+            <span class="text-muted small">{% if last_sync %}{{ last_sync.device_id }}{% else %}Awaiting connection{% endif %}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Sync Instructions Card -->
+<div class="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4">
+    <h5 class="fw-bold mb-3"><i class="fa-solid fa-circle-nodes text-primary me-2"></i>How Auto-Sync Works</h5>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <div class="p-3 bg-light rounded-3 h-100">
+                <div class="fw-bold mb-1 text-dark"><i class="fa-solid fa-wifi-slash text-danger me-2"></i>1. Offline Operation</div>
+                <p class="text-muted small mb-0">When your internet goes down, the Windows App continues billing with its local SQLite engine. Bills are marked with <code>PENDING</code> status.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-light rounded-3 h-100">
+                <div class="fw-bold mb-1 text-dark"><i class="fa-solid fa-satellite-dish text-warning me-2"></i>2. Connection Detection</div>
+                <p class="text-muted small mb-0">The Windows background worker polls <code>/api/health/</code> every few seconds. Once internet connectivity is restored, it detects the server immediately.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-light rounded-3 h-100">
+                <div class="fw-bold mb-1 text-dark"><i class="fa-solid fa-cloud-arrow-up text-success me-2"></i>3. Auto-Push & Reconcile</div>
+                <p class="text-muted small mb-0">Pending bills are atomically batched and posted to <code>/api/sync/push/</code>. Stock is automatically decremented on the MySQL cloud server.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sync History Table -->
+<div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4">
+    <h5 class="fw-bold mb-3"><i class="fa-solid fa-list-check text-secondary me-2"></i>Recent Synchronization Logs</h5>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light small text-muted">
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Device ID</th>
+                    <th>Action</th>
+                    <th class="text-center">Records Synced</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in sync_logs %}
+                <tr>
+                    <td class="small">{{ log.created_at|date:"Y-m-d H:i:s" }}</td>
+                    <td><code>{{ log.device_id }}</code></td>
+                    <td>
+                        <span class="badge bg-light text-dark border">{{ log.sync_type|upper }}</span>
+                    </td>
+                    <td class="text-center fw-bold">{{ log.records_count }}</td>
+                    <td>
+                        {% if log.status == "success" %}
+                            <span class="badge bg-success-subtle text-success"><i class="fa-solid fa-check me-1"></i>Success</span>
+                        {% else %}
+                            <span class="badge bg-danger-subtle text-danger"><i class="fa-solid fa-xmark me-1"></i>Error</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted small">{{ log.details }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center py-4 text-muted">
+                        No synchronization events recorded yet. Connect the Windows app to start syncing.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

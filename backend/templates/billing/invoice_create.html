@@ -1,0 +1,235 @@
+{% extends "billing/base.html" %}
+
+{% block title %}Create Bill | MathanHub Web & Mobile{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-xl-10">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h4 class="fw-bold mb-0">Create New Bill / Invoice</h4>
+                <p class="text-muted small mb-0">Direct Cloud Billing (Mobile & Web)</p>
+            </div>
+            <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fa-solid fa-list me-1"></i> Invoices
+            </a>
+        </div>
+
+        <form method="post" id="billingForm">
+            {% csrf_token %}
+            <!-- Customer & Payment Details -->
+            <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-md-4 mb-3">
+                <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-user me-2"></i>Customer & Payment Information</h6>
+                <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-semibold">Customer Name</label>
+                        <input type="text" name="customer_name" class="form-control" placeholder="e.g. Cash Customer or John Doe" value="Cash Customer" required>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-semibold">Mobile Phone</label>
+                        <input type="tel" name="customer_phone" class="form-control" placeholder="e.g. 9876543210">
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label small fw-semibold">Payment Mode</label>
+                        <select name="payment_method" class="form-select">
+                            <option value="Cash" selected>Cash</option>
+                            <option value="UPI">UPI / QR</option>
+                            <option value="Card">Card</option>
+                            <option value="Credit">Credit</option>
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label small fw-semibold">Payment Status</label>
+                        <select name="payment_status" class="form-select">
+                            <option value="Paid" selected>Paid</option>
+                            <option value="Unpaid">Unpaid</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Items Section -->
+            <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-md-4 mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold text-secondary mb-0"><i class="fa-solid fa-cart-shopping me-2"></i>Invoice Items</h6>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="addItemBtn">
+                        <i class="fa-solid fa-plus me-1"></i> Add Item
+                    </button>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table align-middle" id="itemsTable">
+                        <thead class="table-light small">
+                            <tr>
+                                <th style="width: 45%;">Product</th>
+                                <th style="width: 15%;">Price (₹)</th>
+                                <th style="width: 15%;">Qty</th>
+                                <th style="width: 15%;">Total (₹)</th>
+                                <th style="width: 10%;" class="text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsBody">
+                            <!-- Rows injected by JS or default first row -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="row justify-content-end mt-3">
+                    <div class="col-12 col-md-4">
+                        <div class="p-3 bg-light rounded-3">
+                            <div class="d-flex justify-content-between mb-1 small text-muted">
+                                <span>Subtotal:</span>
+                                <span id="summarySubtotal">₹0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2 small text-muted">
+                                <span>Estimated Tax:</span>
+                                <span id="summaryTax">₹0.00</span>
+                            </div>
+                            <hr class="my-2">
+                            <div class="d-flex justify-content-between fw-bold fs-5 text-dark">
+                                <span>Grand Total:</span>
+                                <span id="summaryGrandTotal" class="text-primary">₹0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notes & Submit -->
+            <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-md-4">
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Notes / Remarks</label>
+                    <input type="text" name="notes" class="form-control" placeholder="Optional invoice notes">
+                </div>
+                <div class="d-flex justify-content-end gap-2">
+                    <a href="{% url 'billing:invoice_list' %}" class="btn btn-light border">Cancel</a>
+                    <button type="submit" class="btn btn-primary-custom px-4">
+                        <i class="fa-solid fa-check me-1"></i> Save & Generate Invoice
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Product data serialized for fast client-side lookup
+    const productsData = [
+        {% for p in products %}
+        {
+            id: {{ p.id }},
+            name: "{{ p.name|escapejs }}",
+            sku: "{{ p.sku|escapejs }}",
+            price: {{ p.price }},
+            tax_percent: {{ p.tax_percent }},
+            stock: {{ p.stock_quantity }}
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    const itemsBody = document.getElementById("itemsBody");
+    const addItemBtn = document.getElementById("addItemBtn");
+
+    function createRow(selectedProductId = null) {
+        const tr = document.createElement("tr");
+
+        let optionsHtml = '<option value="">-- Select Product --</option>';
+        productsData.forEach(p => {
+            const isSel = selectedProductId == p.id ? 'selected' : '';
+            optionsHtml += `<option value="${p.id}" data-price="${p.price}" data-tax="${p.tax_percent}" ${isSel}>${p.name} (₹${p.price})</option>`;
+        });
+
+        tr.innerHTML = `
+            <td>
+                <select name="product_id[]" class="form-select product-select" required>
+                    ${optionsHtml}
+                </select>
+            </td>
+            <td>
+                <input type="number" step="0.01" class="form-control item-price bg-light" readonly value="0.00">
+            </td>
+            <td>
+                <input type="number" name="quantity[]" step="1" min="1" class="form-control item-qty" value="1" required>
+            </td>
+            <td>
+                <input type="number" step="0.01" class="form-control item-total bg-light" readonly value="0.00">
+            </td>
+            <td class="text-end">
+                <button type="button" class="btn btn-sm btn-outline-danger remove-row-btn" title="Remove Item">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </td>
+        `;
+
+        itemsBody.appendChild(tr);
+
+        // Bind events
+        const prodSelect = tr.querySelector(".product-select");
+        const priceInput = tr.querySelector(".item-price");
+        const qtyInput = tr.querySelector(".item-qty");
+        const totalInput = tr.querySelector(".item-total");
+        const removeBtn = tr.querySelector(".remove-row-btn");
+
+        function updateRowCalculation() {
+            const selectedOpt = prodSelect.options[prodSelect.selectedIndex];
+            const price = parseFloat(selectedOpt?.getAttribute("data-price") || 0);
+            const qty = parseFloat(qtyInput.value || 0);
+            priceInput.value = price.toFixed(2);
+            totalInput.value = (price * qty).toFixed(2);
+            recalculateSummary();
+        }
+
+        prodSelect.addEventListener("change", updateRowCalculation);
+        qtyInput.addEventListener("input", updateRowCalculation);
+        removeBtn.addEventListener("click", () => {
+            if (itemsBody.children.length > 1) {
+                tr.remove();
+                recalculateSummary();
+            } else {
+                alert("An invoice must contain at least one item.");
+            }
+        });
+
+        if (selectedProductId) {
+            updateRowCalculation();
+        }
+    }
+
+    function recalculateSummary() {
+        let subtotal = 0;
+        let totalTax = 0;
+
+        document.querySelectorAll("#itemsBody tr").forEach(tr => {
+            const prodSelect = tr.querySelector(".product-select");
+            const qtyInput = tr.querySelector(".item-qty");
+            const selectedOpt = prodSelect.options[prodSelect.selectedIndex];
+            const price = parseFloat(selectedOpt?.getAttribute("data-price") || 0);
+            const taxPercent = parseFloat(selectedOpt?.getAttribute("data-tax") || 0);
+            const qty = parseFloat(qtyInput.value || 0);
+
+            const rowSubtotal = price * qty;
+            const rowTax = (rowSubtotal * taxPercent) / 100.0;
+
+            subtotal += rowSubtotal;
+            totalTax += rowTax;
+        });
+
+        const grandTotal = subtotal + totalTax;
+
+        document.getElementById("summarySubtotal").innerText = "₹" + subtotal.toFixed(2);
+        document.getElementById("summaryTax").innerText = "₹" + totalTax.toFixed(2);
+        document.getElementById("summaryGrandTotal").innerText = "₹" + grandTotal.toFixed(2);
+    }
+
+    addItemBtn.addEventListener("click", () => createRow());
+
+    // Initialize with first product or blank row
+    if (productsData.length > 0) {
+        createRow(productsData[0].id);
+    } else {
+        createRow();
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,85 @@
+import uuid
+from .models import ActiveUserSession, SoftwareUpdate, CompanySettings
+
+
+def session_security_context(request):
+    """
+    Context processor providing dynamic session security tokens, user session metadata,
+    device limits, client shop branding, and software update notifications.
+    """
+    company = CompanySettings.get_settings()
+    latest_update = SoftwareUpdate.get_latest_update()
+
+    if not hasattr(request, "user") or not request.user.is_authenticated:
+        return {
+            "sec_token": "",
+            "sec_param": "",
+            "user_profile": None,
+            "is_admin_user": False,
+            "active_devices_count": 0,
+            "max_allowed_devices": 5,
+            "available_software_update": None,
+            "company": company,
+            "active_shop_name": company.company_name,
+            "active_shop_address": company.address,
+            "active_shop_phone": company.phone,
+            "active_shop_email": company.email,
+            "active_shop_logo": company.logo_data_url,
+            "active_bank_name": company.bank_name,
+            "active_account_number": company.account_number,
+            "active_ifsc_code": company.ifsc_code,
+            "business_type": "grocery",
+        }
+
+    sec_token = request.session.get("sec_token")
+    if not sec_token:
+        sec_token = uuid.uuid4().hex[:12]
+        request.session["sec_token"] = sec_token
+
+    profile = getattr(request.user, "profile", None)
+    is_admin = request.user.is_superuser or (profile and profile.role == "admin")
+
+    # Active devices count and limits
+    active_count = ActiveUserSession.objects.filter(user=request.user).count()
+    if is_admin:
+        max_devices = 1
+    else:
+        max_devices = profile.device_limit if (profile and profile.device_limit) else 5
+
+    # Check for software updates published by admin
+    applied_ver = request.session.get("applied_update_version")
+    available_software_update = None
+    if latest_update and latest_update.version != applied_ver:
+        available_software_update = latest_update
+
+    # Client-specific shop profile with fallback to company settings
+    shop_name = (profile.shop_name if (profile and profile.shop_name) else company.company_name)
+    shop_address = (profile.shop_address if (profile and profile.shop_address) else company.address)
+    shop_phone = (profile.phone if (profile and profile.phone) else company.phone)
+    shop_email = (request.user.email if request.user.email else company.email)
+    shop_logo = (profile.shop_logo_url if (profile and profile.shop_logo_url) else company.logo_data_url)
+    bank_name = (profile.bank_name if (profile and profile.bank_name) else company.bank_name)
+    account_number = (profile.account_number if (profile and profile.account_number) else company.account_number)
+    ifsc_code = (profile.ifsc_code if (profile and profile.ifsc_code) else company.ifsc_code)
+    business_type = (profile.business_type if profile else "grocery")
+
+    return {
+        "sec_token": sec_token,
+        "sec_param": f"?sec={sec_token}",
+        "user_profile": profile,
+        "is_admin_user": is_admin,
+        "active_devices_count": active_count,
+        "max_allowed_devices": max_devices,
+        "available_software_update": available_software_update,
+        "company": company,
+        "active_shop_name": shop_name,
+        "active_shop_address": shop_address,
+        "active_shop_phone": shop_phone,
+        "active_shop_email": shop_email,
+        "active_shop_logo": shop_logo,
+        "active_bank_name": bank_name,
+        "active_account_number": account_number,
+        "active_ifsc_code": ifsc_code,
+        "business_type": business_type,
+    }
+

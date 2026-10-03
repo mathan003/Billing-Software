@@ -1,0 +1,1302 @@
+{% extends "billing/base.html" %}
+
+{% block title %}Admin Panel & Client Management | MathanHub{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-danger rounded-pill px-3 py-1 text-uppercase fw-semibold" style="letter-spacing: 0.5px; font-size: 0.75rem;">
+                <i class="fa-solid fa-lock me-1"></i> Admin Restricted
+            </span>
+            <h4 class="fw-bold mb-0">System Administration & Client Management</h4>
+        </div>
+        <p class="text-muted small mb-0 mt-1">Manage client accounts, photos, device limits, active sessions, and cloud activity logs</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'billing:admin_export_activity_log_txt' %}" class="btn btn-outline-dark d-flex align-items-center gap-2 shadow-sm">
+            <i class="fa-solid fa-file-arrow-down text-primary"></i>
+            <span>Export Logs (TXT)</span>
+        </a>
+        <button type="button" class="btn btn-outline-info d-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#createBranchModal">
+            <i class="fa-solid fa-shop"></i>
+            <span>New Branch</span>
+        </button>
+        <button type="button" class="btn btn-outline-primary d-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#createUserModal">
+            <i class="fa-solid fa-shield-halved"></i>
+            <span>New Admin</span>
+        </button>
+        <button type="button" class="btn btn-primary-custom d-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#createClientModal">
+            <i class="fa-solid fa-user-plus"></i>
+            <span>Add New Client</span>
+        </button>
+    </div>
+</div>
+
+<!-- Nav Tabs -->
+<ul class="nav nav-pills mb-4 gap-2 bg-white p-2 rounded-4 shadow-sm border" id="adminTab" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active px-4 py-2 fw-semibold rounded-3" id="clients-tab" data-bs-toggle="pill" data-bs-target="#clients-pane" type="button" role="tab">
+            <i class="fa-solid fa-users me-2 text-primary"></i> Clients & Multi-Device ({{ clients|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link px-4 py-2 fw-semibold rounded-3" id="branches-tab" data-bs-toggle="pill" data-bs-target="#branches-pane" type="button" role="tab">
+            <i class="fa-solid fa-shop me-2 text-info"></i> Shop Branches ({{ branches|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link px-4 py-2 fw-semibold rounded-3" id="admins-tab" data-bs-toggle="pill" data-bs-target="#admins-pane" type="button" role="tab">
+            <i class="fa-solid fa-shield-halved me-2 text-danger"></i> Admins (1 Device) ({{ admin_users|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link px-4 py-2 fw-semibold rounded-3" id="devices-tab" data-bs-toggle="pill" data-bs-target="#devices-pane" type="button" role="tab">
+            <i class="fa-solid fa-laptop me-2 text-success"></i> Active Devices ({{ active_device_sessions.count }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link px-4 py-2 fw-semibold rounded-3" id="logs-tab" data-bs-toggle="pill" data-bs-target="#logs-pane" type="button" role="tab">
+            <i class="fa-solid fa-clock-rotate-left me-2"></i> Cloud Activity Logs ({{ total_log_count }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link px-4 py-2 fw-semibold rounded-3" id="company-tab" data-bs-toggle="pill" data-bs-target="#company-pane" type="button" role="tab">
+            <i class="fa-solid fa-store me-2 text-warning"></i> Company & Branding
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link px-4 py-2 fw-semibold rounded-3" id="updates-tab" data-bs-toggle="pill" data-bs-target="#updates-pane" type="button" role="tab">
+            <i class="fa-solid fa-cloud-arrow-up me-2 text-primary"></i> Software Updates ({{ software_updates.count }})
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="adminTabContent">
+    <!-- ========================================== -->
+    <!-- TAB 1: CLIENTS & MULTI-DEVICE MANAGEMENT -->
+    <!-- ========================================== -->
+    <div class="tab-pane fade show active" id="clients-pane" role="tabpanel">
+        <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark">Client Accounts (Billing Operators)</h5>
+                    <p class="text-muted small mb-0">
+                        Each Client ID can be used by up to <strong>5 members/devices</strong> concurrently. Clients are restricted strictly to billing software only.
+                    </p>
+                </div>
+                <button type="button" class="btn btn-primary-custom d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#createClientModal">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <span>Add Multiple Clients</span>
+                </button>
+            </div>
+
+            {% if clients %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light small text-muted">
+                            <tr>
+                                <th>Client Profile & Photo</th>
+                                <th>Client Password</th>
+                                <th>Business / Shop Name</th>
+                                <th>Database Records</th>
+                                <th>Contact (Phone & Email)</th>
+                                <th>Active Devices (Max 5)</th>
+                                <th>Status</th>
+                                <th class="text-end">Admin Controls</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for u in clients %}
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center gap-3">
+                                        {% if u.profile.avatar_url %}
+                                            <img src="{{ u.profile.avatar_url }}" class="rounded-circle border shadow-sm" style="width: 44px; height: 44px; object-fit: cover;" alt="{{ u.username }}">
+                                        {% else %}
+                                            <div class="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-sm" style="width: 44px; height: 44px; background: #0ea5e9; font-size: 1.1rem;">
+                                                {{ u.username|slice:":1"|upper }}
+                                            </div>
+                                        {% endif %}
+                                        <div>
+                                            <div class="fw-bold text-dark fs-6">{{ u.username }}</div>
+                                            <div class="text-muted small">{{ u.get_full_name|default:"Client User" }}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <input type="password" class="form-control form-control-sm border bg-light font-monospace fw-semibold" id="clientPass{{ u.id }}" value="{{ u.profile.initial_password|default:'(Admin Set)' }}" readonly style="width: 110px; font-size: 12px;">
+                                        <button type="button" class="btn btn-sm btn-light border py-1 px-2" onclick="togglePassVisibility('clientPass{{ u.id }}', this)" title="Show/Hide Password">
+                                            <i class="fa-solid fa-eye text-secondary"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-light border py-1 px-2" onclick="navigator.clipboard.writeText('{{ u.profile.initial_password|default:'' }}'); this.innerHTML='<i class=\'fa-solid fa-check text-success\'></i>'; setTimeout(() => this.innerHTML='<i class=\'fa-solid fa-copy text-secondary\'></i>', 1500);" title="Copy Password">
+                                            <i class="fa-solid fa-copy text-secondary"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if u.profile.shop_name %}
+                                        <span class="badge bg-light text-dark border px-2 py-1">
+                                            <i class="fa-solid fa-shop me-1 text-primary"></i>{{ u.profile.shop_name }}
+                                        </span>
+                                    {% else %}
+                                        <span class="text-muted small">-</span>
+                                    {% endif %}
+                                    <div class="mt-1">
+                                        <span class="badge bg-secondary-subtle text-secondary" style="font-size: 10px;">{{ u.profile.get_business_type_display|default:"Grocery Shop" }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column gap-1">
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle text-start">
+                                            <i class="fa-solid fa-receipt me-1"></i> {{ u.invoice_count }} Bills (₹{{ u.sales_total|floatformat:0 }})
+                                        </span>
+                                        <div class="d-flex gap-1">
+                                            <span class="badge bg-light text-dark border small" title="Customers Count">
+                                                <i class="fa-solid fa-users me-1 text-info"></i>{{ u.customer_count }} Cust
+                                            </span>
+                                            <span class="badge bg-light text-dark border small" title="Products Count">
+                                                <i class="fa-solid fa-boxes-stacked me-1 text-warning"></i>{{ u.product_count }} Prods
+                                            </span>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="small text-dark">
+                                        {% if u.profile.phone %}
+                                            <div><i class="fa-solid fa-phone me-1 text-primary"></i>{{ u.profile.phone }}</div>
+                                        {% endif %}
+                                        {% if u.email %}
+                                            <div class="text-muted"><i class="fa-solid fa-envelope me-1 text-secondary"></i>{{ u.email }}</div>
+                                        {% endif %}
+                                        {% if not u.profile.phone and not u.email %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge {% if u.active_sessions.count >= u.profile.device_limit %}bg-danger{% elif u.active_sessions.count > 0 %}bg-success{% else %}bg-secondary{% endif %} rounded-pill px-3 py-1">
+                                            <i class="fa-solid fa-laptop me-1"></i>{{ u.active_sessions.count }} / {{ u.profile.device_limit }} Devices
+                                        </span>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if u.is_active %}
+                                        <span class="badge bg-success-subtle text-success px-2 py-1"><i class="fa-solid fa-circle-check me-1"></i> Active</span>
+                                    {% else %}
+                                        <span class="badge bg-danger-subtle text-danger px-2 py-1"><i class="fa-solid fa-ban me-1"></i> Inactive</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <!-- Edit Client -->
+                                        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editUserModal{{ u.id }}" title="Edit Client & Image">
+                                            <i class="fa-solid fa-user-pen me-1"></i> Edit
+                                        </button>
+                                        <!-- Password -->
+                                        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#passwordModal{{ u.id }}" title="Change Password">
+                                            <i class="fa-solid fa-key me-1"></i> Pass
+                                        </button>
+                                        <!-- Wipe Database (Admin Only) -->
+                                        <button type="button" class="btn btn-outline-warning text-dark" data-bs-toggle="modal" data-bs-target="#wipeDbModal{{ u.id }}" title="Wipe Store Database">
+                                            <i class="fa-solid fa-database text-danger me-1"></i> Wipe DB
+                                        </button>
+                                        <!-- Delete Client (Admin Only) -->
+                                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteUserModal{{ u.id }}" title="Delete Client Account">
+                                            <i class="fa-solid fa-trash-can me-1"></i> Delete
+                                        </button>
+                                    </div>
+
+                                    <!-- Wipe Client Database Modal -->
+                                    <div class="modal fade text-start" id="wipeDbModal{{ u.id }}" tabindex="-1" aria-hidden="true">
+                                        <div class="modal-dialog modal-dialog-centered">
+                                            <div class="modal-content rounded-4 border-0 shadow">
+                                                <div class="modal-header bg-danger text-white border-0 py-3">
+                                                    <h5 class="modal-title fw-bold fs-6">
+                                                        <i class="fa-solid fa-triangle-exclamation me-2"></i> Wipe Database: {{ u.username }}
+                                                    </h5>
+                                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <form method="post" action="{% url 'billing:admin_wipe_client_database' u.id %}">
+                                                    {% csrf_token %}
+                                                    <div class="modal-body p-4">
+                                                        <p class="mb-3">
+                                                            Are you sure you want to completely <strong>wipe and reset</strong> all database records for client <strong>{{ u.username }}</strong> ({{ u.profile.shop_name|default:"Client Store" }})?
+                                                        </p>
+                                                        <div class="alert alert-danger py-2 px-3 small border-0 rounded-3">
+                                                            <i class="fa-solid fa-circle-exclamation me-1"></i>
+                                                            This will permanently delete from this client's database:
+                                                            <ul class="mb-0 mt-1 ps-3">
+                                                                <li><strong>{{ u.invoice_count }}</strong> Invoices & Receipts</li>
+                                                                <li><strong>{{ u.customer_count }}</strong> Customer records & balance ledgers</li>
+                                                                <li><strong>{{ u.product_count }}</strong> Products catalog items & stock logs</li>
+                                                            </ul>
+                                                        </div>
+                                                        <p class="text-muted small mb-0">
+                                                            <i class="fa-solid fa-shield-halved me-1 text-success"></i>
+                                                            The user login account (<strong>{{ u.username }}</strong>) and credentials remain active.
+                                                        </p>
+                                                    </div>
+                                                    <div class="modal-footer border-0 p-3 pt-0">
+                                                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                                                        <button type="submit" class="btn btn-danger fw-bold">
+                                                            <i class="fa-solid fa-database me-1"></i> Confirm Wipe Client Database
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Delete Client Modal -->
+                                    <div class="modal fade text-start" id="deleteUserModal{{ u.id }}" tabindex="-1" aria-hidden="true">
+                                        <div class="modal-dialog modal-dialog-centered">
+                                            <div class="modal-content rounded-4 border-0 shadow">
+                                                <div class="modal-header border-0 pb-0">
+                                                    <h5 class="modal-title fw-bold text-danger">
+                                                        <i class="fa-solid fa-triangle-exclamation me-2"></i>Delete Client Account
+                                                    </h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <form method="post" action="{% url 'billing:admin_client_delete' u.id %}">
+                                                    {% csrf_token %}
+                                                    <div class="modal-body">
+                                                        <p class="mb-3">
+                                                            Are you sure you want to permanently delete client account <strong>"{{ u.username }}"</strong>?
+                                                        </p>
+                                                        <div class="alert alert-danger small rounded-3 mb-0">
+                                                            <i class="fa-solid fa-circle-exclamation me-1"></i>
+                                                            This action cannot be undone. All active device sessions (up to 5 devices) will be terminated immediately. Only administrators can delete clients.
+                                                        </div>
+                                                    </div>
+                                                    <div class="modal-footer border-0 pt-0">
+                                                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                                                        <button type="submit" class="btn btn-danger px-4 fw-semibold">
+                                                            <i class="fa-solid fa-trash-can me-1"></i> Confirm Delete Client
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Edit Client Modal -->
+                                    <div class="modal fade text-start" id="editUserModal{{ u.id }}" tabindex="-1" aria-hidden="true">
+                                        <div class="modal-dialog modal-dialog-centered">
+                                            <div class="modal-content rounded-4 border-0 shadow">
+                                                <div class="modal-header border-0 pb-0">
+                                                    <h5 class="modal-title fw-bold">
+                                                        <i class="fa-solid fa-user-pen text-primary me-2"></i>Edit Client: {{ u.username }}
+                                                    </h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <form method="post" action="{% url 'billing:admin_user_edit' u.id %}" enctype="multipart/form-data">
+                                                    {% csrf_token %}
+                                                    <div class="modal-body">
+                                                        <div class="d-flex align-items-center gap-3 mb-3 p-3 bg-light rounded-3">
+                                                            {% if u.profile.avatar_url %}
+                                                                <img src="{{ u.profile.avatar_url }}" class="rounded-circle border" style="width: 50px; height: 50px; object-fit: cover;" alt="Avatar">
+                                                            {% else %}
+                                                                <div class="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold" style="width: 50px; height: 50px; background: #0ea5e9;">
+                                                                    {{ u.username|slice:":1"|upper }}
+                                                                </div>
+                                                            {% endif %}
+                                                            <div class="flex-grow-1">
+                                                                <label class="form-label small fw-semibold mb-1">Update Client Photo / Image (img)</label>
+                                                                <input type="file" name="client_image" class="form-control form-control-sm" accept="image/*">
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="row g-2 mb-3">
+                                                            <div class="col-6">
+                                                                <label class="form-label small fw-semibold">First Name</label>
+                                                                <input type="text" name="first_name" class="form-control" value="{{ u.first_name }}">
+                                                            </div>
+                                                            <div class="col-6">
+                                                                <label class="form-label small fw-semibold">Last Name</label>
+                                                                <input type="text" name="last_name" class="form-control" value="{{ u.last_name }}">
+                                                            </div>
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label class="form-label small fw-semibold">Business / Shop Name</label>
+                                                            <input type="text" name="shop_name" class="form-control" value="{{ u.profile.shop_name }}" placeholder="e.g. Branch 1 Store">
+                                                        </div>
+                                                        <div class="row g-2 mb-3">
+                                                            <div class="col-6">
+                                                                <label class="form-label small fw-semibold">Phone Number</label>
+                                                                <input type="tel" name="phone" class="form-control" value="{{ u.profile.phone }}" placeholder="10-digit mobile">
+                                                            </div>
+                                                            <div class="col-6">
+                                                                <label class="form-label small fw-semibold">Email Address</label>
+                                                                <input type="email" name="email" class="form-control" value="{{ u.email }}" placeholder="client@store.com">
+                                                            </div>
+                                                        </div>
+                                                        <div class="row g-2 mb-3">
+                                                            <div class="col-6">
+                                                                <label class="form-label small fw-semibold">Business Type</label>
+                                                                <select name="business_type" class="form-select form-select-sm">
+                                                                    <option value="grocery" {% if u.profile.business_type == 'grocery' %}selected{% endif %}>Grocery Shop</option>
+                                                                    <option value="mobile_computer" {% if u.profile.business_type == 'mobile_computer' %}selected{% endif %}>Mobile & Computer Shop</option>
+                                                                </select>
+                                                            </div>
+                                                            <div class="col-6">
+                                                                <label class="form-label small fw-semibold">Allowed Devices</label>
+                                                                <select name="device_limit" class="form-select form-select-sm">
+                                                                    <option value="1" {% if u.profile.device_limit == 1 %}selected{% endif %}>1 Device</option>
+                                                                    <option value="2" {% if u.profile.device_limit == 2 %}selected{% endif %}>2 Devices</option>
+                                                                    <option value="3" {% if u.profile.device_limit == 3 %}selected{% endif %}>3 Devices</option>
+                                                                    <option value="5" {% if u.profile.device_limit == 5 %}selected{% endif %}>5 Devices</option>
+                                                                    <option value="10" {% if u.profile.device_limit == 10 %}selected{% endif %}>10 Devices</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label class="form-label small fw-semibold">Shop Address</label>
+                                                            <textarea name="shop_address" rows="2" class="form-control form-control-sm">{{ u.profile.shop_address }}</textarea>
+                                                        </div>
+                                                        <div class="p-2 bg-light rounded-3 border mb-3">
+                                                            <div class="small fw-bold text-dark mb-1">Bank Payment Info for Receipts</div>
+                                                            <div class="row g-2">
+                                                                <div class="col-12">
+                                                                    <input type="text" name="bank_name" class="form-control form-control-sm" placeholder="Bank Name" value="{{ u.profile.bank_name }}">
+                                                                </div>
+                                                                <div class="col-6">
+                                                                    <input type="text" name="account_number" class="form-control form-control-sm font-monospace" placeholder="Account Number" value="{{ u.profile.account_number }}">
+                                                                </div>
+                                                                <div class="col-6">
+                                                                    <input type="text" name="ifsc_code" class="form-control form-control-sm text-uppercase font-monospace" placeholder="IFSC Code" value="{{ u.profile.ifsc_code }}">
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <input type="hidden" name="role" value="client">
+                                                        <div class="form-check form-switch mb-2">
+                                                            <input class="form-check-input" type="checkbox" name="is_active" value="1" id="activeCheck{{ u.id }}" {% if u.is_active %}checked{% endif %}>
+                                                            <label class="form-check-label small fw-semibold" for="activeCheck{{ u.id }}">Account Active (Can log in)</label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="modal-footer border-0 pt-0">
+                                                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                                                        <button type="submit" class="btn btn-primary-custom px-4">Save Changes</button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Change Password Modal -->
+                                    <div class="modal fade text-start" id="passwordModal{{ u.id }}" tabindex="-1" aria-hidden="true">
+                                        <div class="modal-dialog modal-dialog-centered">
+                                            <div class="modal-content rounded-4 border-0 shadow">
+                                                <div class="modal-header border-0 pb-0">
+                                                    <h5 class="modal-title fw-bold">
+                                                        <i class="fa-solid fa-key text-warning me-2"></i>Reset Password: {{ u.username }}
+                                                    </h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <form method="post" action="{% url 'billing:admin_user_password_change' u.id %}">
+                                                    {% csrf_token %}
+                                                    <div class="modal-body">
+                                                        <p class="small text-muted mb-3">Admin override: Client users cannot change credentials themselves. Set a new password for this client account.</p>
+                                                        <div class="mb-3">
+                                                            <label class="form-label small fw-semibold">New Password *</label>
+                                                            <input type="password" name="new_password" class="form-control" required placeholder="Enter new password">
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label class="form-label small fw-semibold">Confirm New Password *</label>
+                                                            <input type="password" name="new_password_confirm" class="form-control" required placeholder="Re-type new password">
+                                                        </div>
+                                                    </div>
+                                                    <div class="modal-footer border-0 pt-0">
+                                                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                                                        <button type="submit" class="btn btn-warning px-4 fw-semibold">Update Password</button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="fa-solid fa-users fa-3x mb-3 text-secondary opacity-50"></i>
+                    <h6 class="fw-bold">No Client Accounts Created Yet</h6>
+                    <p class="small mb-3">Create your first client account. One client ID can be shared by up to 5 team members.</p>
+                    <button type="button" class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#createClientModal">
+                        <i class="fa-solid fa-user-plus me-1"></i> Add Client Account
+                    </button>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 2: SHOP BRANCHES MANAGEMENT            -->
+    <!-- ========================================== -->
+    <div class="tab-pane fade" id="branches-pane" role="tabpanel">
+        <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark"><i class="fa-solid fa-shop text-info me-2"></i>Shop Branches (கடை கிளைகள்)</h5>
+                    <p class="text-muted small mb-0">
+                        Manage shop branches before generating Express Bills. Bills track the issuing branch automatically.
+                    </p>
+                </div>
+                <button type="button" class="btn btn-primary-custom d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#createBranchModal">
+                    <i class="fa-solid fa-plus-circle"></i>
+                    <span>Add New Branch</span>
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light small text-muted">
+                        <tr>
+                            <th>Branch Name</th>
+                            <th>Branch Code</th>
+                            <th>Contact (Phone & Email)</th>
+                            <th>Address</th>
+                            <th>Manager</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in branches %}
+                        <tr>
+                            <td>
+                                <div class="fw-bold text-dark fs-6">{{ b.name }}</div>
+                                {% if b.is_default %}
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-0" style="font-size: 0.7rem;">
+                                        <i class="fa-solid fa-star me-1"></i> Default Branch
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td><span class="badge bg-light text-secondary border font-monospace">{{ b.branch_code }}</span></td>
+                            <td>
+                                <div class="small">
+                                    {% if b.phone %}<div><i class="fa-solid fa-phone me-1 text-primary"></i>{{ b.phone }}</div>{% endif %}
+                                    {% if b.email %}<div class="text-muted"><i class="fa-solid fa-envelope me-1"></i>{{ b.email }}</div>{% endif %}
+                                    {% if not b.phone and not b.email %}<span class="text-muted">-</span>{% endif %}
+                                </div>
+                            </td>
+                            <td class="small text-muted" style="max-width: 200px;">{{ b.address|default:"-" }}</td>
+                            <td class="small fw-semibold text-dark">{{ b.manager_name|default:"-" }}</td>
+                            <td>
+                                {% if b.is_active %}
+                                    <span class="badge bg-success-subtle text-success px-2 py-1"><i class="fa-solid fa-circle-check me-1"></i> Active</span>
+                                {% else %}
+                                    <span class="badge bg-danger-subtle text-danger px-2 py-1"><i class="fa-solid fa-ban me-1"></i> Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editBranchModal{{ b.id }}" title="Edit Branch">
+                                        <i class="fa-solid fa-pen-to-square me-1"></i> Edit
+                                    </button>
+                                    {% if not b.is_default %}
+                                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteBranchModal{{ b.id }}" title="Delete Branch">
+                                            <i class="fa-solid fa-trash-can"></i>
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4 text-muted">
+                                <i class="fa-solid fa-shop fs-1 mb-2 opacity-50"></i>
+                                <div>No branches configured yet. Click "Add New Branch" to create one.</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 3: ADMIN ACCOUNTS (SINGLE DEVICE MODE) -->
+    <!-- ========================================== -->
+    <div class="tab-pane fade" id="admins-pane" role="tabpanel">
+        <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark">Administrator Accounts (Single-Device Mode)</h5>
+                    <p class="text-muted small mb-0">
+                        Admin accounts are restricted strictly to <strong>1 active device</strong>. Logging in from a second device terminates any previous session for high security.
+                    </p>
+                </div>
+                <button type="button" class="btn btn-outline-primary d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#createUserModal">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>Create Administrator</span>
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light small text-muted">
+                        <tr>
+                            <th>Administrator</th>
+                            <th>Contact (Phone & Email)</th>
+                            <th>Active Device Mode</th>
+                            <th>Status</th>
+                            <th>Date Created</th>
+                            <th class="text-end">Manage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in admin_users %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-sm" style="width: 40px; height: 40px; background: #4f46e5; font-size: 1rem;">
+                                        {{ u.username|slice:":1"|upper }}
+                                    </div>
+                                    <div>
+                                        <div class="fw-bold text-dark fs-6">{{ u.username }}</div>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-0" style="font-size: 0.7rem;">
+                                            <i class="fa-solid fa-shield-halved me-1"></i> Administrator
+                                        </span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="small">
+                                    {% if u.profile.phone %}<div><i class="fa-solid fa-phone me-1 text-primary"></i>{{ u.profile.phone }}</div>{% endif %}
+                                    <div class="text-muted">{{ u.email|default:"No email set" }}</div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-1">
+                                    <i class="fa-solid fa-lock me-1"></i> Strict 1-Device Mode ({{ u.active_sessions.count }} Active)
+                                </span>
+                            </td>
+                            <td>
+                                {% if u.is_active %}
+                                    <span class="badge bg-success-subtle text-success px-2 py-1"><i class="fa-solid fa-circle-check me-1"></i> Active</span>
+                                {% else %}
+                                    <span class="badge bg-danger-subtle text-danger px-2 py-1"><i class="fa-solid fa-ban me-1"></i> Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td class="small text-muted">{{ u.date_joined|date:"d M Y" }}</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#passwordModal{{ u.id }}">
+                                    <i class="fa-solid fa-key me-1"></i> Change Password
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 3: ACTIVE DEVICE SESSIONS MONITOR -->
+    <!-- ========================================== -->
+    <div class="tab-pane fade" id="devices-pane" role="tabpanel">
+        <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark">Active Connected Devices Monitor</h5>
+                    <p class="text-muted small mb-0">View all devices currently logged in. Admins can revoke/disconnect any device session instantly.</p>
+                </div>
+            </div>
+
+            {% if active_device_sessions %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light small text-muted">
+                            <tr>
+                                <th>Logged-In User</th>
+                                <th>Account Role</th>
+                                <th>Device / Browser Agent</th>
+                                <th>IP Address</th>
+                                <th>Connected Since</th>
+                                <th>Last Active</th>
+                                <th class="text-end">Disconnect</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in active_device_sessions %}
+                            <tr>
+                                <td>
+                                    <div class="fw-bold text-dark">{{ s.user.username }}</div>
+                                    <div class="text-muted small">Session: {{ s.session_key|slice:":8" }}...</div>
+                                </td>
+                                <td>
+                                    {% if s.user.profile.role == 'admin' or s.user.is_superuser %}
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">Admin (1 Device)</span>
+                                    {% else %}
+                                        <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1">Client (Max 5)</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="small text-truncate" style="max-width: 250px;" title="{{ s.device_info }}">
+                                        <i class="fa-solid fa-desktop me-1 text-secondary"></i>{{ s.device_info }}
+                                    </div>
+                                </td>
+                                <td class="small font-monospace">{{ s.ip_address }}</td>
+                                <td class="small text-muted">{{ s.created_at|date:"d M H:i" }}</td>
+                                <td class="small text-muted">{{ s.last_activity|timesince }} ago</td>
+                                <td class="text-end">
+                                    <form method="post" action="{% url 'billing:admin_revoke_device_session' s.id %}" class="d-inline" onsubmit="return confirm('Disconnect this device session? The user on this device will be logged out immediately.');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fa-solid fa-power-off me-1"></i> Disconnect
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-4 text-muted">
+                    <p class="small mb-0">No active device sessions found.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 4: CLOUD ACTIVITY LOGS -->
+    <!-- ========================================== -->
+    <div class="tab-pane fade" id="logs-pane" role="tabpanel">
+        <div class="card border-0 shadow-sm rounded-4 bg-white p-3 mb-3">
+            <form method="get" class="row g-2 align-items-center">
+                <div class="col-12 col-md-4">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+                        <input type="text" name="search_log" class="form-control bg-light border-start-0" placeholder="Search description, bill #, etc..." value="{{ search_log }}">
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <select name="action" class="form-select bg-light" onchange="this.form.submit()">
+                        <option value="">All Action Types</option>
+                        {% for act in action_types %}
+                            <option value="{{ act }}" {% if action_filter == act %}selected{% endif %}>{{ act }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <input type="text" name="log_user" class="form-control bg-light" placeholder="Filter by username..." value="{{ user_filter }}">
+                </div>
+                <div class="col-12 col-md-2 d-flex gap-1">
+                    <button type="submit" class="btn btn-primary-custom flex-grow-1">Filter</button>
+                    <a href="{% url 'billing:admin_panel' %}" class="btn btn-outline-secondary">Reset</a>
+                </div>
+            </form>
+        </div>
+
+        <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold mb-0 text-dark">
+                    <i class="fa-solid fa-cloud me-2 text-primary"></i>Activity Log Ledger
+                </h6>
+                <span class="badge bg-secondary-subtle text-secondary px-3 py-1">
+                    Showing latest {{ activity_logs.count }} of {{ total_log_count }}
+                </span>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" style="font-size: 0.88rem;">
+                    <thead class="table-light small text-muted">
+                        <tr>
+                            <th style="width: 170px;">Timestamp</th>
+                            <th style="width: 150px;">Action</th>
+                            <th style="width: 140px;">User</th>
+                            <th style="width: 130px;">IP Address</th>
+                            <th>Details & Audit Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in activity_logs %}
+                        <tr>
+                            <td class="text-muted small">{{ log.created_at|date:"Y-m-d H:i:s" }}</td>
+                            <td>
+                                <span class="badge {% if 'DELETE' in log.action_type %}bg-danger-subtle text-danger{% elif 'CREATE' in log.action_type or 'ADD' in log.action_type %}bg-success-subtle text-success{% elif 'EDIT' in log.action_type or 'UPDATE' in log.action_type %}bg-warning-subtle text-warning{% elif 'LOGIN' in log.action_type %}bg-primary-subtle text-primary{% else %}bg-secondary-subtle text-secondary{% endif %} px-2 py-1">
+                                    {{ log.action_type }}
+                                </span>
+                            </td>
+                            <td class="fw-semibold text-dark">{{ log.username }}</td>
+                            <td class="text-muted small font-monospace">{{ log.ip_address }}</td>
+                            <td>{{ log.description }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">No activity log entries found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 5: COMPANY PROFILE & RECEIPT BRANDING -->
+    <!-- ========================================== -->
+    <div class="tab-pane fade" id="company-pane" role="tabpanel">
+        <div class="row g-4">
+            <div class="col-12 col-lg-8">
+                <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4">
+                    <h5 class="fw-bold mb-1 text-dark">Company Profile & Receipt Branding</h5>
+                    <p class="text-muted small mb-4">Customize the business details, header logo, and watermark displayed on receipts and statements.</p>
+
+                    <form method="post" action="{% url 'billing:company_settings_update' %}" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="row g-3 mb-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label small fw-semibold">Company / Store Name *</label>
+                                <input type="text" name="company_name" class="form-control" required value="{{ company.company_name }}">
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label small fw-semibold">GSTIN / Tax Number</label>
+                                <input type="text" name="gst_number" class="form-control" value="{{ company.gst_number }}">
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">Address *</label>
+                            <textarea name="address" class="form-control" rows="2" required>{{ company.address }}</textarea>
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label small fw-semibold">Contact Phone</label>
+                                <input type="text" name="phone" class="form-control" value="{{ company.phone }}">
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label small fw-semibold">Email Address</label>
+                                <input type="email" name="email" class="form-control" value="{{ company.email }}">
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <!-- Logo Upload -->
+                            <div class="col-12 col-md-6">
+                                <label class="form-label small fw-semibold">Header Logo (Receipt Top)</label>
+                                <input type="file" name="logo_image" class="form-control form-control-sm mb-2" accept="image/*">
+                                {% if company.logo_data_url %}
+                                    <div class="p-2 border rounded-3 text-center bg-light">
+                                        <img src="{{ company.logo_data_url }}" alt="Logo" style="max-height: 60px; max-width: 100%;">
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Watermark Upload -->
+                            <div class="col-12 col-md-6">
+                                <label class="form-label small fw-semibold">Background Watermark (Receipt Faint Background)</label>
+                                <input type="file" name="watermark_image" class="form-control form-control-sm mb-2" accept="image/*">
+                                {% if company.watermark_data_url %}
+                                    <div class="p-2 border rounded-3 text-center bg-light">
+                                        <img src="{{ company.watermark_data_url }}" alt="Watermark" style="max-height: 60px; opacity: 0.4;">
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary-custom px-4">
+                            <i class="fa-solid fa-floppy-disk me-1"></i> Save Company Profile & Branding
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Right Column: Customer Data Retention Policy -->
+            <div class="col-12 col-lg-4">
+                <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-3 border-start border-4 border-success">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="fa-solid fa-shield-halved fs-4 text-success"></i>
+                        <h6 class="fw-bold mb-0 text-dark">Data Retention Policy</h6>
+                    </div>
+                    <p class="text-muted small mb-3">
+                        Customer records are <strong>permanently retained</strong> and are <strong>NEVER automatically deleted based on date</strong>. All purchase histories and customer accounts remain intact unless manually deleted by an Administrator.
+                    </p>
+                    <a href="{% url 'billing:customer_list' %}" class="btn btn-outline-primary w-100">
+                        <i class="fa-solid fa-address-book me-1"></i> Manage Customers Directory
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 6: SOFTWARE UPDATES MANAGEMENT        -->
+    <!-- ========================================== -->
+    <div class="tab-pane fade" id="updates-pane" role="tabpanel">
+        <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark">
+                        <i class="fa-solid fa-cloud-arrow-up text-primary me-2"></i> Software Updates & Releases
+                    </h5>
+                    <p class="text-muted small mb-0">
+                        Publish new software releases to all client applications. Client devices will see an Update notification at the bottom of their screen without disrupting active billing.
+                    </p>
+                </div>
+                <button type="button" class="btn btn-primary-custom d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#publishUpdateModal">
+                    <i class="fa-solid fa-plus-circle"></i>
+                    <span>Publish New Version</span>
+                </button>
+            </div>
+
+            {% if software_updates %}
+                <div class="list-group list-group-flush gap-3">
+                    {% for up in software_updates %}
+                        <div class="list-group-item bg-light rounded-4 border p-4 shadow-sm">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge text-white fw-bold px-3 py-2 fs-6" style="background: #4f46e5;">{{ up.version }}</span>
+                                    <h6 class="fw-bold text-dark mb-0 fs-6">{{ up.title }}</h6>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    {% if up.is_published %}
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1">Active / Published</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill px-3 py-1">Draft</span>
+                                    {% endif %}
+                                    <small class="text-muted">{{ up.created_at|date:"d M Y, h:i A" }}</small>
+                                </div>
+                            </div>
+                            {% if up.release_notes %}
+                                <div class="bg-white p-3 rounded-3 border small text-secondary mt-2" style="white-space: pre-line;">
+                                    {{ up.release_notes }}
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="fa-solid fa-cloud-arrow-up fa-3x text-secondary opacity-50 mb-3"></i>
+                    <p class="fw-semibold mb-1">No software updates published yet.</p>
+                    <small>Click "Publish New Version" above to notify client shops of updates.</small>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Publish Software Update -->
+<div class="modal fade" id="publishUpdateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header bg-light rounded-top-4">
+                <h6 class="modal-title fw-bold">
+                    <i class="fa-solid fa-cloud-arrow-up text-primary me-2"></i> Publish Software Update
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'billing:admin_publish_software_update' %}">
+                {% csrf_token %}
+                <div class="modal-body p-4">
+                    <p class="small text-muted mb-3">
+                        Publish an update version for all connected client terminals. Clients will see a non-disruptive update notification at the bottom of their screen.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Version Number *</label>
+                        <input type="text" name="version" class="form-control rounded-3 font-monospace" placeholder="e.g. v2.5.0, v2.5.1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Update Title / Summary *</label>
+                        <input type="text" name="title" class="form-control rounded-3" placeholder="e.g. Enhanced Offline Billing & Receipts" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Release Notes / Changelog</label>
+                        <textarea name="release_notes" rows="4" class="form-control rounded-3" placeholder="- Added discount input to billing terminal&#10;- Enhanced receipt layout with bank details&#10;- Added Statements & Reports section"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light rounded-bottom-4">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom btn-sm">Publish to Clients</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: ADD NEW CLIENT (MULTIPLE CLIENTS)   -->
+<!-- ========================================== -->
+<div class="modal fade" id="createClientModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">
+                    <i class="fa-solid fa-user-plus text-primary me-2"></i>Add New Client (Billing Operator)
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'billing:admin_user_create' %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="role" value="client">
+                <div class="modal-body">
+                    <p class="small text-muted mb-3">
+                        Admin only: Create a client account. Set username, password, business type, device limit, and shop details.
+                    </p>
+
+                    <div class="mb-3 text-center">
+                        <div class="d-inline-block position-relative">
+                            <img id="clientImgPreview" src="" class="rounded-circle border shadow-sm d-none" style="width: 70px; height: 70px; object-fit: cover;" alt="Preview">
+                            <div id="clientImgPlaceholder" class="rounded-circle border bg-light d-flex align-items-center justify-content-center mx-auto" style="width: 70px; height: 70px;">
+                                <i class="fa-solid fa-image text-muted fs-4"></i>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <label class="form-label small fw-semibold mb-1">Client Profile Image / Photo (img)</label>
+                            <input type="file" name="client_image" class="form-control form-control-sm" accept="image/*" onchange="previewNewClientImage(this)">
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Login Username *</label>
+                            <input type="text" name="username" class="form-control" required placeholder="e.g. client_branch1, cashier01">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Business / Shop Name</label>
+                            <input type="text" name="shop_name" class="form-control" placeholder="e.g. Goutham Computers">
+                        </div>
+                    </div>
+
+                    <!-- Business Type & Allowed Devices -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Business Type (வணிக வகை) *</label>
+                            <select name="business_type" class="form-select">
+                                <option value="grocery">Grocery Shop (மளிகை கடை)</option>
+                                <option value="mobile_computer">Mobile & Computer Shop</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Allowed Device Limit *</label>
+                            <select name="device_limit" class="form-select">
+                                <option value="1">1 Device</option>
+                                <option value="2">2 Devices</option>
+                                <option value="3">3 Devices</option>
+                                <option value="5" selected>5 Devices (Default)</option>
+                                <option value="10">10 Devices</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Operator Name</label>
+                            <input type="text" name="first_name" class="form-control" placeholder="Operator first name">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Phone Number</label>
+                            <input type="tel" name="phone" class="form-control" placeholder="10-digit mobile number">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Email Address (Optional)</label>
+                        <input type="email" name="email" class="form-control" placeholder="client@store.com">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Shop Address (முகவரி)</label>
+                        <textarea name="shop_address" rows="2" class="form-control" placeholder="Shop street address, city, pincode"></textarea>
+                    </div>
+
+                    <!-- Bank Payment Details -->
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <div class="small fw-bold text-dark mb-2"><i class="fa-solid fa-building-columns text-primary me-1"></i> Bank Details for Customer Receipts</div>
+                        <div class="row g-2">
+                            <div class="col-12">
+                                <input type="text" name="bank_name" class="form-control form-control-sm" placeholder="Bank Name (e.g. State Bank of India)">
+                            </div>
+                            <div class="col-6">
+                                <input type="text" name="account_number" class="form-control form-control-sm font-monospace" placeholder="Bank Account Number">
+                            </div>
+                            <div class="col-6">
+                                <input type="text" name="ifsc_code" class="form-control form-control-sm text-uppercase font-monospace" placeholder="IFSC Code (e.g. SBIN0001234)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Password *</label>
+                            <input type="password" name="password" class="form-control" required placeholder="Enter password">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Confirm Password *</label>
+                            <input type="password" name="password_confirm" class="form-control" required placeholder="Re-enter password">
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info border-0 small py-2 mb-0 rounded-3">
+                        <i class="fa-solid fa-shield-halved me-1"></i>
+                        <strong>Client Panel Security:</strong> Username and password can only be changed by Administrator. All billing and stock features will configure based on selected business type.
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom px-4 fw-semibold">Create Client Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: CREATE ADMIN ACCOUNT                -->
+<!-- ========================================== -->
+<div class="modal fade" id="createUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">
+                    <i class="fa-solid fa-shield-halved text-primary me-2"></i>Create Administrator Account
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'billing:admin_user_create' %}">
+                {% csrf_token %}
+                <input type="hidden" name="role" value="admin">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Administrator Username *</label>
+                        <input type="text" name="username" class="form-control" required placeholder="e.g. admin_branch">
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">First Name</label>
+                            <input type="text" name="first_name" class="form-control" placeholder="Admin name">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Phone Number</label>
+                            <input type="tel" name="phone" class="form-control" placeholder="Mobile #">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Email Address</label>
+                        <input type="email" name="email" class="form-control" placeholder="admin@store.com">
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Password *</label>
+                            <input type="password" name="password" class="form-control" required placeholder="Password">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Confirm Password *</label>
+                            <input type="password" name="password_confirm" class="form-control" required placeholder="Re-enter">
+                        </div>
+                    </div>
+                    <div class="alert alert-warning border-0 small py-2 mb-0 rounded-3">
+                        <i class="fa-solid fa-lock me-1"></i>
+                        <strong>Single-Device Mode:</strong> Administrators can be logged in on only 1 device at a time.
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary px-4 fw-semibold">Create Administrator</button>
+                </div>
+            </form>
+        </div>
+    </div>
+<!-- ========================================== -->
+<!-- MODAL: CREATE SHOP BRANCH                  -->
+<!-- ========================================== -->
+<div class="modal fade" id="createBranchModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-dark">
+                    <i class="fa-solid fa-shop text-info me-2"></i>Add New Shop Branch
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'billing:branch_add' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Branch Name *</label>
+                        <input type="text" name="name" class="form-control" required placeholder="e.g. North City Branch / Main Complex">
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-secondary">Branch Code</label>
+                            <input type="text" name="branch_code" class="form-control font-monospace" placeholder="e.g. BR-02">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-secondary">Manager Name</label>
+                            <input type="text" name="manager_name" class="form-control" placeholder="In-charge name">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-secondary">Phone Number</label>
+                            <input type="tel" name="phone" class="form-control" placeholder="Contact number">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-secondary">Email</label>
+                            <input type="email" name="email" class="form-control" placeholder="branch@store.com">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Branch Address</label>
+                        <textarea name="address" class="form-control" rows="2" placeholder="Street, Building, Pin"></textarea>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="is_default" value="1" id="newBranchDefault">
+                        <label class="form-check-label small fw-semibold text-secondary" for="newBranchDefault">
+                            Set as Default Shop Branch for Express Bills
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom px-4 fw-semibold"><i class="fa-solid fa-check me-1"></i> Save Branch</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODALS: EDIT & DELETE PER BRANCH           -->
+<!-- ========================================== -->
+{% for b in branches %}
+<!-- Edit Branch Modal -->
+<div class="modal fade" id="editBranchModal{{ b.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-dark">
+                    <i class="fa-solid fa-pen-to-square text-primary me-2"></i>Edit Branch: {{ b.name }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'billing:branch_edit' b.id %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Branch Name *</label>
+                        <input type="text" name="name" class="form-control" value="{{ b.name }}" required>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-secondary">Branch Code</label>
+                            <input type="text" name="branch_code" class="form-control font-monospace" value="{{ b.branch_code }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-secondary">Manager Name</label>
+                            <input type="text" name="manager_name" class="form-control" value="{{ b.manager_name }}">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-secondary">Phone Number</label>
+                            <input type="tel" name="phone" class="form-control" value="{{ b.phone }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-secondary">Email</label>
+                            <input type="email" name="email" class="form-control" value="{{ b.email }}">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Branch Address</label>
+                        <textarea name="address" class="form-control" rows="2">{{ b.address }}</textarea>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_default" value="1" id="editBranchDefault{{ b.id }}" {% if b.is_default %}checked{% endif %}>
+                                <label class="form-check-label small fw-semibold text-secondary" for="editBranchDefault{{ b.id }}">
+                                    Default Branch
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_active" value="1" id="editBranchActive{{ b.id }}" {% if b.is_active %}checked{% endif %}>
+                                <label class="form-check-label small fw-semibold text-secondary" for="editBranchActive{{ b.id }}">
+                                    Active Status
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom px-4 fw-semibold"><i class="fa-solid fa-check me-1"></i> Update Branch</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Branch Modal -->
+<div class="modal fade" id="deleteBranchModal{{ b.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-danger">
+                    <i class="fa-solid fa-triangle-exclamation me-2"></i>Delete Branch: {{ b.name }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'billing:branch_delete' b.id %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p class="text-dark">
+                        Are you sure you want to remove shop branch <strong>{{ b.name }}</strong> ({{ b.branch_code }})?
+                    </p>
+                    <div class="alert alert-info small mb-0 rounded-3">
+                        <i class="fa-solid fa-info-circle me-1"></i>
+                        If this branch has past billing records, it will be automatically deactivated instead of being completely removed, ensuring all historical sales reports remain accurate.
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger px-4 fw-semibold"><i class="fa-solid fa-trash-can me-1"></i> Delete Branch</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<script>
+    function togglePassVisibility(inputId, btn) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        if (input.type === "password") {
+            input.type = "text";
+            btn.innerHTML = '<i class="fa-solid fa-eye-slash text-secondary"></i>';
+        } else {
+            input.type = "password";
+            btn.innerHTML = '<i class="fa-solid fa-eye text-secondary"></i>';
+        }
+    }
+
+    function previewNewClientImage(input) {
+        if (input.files && input.files[0]) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var preview = document.getElementById('clientImgPreview');
+                var placeholder = document.getElementById('clientImgPlaceholder');
+                preview.src = e.target.result;
+                preview.classList.remove('d-none');
+                placeholder.classList.add('d-none');
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+</script>
+{% endblock %}

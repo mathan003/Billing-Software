@@ -1,0 +1,864 @@
+{% extends "billing/base.html" %}
+
+{% block title %}Dashboard | MathanHub{% endblock %}
+
+{% block extra_css %}
+<style>
+    .metric-clickable {
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .metric-clickable:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 20px -3px rgba(79, 70, 229, 0.12);
+    }
+    .section-card {
+        border-radius: 16px;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Top 4 Metrics Cards -->
+<div class="row g-3 mb-4">
+    <!-- 1. Today's Total Sales Card (CLICKABLE -> Displays Today's Bills!) -->
+    <div class="col-6 col-lg-3">
+        <a href="#todayBillsSection" class="text-decoration-none text-reset">
+            <div class="card card-stat metric-clickable p-3 h-100 border-start border-primary border-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">TODAY'S SALES</span>
+                    <div class="stat-icon bg-primary-subtle text-primary">
+                        <i class="fa-solid fa-indian-rupee-sign"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-0 text-primary">₹{{ today_sales|floatformat:2 }}</h3>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <span class="text-muted small">Today's billing revenue</span>
+                    <span class="badge bg-primary text-white rounded-pill px-2 py-1" style="font-size: 11px;">
+                        <i class="fa-solid fa-arrow-down me-1"></i>View Bills
+                    </span>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- 2. Today's Bills Count Card -->
+    <div class="col-6 col-lg-3">
+        <a href="#todayBillsSection" class="text-decoration-none text-reset">
+            <div class="card card-stat metric-clickable p-3 h-100 border-start border-info border-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">TODAY'S BILLS</span>
+                    <div class="stat-icon bg-info-subtle text-info">
+                        <i class="fa-solid fa-file-invoice"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-0 text-dark">{{ today_bills_count }}</h3>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <span class="text-muted small">Bills issued today</span>
+                    <span class="badge bg-info-subtle text-info rounded-pill px-2 py-1" style="font-size: 11px;">Today</span>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- 3. Customer Paid (Today's Collections - Replaces previous Total Buy!) -->
+    <div class="col-6 col-lg-3">
+        <div class="card card-stat p-3 h-100 border-start border-success border-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-secondary small fw-bold">CUSTOMER PAID (TODAY)</span>
+                <div class="stat-icon bg-success-subtle text-success">
+                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                </div>
+            </div>
+            <h3 class="fw-bold mb-0 text-success">₹{{ today_customer_paid|floatformat:2 }}</h3>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <span class="text-muted small">Collected payments today</span>
+                <span class="badge bg-success-subtle text-success rounded-pill px-2 py-1" style="font-size: 11px;">
+                    Total: ₹{{ all_time_customer_paid|floatformat:0 }}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Pending Amounts Card (CLICKABLE -> Displays Pending Customers Section) -->
+    <div class="col-6 col-lg-3">
+        <a href="#pendingAmountsSection" class="text-decoration-none text-reset">
+            <div class="card card-stat metric-clickable p-3 h-100 border-start border-danger border-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">PENDING AMOUNTS</span>
+                    <div class="stat-icon bg-danger-subtle text-danger">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-0 text-danger">₹{{ total_pending_amount|floatformat:2 }}</h3>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <span class="text-muted small">Outstanding customer dues</span>
+                    <span class="badge bg-danger text-white rounded-pill px-2 py-1" style="font-size: 11px;">
+                        <i class="fa-solid fa-arrow-down me-1"></i>View Dues
+                    </span>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<!-- Action Shortcuts: Add Customer & Quick Bill -->
+<div class="row g-3 mb-4">
+    <div class="col-12 col-md-6">
+        <div class="card border-0 shadow-sm rounded-4 p-4 text-white h-100" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="fw-bold mb-1"><i class="fa-solid fa-address-book me-2"></i>Customers Directory</h5>
+                    <p class="text-white-50 small mb-3">Add new customers, view balances, or alter customer information.</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-light fw-bold px-3 py-2 rounded-3 shadow-sm text-primary" data-bs-toggle="modal" data-bs-target="#customerManageModal">
+                            <i class="fa-solid fa-user-plus me-1"></i> Add / Alter Customer
+                        </button>
+                        <a href="{% url 'billing:customer_list' %}" class="btn btn-outline-light fw-semibold px-3 py-2 rounded-3">
+                            <i class="fa-solid fa-users me-1"></i> View All Customers
+                        </a>
+                    </div>
+                </div>
+                <div class="d-none d-sm-block text-white-50">
+                    <i class="fa-solid fa-users fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6">
+        <div class="card border-0 shadow-sm rounded-4 p-4 text-white h-100" style="background: linear-gradient(135deg, #065f46 0%, #10b981 100%);">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="fw-bold mb-1"><i class="fa-solid fa-bolt me-2"></i>Instant Quick Bill (பில்லிங்)</h5>
+                    <p class="text-white-50 small mb-3">Select product, choose unit type, enter quantity and print bill in 1 click.</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{% url 'billing:billing_page' %}" class="btn btn-light fw-bold px-3 py-2 rounded-3 shadow-sm text-success">
+                            <i class="fa-solid fa-receipt me-1"></i> Dedicated Terminal (Print & Save)
+                        </a>
+                        <a href="{% url 'billing:reports_dashboard' %}" class="btn btn-outline-light fw-semibold px-3 py-2 rounded-3">
+                            <i class="fa-solid fa-chart-column me-1"></i> Statements & Reports
+                        </a>
+                        <a href="{% url 'billing:reports_dashboard' %}?range=this_week" class="btn btn-warning fw-bold px-3 py-2 rounded-3 text-dark shadow-sm">
+                            <i class="fa-solid fa-calendar-week me-1"></i> Weekly Report
+                        </a>
+                        <button type="button" class="btn btn-danger fw-bold px-3 py-2 rounded-3 shadow-sm text-white" data-bs-toggle="modal" data-bs-target="#deleteClientDataModal">
+                            <i class="fa-solid fa-trash-can me-1"></i> Delete Data (தரவு நீக்கு)
+                        </button>
+                    </div>
+                </div>
+                <div class="d-none d-sm-block text-white-50">
+                    <i class="fa-solid fa-print fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Embedded Fast Quick Billing Box & Recent Invoices Section -->
+<div class="row g-3 mb-4">
+    <!-- Embedded Fast Express Billing Box -->
+    <div class="col-12 col-xl-5">
+        <div class="card section-card p-3 p-lg-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="fa-solid fa-calculator me-2 text-primary"></i>Express Bill Generator
+                </h5>
+                <span class="badge bg-primary-subtle text-primary small">Fast POS</span>
+            </div>
+
+            <form method="post" action="{% url 'billing:quick_bill_create' %}" id="dashQuickBillForm">
+                {% csrf_token %}
+
+                <!-- Branch Selector -->
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-secondary">Shop Branch (கடை கிளை)</label>
+                    <select name="branch_id" class="form-select bg-light">
+                        {% for b in branches %}
+                            <option value="{{ b.id }}" {% if b.is_default %}selected{% endif %}>
+                                {{ b.name }} ({{ b.branch_code }}) {% if b.is_default %}[Default]{% endif %}
+                            </option>
+                        {% empty %}
+                            <option value="">Main Shop Branch</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Customer Details (BLANK BY DEFAULT as requested) -->
+                <div class="row g-2 mb-3">
+                    <div class="col-7">
+                        <label class="form-label small fw-semibold text-secondary">Customer Name</label>
+                        <input type="text" name="customer_name" class="form-control" placeholder="Customer Name (e.g. Ramesh)" value="">
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label small fw-semibold text-secondary">Mobile</label>
+                        <input type="tel" name="customer_phone" class="form-control" placeholder="10-digit Phone" value="">
+                    </div>
+                </div>
+
+                <!-- Product Selector -->
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-secondary">Select Product (பொருள் தேர்வு) *</label>
+                    <select name="product_id" class="form-select bg-light" id="dashProdSelect" required>
+                        <option value="">-- Choose Product --</option>
+                        {% for p in products %}
+                            <option value="{{ p.id }}" data-price="{{ p.price }}" data-unit="{{ p.unit }}" data-tax="{{ p.tax_percent }}">
+                                {{ p.display_name }} - ₹{{ p.price }} / {{ p.unit }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <!-- Unit Selector -->
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-secondary">Unit Type</label>
+                        <select name="unit_type" class="form-select bg-light" id="dashUnitSelect">
+                            <option value="KG">KG (கிலோ)</option>
+                            <option value="Gram">Gram (கிராம்)</option>
+                            <option value="Pack">Pack / Bag (பேக்)</option>
+                            <option value="Box">Box (பெட்டி)</option>
+                            <option value="Pcs">Pcs (எண்ணிக்கை)</option>
+                            <option value="Ltr">Liter (லிட்டர்)</option>
+                            <option value="Set">Set (செட்)</option>
+                            <option value="Nos">Nos (எண்கள்)</option>
+                            <option value="Unit">Unit (யூனிட்)</option>
+                        </select>
+                    </div>
+
+                    <!-- Quantity Input (Supports > 500) -->
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-secondary">Quantity *</label>
+                        <input type="number" step="any" min="0.01" name="quantity" class="form-control" id="dashQtyInput" placeholder="Quantity (>500 allowed)" value="" required>
+                    </div>
+                </div>
+
+                <!-- Payment Details & Discount -->
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-secondary">Payment Mode</label>
+                        <select name="payment_method" class="form-select bg-light">
+                            <option value="Cash" selected>Cash (ரொக்கம்)</option>
+                            <option value="Online">Online Payment (UPI/Card)</option>
+                            <option value="Credit">Credit / Pending Due</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-success">Discount (₹)</label>
+                        <input type="number" step="0.01" min="0" name="discount_amount" class="form-control text-success fw-bold" id="dashDiscountInput" placeholder="0.00" value="">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-secondary">Customer Paid Amount (₹)</label>
+                    <input type="number" step="0.01" name="paid_amount" class="form-control text-success fw-bold" id="dashPaidInput" placeholder="Customer Paid Amount" value="">
+                </div>
+
+                <!-- Calculation Summary Box -->
+                <div class="p-3 bg-light rounded-3 mb-3">
+                    <div class="d-flex justify-content-between mb-1 small text-muted">
+                        <span>Price Per Unit:</span>
+                        <span id="dashUnitRate">₹0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1 small text-muted">
+                        <span>Tax / GST:</span>
+                        <span id="dashTaxAmount">₹0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1 small text-success fw-semibold" id="dashDiscountRow" style="display: none !important;">
+                        <span>Discount / Offer:</span>
+                        <span id="dashDiscountAmount">- ₹0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between fw-bold fs-5 text-dark border-top pt-2">
+                        <span>Grand Total:</span>
+                        <span id="dashGrandTotal" class="text-primary">₹0.00</span>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary-custom w-100 py-2 fs-6">
+                    <i class="fa-solid fa-print me-2"></i> Print & Save Bill
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Recent Invoices Table -->
+    <div class="col-12 col-xl-7">
+        <div class="card section-card p-3 p-lg-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-file-invoice-dollar me-2 text-primary"></i>Recent Invoices</h5>
+                <a href="{% url 'billing:invoice_list' %}" class="btn btn-sm btn-link text-decoration-none">View All Invoices <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light small text-muted">
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Customer</th>
+                            <th>Grand Total</th>
+                            <th>Paid</th>
+                            <th>Balance Due</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for inv in recent_invoices %}
+                        <tr>
+                            <td>
+                                <span class="fw-bold text-dark">{{ inv.invoice_number }}</span>
+                                <div class="text-muted" style="font-size: 11px;">{{ inv.created_at|date:"d M, h:i A" }}</div>
+                            </td>
+                            <td>
+                                <div class="fw-semibold">{{ inv.customer_name }}</div>
+                                <div class="text-muted small">{{ inv.customer_phone|default:"-" }}</div>
+                            </td>
+                            <td class="fw-bold">₹{{ inv.grand_total|floatformat:2 }}</td>
+                            <td class="text-success fw-semibold">₹{{ inv.paid_amount|floatformat:2 }}</td>
+                            <td>
+                                {% if inv.balance_amount > 0 %}
+                                    <span class="badge bg-danger-subtle text-danger px-2 py-1">₹{{ inv.balance_amount|floatformat:2 }}</span>
+                                {% else %}
+                                    <span class="badge bg-success-subtle text-success px-2 py-1">Paid</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a href="{% url 'billing:invoice_detail' inv.id %}" class="btn btn-sm btn-outline-secondary" title="View Receipt">
+                                    <i class="fa-solid fa-eye"></i>
+                                </a>
+                                <a href="{% url 'billing:invoice_download_pdf' inv.id %}" class="btn btn-sm btn-outline-primary" title="Download PDF">
+                                    <i class="fa-solid fa-file-pdf"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center py-4 text-muted">
+                                No invoices created yet. Use Quick Bill to issue your first invoice!
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ======================================================== -->
+<!-- TODAY'S SALES & BILLS SECTION (Triggered on click!)      -->
+<!-- ======================================================== -->
+<div class="row g-3 mb-4" id="todayBillsSection">
+    <div class="col-12">
+        <div class="card section-card p-3 p-lg-4 border-top border-primary border-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
+                <div>
+                    <h5 class="fw-bold text-dark mb-1">
+                        <i class="fa-solid fa-calendar-day text-primary me-2"></i>Today's Sales & Generated Bills (இன்றைய விற்பனை பில்கள்)
+                    </h5>
+                    <p class="text-muted small mb-0">
+                        Bills generated today: <strong>{{ today_bills_count }}</strong> • Total Sales: <strong class="text-primary">₹{{ today_sales|floatformat:2 }}</strong> • Paid: <strong class="text-success">₹{{ today_customer_paid|floatformat:2 }}</strong>
+                    </p>
+                </div>
+                <a href="{% url 'billing:reports_dashboard' %}?range=today" class="btn btn-sm btn-outline-primary">
+                    <i class="fa-solid fa-chart-line me-1"></i> View in Reports
+                </a>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light small text-muted">
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Time</th>
+                            <th>Branch</th>
+                            <th>Customer Name</th>
+                            <th>Grand Total</th>
+                            <th>Paid Amount</th>
+                            <th>Remaining Balance</th>
+                            <th>Mode</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tb in today_invoices %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'billing:invoice_detail' tb.id %}" class="fw-bold text-primary text-decoration-none">
+                                    {{ tb.invoice_number }}
+                                </a>
+                            </td>
+                            <td class="small text-muted">{{ tb.created_at|date:"h:i A" }}</td>
+                            <td><span class="badge bg-light text-dark border">{{ tb.branch_name }}</span></td>
+                            <td>
+                                <div class="fw-semibold text-dark">{{ tb.customer_name }}</div>
+                                {% if tb.customer_phone %}
+                                    <div class="text-muted small">{{ tb.customer_phone }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="fw-bold text-dark">₹{{ tb.grand_total|floatformat:2 }}</td>
+                            <td class="text-success fw-semibold">₹{{ tb.paid_amount|floatformat:2 }}</td>
+                            <td>
+                                {% if tb.balance_amount > 0 %}
+                                    <span class="badge bg-danger-subtle text-danger px-2 py-1 fw-bold">₹{{ tb.balance_amount|floatformat:2 }}</span>
+                                {% else %}
+                                    <span class="badge bg-success-subtle text-success px-2 py-1">Paid</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if tb.payment_method == 'Online' %}
+                                    <span class="badge bg-info-subtle text-info border border-info-subtle">Online</span>
+                                {% elif tb.payment_method == 'Credit' %}
+                                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Credit</span>
+                                {% else %}
+                                    <span class="badge bg-light text-dark border">Cash</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if tb.payment_status == 'Paid' %}
+                                    <span class="badge bg-success-subtle text-success px-2 py-1"><i class="fa-solid fa-circle-check me-1"></i>Paid</span>
+                                {% elif tb.payment_status == 'Partial' %}
+                                    <span class="badge bg-warning-subtle text-warning px-2 py-1">Partial</span>
+                                {% else %}
+                                    <span class="badge bg-danger-subtle text-danger px-2 py-1">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'billing:invoice_detail' tb.id %}" class="btn btn-outline-secondary" title="View Receipt">
+                                        <i class="fa-solid fa-eye"></i>
+                                    </a>
+                                    <a href="{% url 'billing:invoice_download_pdf' tb.id %}" class="btn btn-outline-primary" title="Download PDF">
+                                        <i class="fa-solid fa-file-pdf"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="text-center py-4 text-muted">
+                                <i class="fa-solid fa-receipt fs-1 mb-2 opacity-50"></i>
+                                <div>No bills issued today yet. Use Quick Bill to generate today's first bill!</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ======================================================== -->
+<!-- PENDING AMOUNTS SECTION (Customers who have pending dues)-->
+<!-- ======================================================== -->
+<div class="row g-3 mb-4" id="pendingAmountsSection">
+    <div class="col-12">
+        <div class="card section-card p-3 p-lg-4 border-top border-danger border-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
+                <div>
+                    <h5 class="fw-bold text-danger mb-1">
+                        <i class="fa-solid fa-clock-rotate-left me-2"></i>Customers with Pending Amounts (நிலுவைத் தொகை உள்ள வாடிக்கையாளர்கள்)
+                    </h5>
+                    <p class="text-muted small mb-0">
+                        Total Pending Receivables: <strong class="text-danger">₹{{ total_pending_amount|floatformat:2 }}</strong> across customers
+                    </p>
+                </div>
+                <a href="{% url 'billing:customer_list' %}?pending_only=1" class="btn btn-sm btn-outline-danger">
+                    <i class="fa-solid fa-users me-1"></i> View All Due Customers
+                </a>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light small text-muted">
+                        <tr>
+                            <th>Customer Name</th>
+                            <th>Contact Phone</th>
+                            <th>Address</th>
+                            <th>Due Bills</th>
+                            <th>Total Billed</th>
+                            <th>Total Paid</th>
+                            <th>Remaining Balance Due</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pc in pending_customers %}
+                        <tr>
+                            <td>
+                                <div class="fw-bold text-dark">{{ pc.name }}</div>
+                            </td>
+                            <td>
+                                <span class="small text-muted">{{ pc.phone }}</span>
+                            </td>
+                            <td>
+                                <span class="small text-muted">{{ pc.address|truncatechars:35 }}</span>
+                            </td>
+                            <td>
+                                <span class="badge bg-danger-subtle text-danger">{{ pc.bills_count }} bill(s)</span>
+                            </td>
+                            <td class="fw-semibold text-dark">₹{{ pc.total_billed|floatformat:2 }}</td>
+                            <td class="text-success fw-semibold">₹{{ pc.total_paid|floatformat:2 }}</td>
+                            <td>
+                                <span class="badge bg-danger text-white px-2 py-1 fs-6 fw-bold">
+                                    ₹{{ pc.balance_amount|floatformat:2 }}
+                                </span>
+                            </td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'billing:customer_statement' pc.id %}" class="btn btn-outline-info" title="View Statement">
+                                        <i class="fa-solid fa-receipt me-1"></i> Statement
+                                    </a>
+                                    <a href="{% url 'billing:invoice_list' %}?customer={{ pc.id }}&status=Pending" class="btn btn-outline-primary" title="Settle Payments">
+                                        <i class="fa-solid fa-hand-holding-dollar me-1"></i> Settle
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-4 text-muted">
+                                <i class="fa-solid fa-circle-check fs-1 text-success mb-2"></i>
+                                <div class="fw-semibold text-success">All customer balances are clear! No pending payments.</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ======================================================== -->
+<!-- MODAL 1: ADD & ALTER CUSTOMER MODAL                      -->
+<!-- ======================================================== -->
+<div class="modal fade" id="customerManageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold"><i class="fa-solid fa-users me-2 text-primary"></i>Customer Directory</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Navigation Tabs -->
+                <ul class="nav nav-pills mb-3" id="custTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active rounded-pill px-3" id="add-cust-tab" data-bs-toggle="pill" data-bs-target="#add-cust-pane" type="button">
+                            <i class="fa-solid fa-user-plus me-1"></i> Add New Customer
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link rounded-pill px-3" id="view-cust-tab" data-bs-toggle="pill" data-bs-target="#view-cust-pane" type="button">
+                            <i class="fa-solid fa-list me-1"></i> View & Alter Existing ({{ customers|length }})
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content">
+                    <!-- Tab 1: Add New Customer -->
+                    <div class="tab-pane fade show active" id="add-cust-pane" role="tabpanel">
+                        <form method="post" action="{% url 'billing:customer_add' %}">
+                            {% csrf_token %}
+                            <div class="row g-2 mb-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small fw-semibold">Customer Name *</label>
+                                    <input type="text" name="name" class="form-control" placeholder="e.g. Ramesh Kumar" required>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small fw-semibold">Mobile Phone</label>
+                                    <input type="tel" name="phone" class="form-control" placeholder="e.g. 9876543210">
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small fw-semibold">Email (Optional)</label>
+                                    <input type="email" name="email" class="form-control" placeholder="customer@example.com">
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small fw-semibold">GSTIN / Tax ID</label>
+                                    <input type="text" name="gst_number" class="form-control" placeholder="e.g. 33AAAAA0000A1Z5">
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-3">
+                                <div class="col-12 col-md-8">
+                                    <label class="form-label small fw-semibold">Billing Address</label>
+                                    <input type="text" name="address" class="form-control" placeholder="Street, City, Pincode">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label small fw-semibold">Notes</label>
+                                    <input type="text" name="notes" class="form-control" placeholder="Terms / Remarks">
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <button type="submit" class="btn btn-primary-custom px-4">
+                                    <i class="fa-solid fa-check me-1"></i> Save Customer
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Tab 2: View and Alter Existing Customers -->
+                    <div class="tab-pane fade" id="view-cust-pane" role="tabpanel">
+                        <div class="table-responsive" style="max-height: 380px;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light small">
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Phone</th>
+                                        <th>Total Billed</th>
+                                        <th>Paid</th>
+                                        <th>Due Balance</th>
+                                        <th class="text-end">Alter</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for c in customers %}
+                                    <tr>
+                                        <td class="fw-semibold">{{ c.name }}</td>
+                                        <td>{{ c.phone|default:"-" }}</td>
+                                        <td>₹{{ c.total_billed|floatformat:2 }}</td>
+                                        <td class="text-success">₹{{ c.total_paid|floatformat:2 }}</td>
+                                        <td>
+                                            {% if c.total_pending > 0 %}
+                                                <span class="badge bg-danger-subtle text-danger">₹{{ c.total_pending|floatformat:2 }}</span>
+                                            {% else %}
+                                                <span class="badge bg-success-subtle text-success">Clear</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-end">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editCust{{ c.id }}">
+                                                <i class="fa-solid fa-pen-to-square"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <!-- Collapsible Alter Form -->
+                                    <tr class="collapse bg-light" id="editCust{{ c.id }}">
+                                        <td colspan="6" class="p-3">
+                                            <form method="post" action="{% url 'billing:customer_edit' c.id %}">
+                                                {% csrf_token %}
+                                                <h6 class="fw-bold text-primary mb-2">Edit Customer: {{ c.name }}</h6>
+                                                <div class="row g-2 mb-2">
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small">Name</label>
+                                                        <input type="text" name="name" class="form-control form-control-sm" value="{{ c.name }}" required>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small">Phone</label>
+                                                        <input type="tel" name="phone" class="form-control form-control-sm" value="{{ c.phone|default:'' }}">
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small">GSTIN</label>
+                                                        <input type="text" name="gst_number" class="form-control form-control-sm" value="{{ c.gst_number|default:'' }}">
+                                                    </div>
+                                                </div>
+                                                <div class="row g-2 mb-2">
+                                                    <div class="col-md-8">
+                                                        <label class="form-label small">Address</label>
+                                                        <input type="text" name="address" class="form-control form-control-sm" value="{{ c.address|default:'' }}">
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small">Notes</label>
+                                                        <input type="text" name="notes" class="form-control form-control-sm" value="{{ c.notes|default:'' }}">
+                                                    </div>
+                                                </div>
+                                                <div class="text-end">
+                                                    <button type="submit" class="btn btn-sm btn-primary">Update Customer</button>
+                                                </div>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="6" class="text-center py-3 text-muted">No customers registered yet.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+<!-- Client Data Cleanup Modal (Delete Data by Customer or Date Range) -->
+<div class="modal fade" id="deleteClientDataModal" tabindex="-1" aria-labelledby="deleteClientDataModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white border-0 px-4 py-3">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-3 bg-white bg-opacity-25 p-2">
+                        <i class="fa-solid fa-trash-can fs-5 text-white"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0" id="deleteClientDataModalLabel">Delete Shop Data (தரவு நீக்கு)</h5>
+                        <small class="text-white-50">Delete records for a particular customer or specific date range. Modifies only your database.</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="alert alert-warning border-0 rounded-3 d-flex align-items-center gap-2 mb-4 py-2 px-3 small">
+                    <i class="fa-solid fa-triangle-exclamation fs-5 text-warning"></i>
+                    <span><strong>Secure Client Isolation:</strong> This deletion strictly affects only your own store records. It will never affect any other client database. Dashboard statistics will update automatically.</span>
+                </div>
+
+                <ul class="nav nav-pills nav-fill mb-4 p-1 bg-light rounded-3" id="deleteDataTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active fw-semibold py-2" id="del-by-customer-tab" data-bs-toggle="pill" data-bs-target="#del-by-customer-pane" type="button" role="tab">
+                            <i class="fa-solid fa-user-xmark me-2"></i> Particular Customer (குறிப்பிட்ட வாடிக்கையாளர்)
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-semibold py-2" id="del-by-date-tab" data-bs-toggle="pill" data-bs-target="#del-by-date-pane" type="button" role="tab">
+                            <i class="fa-solid fa-calendar-xmark me-2"></i> Date to Date Range (தேதி முதல் தேதி வரை)
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="deleteDataTabContent">
+                    <!-- Tab 1: Delete by Customer -->
+                    <div class="tab-pane fade show active" id="del-by-customer-pane" role="tabpanel">
+                        <form method="post" action="{% url 'billing:client_delete_data' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="delete_type" value="customer">
+                            
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold text-dark">Select Customer (வாடிக்கையாளரை தேர்ந்தெடுக்கவும்)</label>
+                                <select name="customer_id" class="form-select form-select-lg border" required>
+                                    <option value="" selected disabled>-- Choose a Customer --</option>
+                                    {% for c in customers %}
+                                        <option value="{{ c.id }}">{{ c.name }}{% if c.phone %} ({{ c.phone }}){% endif %} — Pending: ₹{{ c.total_pending|floatformat:2 }}</option>
+                                    {% empty %}
+                                        <option value="" disabled>No customers registered in your shop.</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text small text-muted">All invoice history, bill line items, and payment transactions for this customer will be deleted.</div>
+                            </div>
+
+                            <div class="card bg-light border-0 rounded-3 p-3 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="delete_customer_profile" value="1" id="delCustProfileCheck">
+                                    <label class="form-check-label fw-semibold text-dark small" for="delCustProfileCheck">
+                                        Also delete the customer profile permanently from Customers Directory
+                                    </label>
+                                </div>
+                                <div class="small text-muted ms-4">If unchecked, the customer contact card remains saved with balance reset to ₹0.00.</div>
+                            </div>
+
+                            <div class="form-check mb-4">
+                                <input class="form-check-input border-danger" type="checkbox" id="confirmCustDelCheck" required>
+                                <label class="form-check-label text-danger small fw-semibold" for="confirmCustDelCheck">
+                                    I confirm that I want to permanently delete this customer's transaction records from my database.
+                                </label>
+                            </div>
+
+                            <div class="d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-danger fw-bold px-4">
+                                    <i class="fa-solid fa-trash-can me-2"></i> Delete Customer Records
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Tab 2: Delete by Date Range -->
+                    <div class="tab-pane fade" id="del-by-date-pane" role="tabpanel">
+                        <form method="post" action="{% url 'billing:client_delete_data' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="delete_type" value="date_range">
+
+                            <div class="row g-3 mb-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold text-dark">From Date (தொடக்க தேதி)</label>
+                                    <input type="date" name="start_date" class="form-control form-control-lg" required>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold text-dark">To Date (முடிவு தேதி)</label>
+                                    <input type="date" name="end_date" class="form-control form-control-lg" required>
+                                </div>
+                            </div>
+                            <div class="form-text small text-muted mb-3">
+                                All invoices, items, and associated payment records issued between the selected dates will be permanently purged.
+                            </div>
+
+                            <div class="form-check mb-4">
+                                <input class="form-check-input border-danger" type="checkbox" id="confirmDateDelCheck" required>
+                                <label class="form-check-label text-danger small fw-semibold" for="confirmDateDelCheck">
+                                    I confirm that I want to permanently delete all store invoices within this date range.
+                                </label>
+                            </div>
+
+                            <div class="d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-danger fw-bold px-4">
+                                    <i class="fa-solid fa-trash-can me-2"></i> Delete Date Range Records
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Live calculation for Embedded Dashboard Quick Bill
+    const dashProd = document.getElementById("dashProdSelect");
+    const dashUnit = document.getElementById("dashUnitSelect");
+    const dashQty = document.getElementById("dashQtyInput");
+    const dashPaid = document.getElementById("dashPaidInput");
+    const dashRateLabel = document.getElementById("dashUnitRate");
+    const dashTaxLabel = document.getElementById("dashTaxAmount");
+    const dashTotalLabel = document.getElementById("dashGrandTotal");
+
+    const dashDiscount = document.getElementById("dashDiscountInput");
+    const dashDiscountRow = document.getElementById("dashDiscountRow");
+    const dashDiscountAmount = document.getElementById("dashDiscountAmount");
+
+    function updateDashCalc() {
+        if (!dashProd || !dashProd.selectedIndex) return;
+        const opt = dashProd.options[dashProd.selectedIndex];
+        const price = parseFloat(opt.getAttribute("data-price") || 0);
+        const unit = opt.getAttribute("data-unit");
+        const taxPct = parseFloat(opt.getAttribute("data-tax") || 0);
+        const qty = parseFloat(dashQty.value || 0);
+        const discount = parseFloat(dashDiscount?.value || 0);
+
+        if (unit && dashUnit) {
+            dashUnit.value = unit;
+        }
+
+        const subtotal = price * qty;
+        const tax = (subtotal * taxPct) / 100.0;
+        const total = Math.max(0, subtotal + tax - discount);
+
+        if (discount > 0 && dashDiscountRow) {
+            dashDiscountRow.style.setProperty("display", "flex", "important");
+            dashDiscountAmount.innerText = "- ₹" + discount.toFixed(2);
+        } else if (dashDiscountRow) {
+            dashDiscountRow.style.setProperty("display", "none", "important");
+        }
+
+        dashRateLabel.innerText = "₹" + price.toFixed(2);
+        dashTaxLabel.innerText = "₹" + tax.toFixed(2);
+        dashTotalLabel.innerText = "₹" + total.toFixed(2);
+        if (!dashPaid.value || dashPaid.dataset.autoFilled === "true") {
+            dashPaid.value = total.toFixed(2);
+            dashPaid.dataset.autoFilled = "true";
+        }
+    }
+
+    if (dashProd) dashProd.addEventListener("change", updateDashCalc);
+    if (dashQty) dashQty.addEventListener("input", updateDashCalc);
+    if (dashDiscount) dashDiscount.addEventListener("input", updateDashCalc);
+    if (dashPaid) dashPaid.addEventListener("input", () => { dashPaid.dataset.autoFilled = "false"; });
+</script>
+{% endblock %}

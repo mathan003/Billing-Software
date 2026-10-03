@@ -1,0 +1,217 @@
+{% extends "billing/base.html" %}
+
+{% block title %}Account Statement - {{ customer.name }} | MathanHub{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .navbar-custom, .mobile-bottom-bar, .no-print {
+            display: none !important;
+        }
+        main {
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        .card {
+            border: none !important;
+            box-shadow: none !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3 no-print">
+    <div>
+        <div class="d-flex align-items-center gap-2">
+            <a href="{% url 'billing:invoice_list' %}?customer={{ customer.id }}" class="btn btn-sm btn-outline-secondary">
+                <i class="fa-solid fa-arrow-left me-1"></i> Invoices
+            </a>
+            <h4 class="fw-bold mb-0">Customer Account Statement</h4>
+        </div>
+        <p class="text-muted small mb-0 mt-1">Transaction statement and payment ledger for <strong>{{ customer.name }}</strong></p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'billing:customer_statement_pdf' customer.id %}?start_date={{ start_date }}&end_date={{ end_date }}" class="btn btn-outline-primary d-flex align-items-center gap-2">
+            <i class="fa-solid fa-file-pdf"></i>
+            <span>Download PDF Statement</span>
+        </a>
+        <button onclick="window.print()" class="btn btn-primary-custom d-flex align-items-center gap-2">
+            <i class="fa-solid fa-print"></i>
+            <span>Print Statement</span>
+        </button>
+    </div>
+</div>
+
+<!-- Date Range Filter Form -->
+<div class="card border-0 shadow-sm rounded-4 bg-white p-3 mb-3 no-print">
+    <form method="get" class="row g-2 align-items-end">
+        <div class="col-12 col-md-4">
+            <label class="form-label small fw-semibold text-muted mb-1">From Date (தொடக்க தேதி)</label>
+            <input type="date" name="start_date" class="form-control bg-light" value="{{ start_date }}" required>
+        </div>
+        <div class="col-12 col-md-4">
+            <label class="form-label small fw-semibold text-muted mb-1">To Date (முடிவு தேதி)</label>
+            <input type="date" name="end_date" class="form-control bg-light" value="{{ end_date }}" required>
+        </div>
+        <div class="col-12 col-md-4 d-flex gap-2">
+            <button type="submit" class="btn btn-dark w-100">
+                <i class="fa-solid fa-filter me-1"></i> Update Statement
+            </button>
+            <a href="{% url 'billing:customer_statement' customer.id %}" class="btn btn-light border" title="Reset to Last 45 Days">
+                <i class="fa-solid fa-rotate-left"></i>
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Customer Profile & Statement Header -->
+<div class="card border-0 shadow-sm rounded-4 bg-white p-4 mb-3">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3 border-bottom pb-3 mb-3">
+        <div>
+            <div class="d-flex align-items-center gap-2">
+                {% if company.logo_data_url %}
+                    <img src="{{ company.logo_data_url }}" alt="Company Logo" style="max-height: 48px; max-width: 120px;" class="me-2">
+                {% endif %}
+                <div>
+                    <h5 class="fw-bold mb-0 text-primary">{{ company.company_name }}</h5>
+                    <div class="text-muted small">{{ company.address }} • Ph: {{ company.phone }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="text-md-end">
+            <span class="badge bg-primary text-white rounded-pill px-3 py-1 mb-1">Statement Period</span>
+            <div class="fw-bold text-dark fs-6">{{ start_date }} to {{ end_date }}</div>
+            <div class="text-muted small">Generated: {% now "d M Y, h:i A" %}</div>
+        </div>
+    </div>
+
+    <!-- Customer Card & Summary Metrics -->
+    <div class="row g-3">
+        <div class="col-12 col-md-4">
+            <div class="p-3 bg-light rounded-3 h-100">
+                <span class="badge bg-secondary text-white rounded-pill px-2 mb-2">Customer Profile</span>
+                <h5 class="fw-bold text-dark mb-1">{{ customer.name }}</h5>
+                {% if customer.phone %}
+                    <div class="small text-muted"><i class="fa-solid fa-phone me-1 text-primary"></i>{{ customer.phone }}</div>
+                {% endif %}
+                {% if customer.gst_number %}
+                    <div class="small text-muted"><i class="fa-solid fa-receipt me-1 text-secondary"></i>GST: {{ customer.gst_number }}</div>
+                {% endif %}
+                {% if customer.address %}
+                    <div class="small text-muted mt-1"><i class="fa-solid fa-location-dot me-1 text-danger"></i>{{ customer.address }}</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col-12 col-md-8">
+            <div class="row g-2 text-center h-100 align-items-center">
+                <div class="col-6 col-sm-3">
+                    <div class="p-3 bg-light rounded-3 border">
+                        <div class="small text-muted mb-1">Opening Due</div>
+                        <div class="fs-6 fw-bold text-secondary">₹{{ summary.opening_balance|floatformat:2 }}</div>
+                    </div>
+                </div>
+                <div class="col-6 col-sm-3">
+                    <div class="p-3 bg-light rounded-3 border">
+                        <div class="small text-muted mb-1">Period Billed</div>
+                        <div class="fs-6 fw-bold text-primary">₹{{ summary.total_billed|floatformat:2 }}</div>
+                    </div>
+                </div>
+                <div class="col-6 col-sm-3">
+                    <div class="p-3 bg-success-subtle rounded-3 border border-success-subtle">
+                        <div class="small text-success fw-semibold mb-1">Period Paid</div>
+                        <div class="fs-6 fw-bold text-success">₹{{ summary.total_paid|floatformat:2 }}</div>
+                    </div>
+                </div>
+                <div class="col-6 col-sm-3">
+                    <div class="p-3 {% if summary.net_pending > 0 %}bg-danger-subtle border border-danger-subtle{% else %}bg-light border{% endif %} rounded-3">
+                        <div class="small {% if summary.net_pending > 0 %}text-danger fw-bold{% else %}text-muted{% endif %} mb-1">Net Pending Due</div>
+                        <div class="fs-5 fw-bold {% if summary.net_pending > 0 %}text-danger{% else %}text-muted{% endif %}">
+                            ₹{{ summary.net_pending|floatformat:2 }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Ledger Transactions Table -->
+<div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-list-check me-2 text-primary"></i>Transaction History Ledger</h6>
+        <span class="text-muted small">{{ transactions|length }} transactions recorded</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light small text-muted">
+                <tr>
+                    <th>Date & Time</th>
+                    <th>Transaction Type</th>
+                    <th>Reference / Bill #</th>
+                    <th>Details / Notes</th>
+                    <th class="text-end">Billed (Debit ₹)</th>
+                    <th class="text-end">Paid (Credit ₹)</th>
+                    <th class="text-end">Running Balance Due</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Opening Balance Row -->
+                <tr class="table-light">
+                    <td class="small text-muted">{{ start_date }}</td>
+                    <td><span class="badge bg-secondary-subtle text-secondary border">OPENING</span></td>
+                    <td class="small text-muted">-</td>
+                    <td class="small text-muted">Previous Balance carried forward</td>
+                    <td class="text-end">-</td>
+                    <td class="text-end">-</td>
+                    <td class="text-end fw-bold">₹{{ summary.opening_balance|floatformat:2 }}</td>
+                </tr>
+
+                {% for tx in transactions %}
+                <tr>
+                    <td class="small text-muted text-nowrap">{{ tx.date|date:"d M Y, h:i A" }}</td>
+                    <td>
+                        {% if tx.type == "INVOICE" %}
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                <i class="fa-solid fa-receipt me-1"></i> Bill
+                            </span>
+                        {% else %}
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                <i class="fa-solid fa-money-bill-transfer me-1"></i> Payment
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="fw-semibold text-dark">{{ tx.ref }}</td>
+                    <td class="small text-muted">{{ tx.details }}</td>
+                    <td class="text-end fw-bold text-dark">
+                        {% if tx.debit > 0 %}₹{{ tx.debit|floatformat:2 }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-end fw-bold text-success">
+                        {% if tx.credit > 0 %}₹{{ tx.credit|floatformat:2 }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-end fw-bold {% if tx.balance > 0 %}text-danger{% else %}text-muted{% endif %}">
+                        ₹{{ tx.balance|floatformat:2 }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center py-4 text-muted">
+                        No transactions recorded for this customer in the selected date range.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr>
+                    <td colspan="4" class="text-end">Closing Summary:</td>
+                    <td class="text-end text-primary">₹{{ summary.total_billed|floatformat:2 }}</td>
+                    <td class="text-end text-success">₹{{ summary.total_paid|floatformat:2 }}</td>
+                    <td class="text-end fs-6 text-danger">₹{{ summary.net_pending|floatformat:2 }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endblock %}

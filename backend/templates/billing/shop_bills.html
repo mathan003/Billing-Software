@@ -1,0 +1,311 @@
+{% extends "billing/base.html" %}
+
+{% block title %}Own Shop Bills | MathanHub{% endblock %}
+
+{% block content %}
+<!-- Header Bar -->
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+        <h4 class="fw-bold mb-1 text-dark">
+            <i class="fa-solid fa-receipt text-primary me-2"></i>Own Shop Bills (கடை பில்கள்)
+        </h4>
+        <p class="text-muted small mb-0">
+            View, track, print, and manage all billing receipts generated across shop branches
+        </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'billing:shop_bills_export_csv' %}?date_filter={{ date_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&branch={{ selected_branch }}&status={{ status_filter }}&method={{ method_filter }}&search={{ search }}" class="btn btn-outline-dark d-flex align-items-center gap-2 shadow-sm">
+            <i class="fa-solid fa-file-csv text-primary"></i>
+            <span>Export Bills (CSV)</span>
+        </a>
+        <a href="{% url 'billing:billing_page' %}" class="btn btn-primary-custom d-flex align-items-center gap-2 shadow-sm">
+            <i class="fa-solid fa-plus"></i>
+            <span>Generate New Bill</span>
+        </a>
+    </div>
+</div>
+
+<!-- 4 Revenue Metric Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card card-stat p-3 h-100 border-start border-primary border-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-secondary small fw-bold">TOTAL BILLS</span>
+                <div class="stat-icon bg-primary-subtle text-primary">
+                    <i class="fa-solid fa-file-invoice"></i>
+                </div>
+            </div>
+            <h3 class="fw-bold mb-0 text-dark">{{ metrics.count }}</h3>
+            <span class="text-muted small">Invoices matching filter</span>
+        </div>
+    </div>
+
+    <div class="col-6 col-lg-3">
+        <div class="card card-stat p-3 h-100 border-start border-info border-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-secondary small fw-bold">TOTAL SALES VALUE</span>
+                <div class="stat-icon bg-info-subtle text-info">
+                    <i class="fa-solid fa-chart-line"></i>
+                </div>
+            </div>
+            <h3 class="fw-bold mb-0 text-primary">₹{{ metrics.total_sales|floatformat:2 }}</h3>
+            <span class="text-muted small">Gross revenue billed</span>
+        </div>
+    </div>
+
+    <div class="col-6 col-lg-3">
+        <div class="card card-stat p-3 h-100 border-start border-success border-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-secondary small fw-bold">CUSTOMER PAYMENTS</span>
+                <div class="stat-icon bg-success-subtle text-success">
+                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                </div>
+            </div>
+            <h3 class="fw-bold mb-0 text-success">₹{{ metrics.total_paid|floatformat:2 }}</h3>
+            <span class="text-muted small">Total collected revenue</span>
+        </div>
+    </div>
+
+    <div class="col-6 col-lg-3">
+        <div class="card card-stat p-3 h-100 border-start border-danger border-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-secondary small fw-bold">OUTSTANDING DUE</span>
+                <div class="stat-icon bg-danger-subtle text-danger">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                </div>
+            </div>
+            <h3 class="fw-bold mb-0 text-danger">₹{{ metrics.total_pending|floatformat:2 }}</h3>
+            <span class="text-muted small">Pending customer balance</span>
+        </div>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+    <form method="get" class="row g-2 align-items-end">
+        <div class="col-12 col-md-3">
+            <label class="form-label small fw-semibold text-secondary">Search</label>
+            <div class="input-group">
+                <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+                <input type="text" name="search" class="form-control border-start-0 bg-light" placeholder="Bill #, Customer, Phone..." value="{{ search }}">
+            </div>
+        </div>
+
+        <div class="col-6 col-md-2">
+            <label class="form-label small fw-semibold text-secondary">Date Period</label>
+            <select name="date_filter" class="form-select bg-light" id="shopBillDateFilter">
+                <option value="">All Time</option>
+                <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Today</option>
+                <option value="yesterday" {% if date_filter == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                <option value="this_week" {% if date_filter == 'this_week' %}selected{% endif %}>This Week</option>
+                <option value="this_month" {% if date_filter == 'this_month' %}selected{% endif %}>This Month</option>
+            </select>
+        </div>
+
+        <div class="col-6 col-md-2">
+            <label class="form-label small fw-semibold text-secondary">Branch</label>
+            <select name="branch" class="form-select bg-light">
+                <option value="">-- All Branches --</option>
+                {% for b in branches %}
+                    <option value="{{ b.id }}" {% if selected_branch|stringformat:"s" == b.id|stringformat:"s" %}selected{% endif %}>
+                        {{ b.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-6 col-md-2">
+            <label class="form-label small fw-semibold text-secondary">Status</label>
+            <select name="status" class="form-select bg-light">
+                <option value="">-- All Statuses --</option>
+                <option value="Paid" {% if status_filter == 'Paid' %}selected{% endif %}>Paid (முழுதும்)</option>
+                <option value="Pending" {% if status_filter == 'Pending' %}selected{% endif %}>Pending Due (கடன்)</option>
+                <option value="Partial" {% if status_filter == 'Partial' %}selected{% endif %}>Partial Paid</option>
+            </select>
+        </div>
+
+        <div class="col-6 col-md-2">
+            <label class="form-label small fw-semibold text-secondary">Payment Method</label>
+            <select name="method" class="form-select bg-light">
+                <option value="">-- All Methods --</option>
+                <option value="Cash" {% if method_filter == 'Cash' %}selected{% endif %}>Cash</option>
+                <option value="Online" {% if method_filter == 'Online' %}selected{% endif %}>Online Payment</option>
+                <option value="Credit" {% if method_filter == 'Credit' %}selected{% endif %}>Credit / Due</option>
+            </select>
+        </div>
+
+        <div class="col-12 col-md-1 d-flex gap-1">
+            <button type="submit" class="btn btn-primary-custom w-100"><i class="fa-solid fa-filter"></i></button>
+            <a href="{% url 'billing:shop_bills' %}" class="btn btn-light border" title="Reset Filters"><i class="fa-solid fa-rotate-left"></i></a>
+        </div>
+    </form>
+</div>
+
+<!-- Bills Table -->
+<div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light small text-muted">
+                <tr>
+                    <th>Invoice #</th>
+                    <th>Date & Time</th>
+                    <th>Branch</th>
+                    <th>Customer Name</th>
+                    <th>Items</th>
+                    <th>Grand Total</th>
+                    <th>Paid Amount</th>
+                    <th>Balance Due</th>
+                    <th>Mode</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in bills %}
+                <tr>
+                    <td>
+                        <a href="{% url 'billing:invoice_detail' b.id %}" class="fw-bold text-primary text-decoration-none">
+                            {{ b.invoice_number }}
+                        </a>
+                    </td>
+                    <td>
+                        <div class="text-dark small fw-semibold">{{ b.created_at|date:"d M Y" }}</div>
+                        <div class="text-muted" style="font-size: 11px;">{{ b.created_at|date:"h:i A" }}</div>
+                    </td>
+                    <td>
+                        <span class="badge bg-light text-dark border">
+                            <i class="fa-solid fa-shop me-1 text-primary"></i>{{ b.branch_name }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="fw-semibold text-dark">{{ b.customer_name }}</div>
+                        {% if b.customer_phone %}
+                            <div class="text-muted small"><i class="fa-solid fa-phone me-1"></i>{{ b.customer_phone }}</div>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge bg-secondary-subtle text-secondary">{{ b.items.count }} items</span></td>
+                    <td class="fw-bold text-dark fs-6">₹{{ b.grand_total|floatformat:2 }}</td>
+                    <td class="text-success fw-semibold">₹{{ b.paid_amount|floatformat:2 }}</td>
+                    <td>
+                        {% if b.balance_amount > 0 %}
+                            <span class="badge bg-danger-subtle text-danger px-2 py-1 fw-bold">₹{{ b.balance_amount|floatformat:2 }}</span>
+                        {% else %}
+                            <span class="badge bg-success-subtle text-success px-2 py-1">₹0.00</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if b.payment_method == 'Online' %}
+                            <span class="badge bg-info-subtle text-info border border-info-subtle"><i class="fa-solid fa-globe me-1"></i>Online</span>
+                        {% elif b.payment_method == 'Credit' %}
+                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fa-solid fa-clock me-1"></i>Credit</span>
+                        {% else %}
+                            <span class="badge bg-light text-dark border"><i class="fa-solid fa-money-bill me-1 text-success"></i>Cash</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if b.payment_status == 'Paid' %}
+                            <span class="badge bg-success-subtle text-success px-2 py-1"><i class="fa-solid fa-circle-check me-1"></i>Paid</span>
+                        {% elif b.payment_status == 'Partial' %}
+                            <span class="badge bg-warning-subtle text-warning px-2 py-1"><i class="fa-solid fa-hourglass-half me-1"></i>Partial</span>
+                        {% else %}
+                            <span class="badge bg-danger-subtle text-danger px-2 py-1"><i class="fa-solid fa-circle-exclamation me-1"></i>Pending</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <div class="btn-group btn-group-sm">
+                            <a href="{% url 'billing:invoice_detail' b.id %}" class="btn btn-outline-secondary" title="View Receipt">
+                                <i class="fa-solid fa-eye"></i>
+                            </a>
+                            <a href="{% url 'billing:invoice_download_pdf' b.id %}" class="btn btn-outline-primary" title="Download PDF">
+                                <i class="fa-solid fa-file-pdf"></i>
+                            </a>
+                            <a href="{% url 'billing:invoice_edit' b.id %}" class="btn btn-outline-secondary" title="Edit Bill">
+                                <i class="fa-solid fa-pen"></i>
+                            </a>
+                            {% if b.balance_amount > 0 %}
+                                <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#payModal{{ b.id }}" title="Record Payment">
+                                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                                </button>
+                            {% endif %}
+                        </div>
+
+                        <!-- Payment Settlement Modal -->
+                        {% if b.balance_amount > 0 %}
+                        <div class="modal fade text-start" id="payModal{{ b.id }}" tabindex="-1">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <div class="modal-content rounded-4 border-0 shadow">
+                                    <div class="modal-header border-0 pb-0">
+                                        <h5 class="modal-title fw-bold text-dark">
+                                            <i class="fa-solid fa-indian-rupee-sign text-success me-2"></i>Record Payment (பணம் வசூல்)
+                                        </h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <form method="post" action="{% url 'billing:invoice_update_payment' b.id %}">
+                                        {% csrf_token %}
+                                        <div class="modal-body">
+                                            <div class="p-3 bg-light rounded-3 mb-3">
+                                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                                    <span>Bill Number:</span>
+                                                    <span class="fw-bold text-dark">{{ b.invoice_number }}</span>
+                                                </div>
+                                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                                    <span>Customer:</span>
+                                                    <span class="fw-semibold text-dark">{{ b.customer_name }}</span>
+                                                </div>
+                                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                                    <span>Grand Total:</span>
+                                                    <span>₹{{ b.grand_total|floatformat:2 }}</span>
+                                                </div>
+                                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                                    <span>Already Paid:</span>
+                                                    <span class="text-success">₹{{ b.paid_amount|floatformat:2 }}</span>
+                                                </div>
+                                                <div class="d-flex justify-content-between fw-bold text-danger border-top pt-2 mt-2">
+                                                    <span>Remaining Balance Due:</span>
+                                                    <span>₹{{ b.balance_amount|floatformat:2 }}</span>
+                                                </div>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label small fw-semibold text-secondary">Payment Amount (₹) *</label>
+                                                <input type="number" step="0.01" min="0.01" max="{{ b.balance_amount }}" name="amount" class="form-control fw-bold fs-5 text-success" value="{{ b.balance_amount }}" required>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label small fw-semibold text-secondary">Payment Method</label>
+                                                <select name="payment_method" class="form-select">
+                                                    <option value="Cash" selected>Cash (ரொக்கம்)</option>
+                                                    <option value="Online">Online Payment (UPI / GPay / PhonePe / Card)</option>
+                                                    <option value="Bank Transfer">Bank Transfer (வங்கி பரிமாற்றம்)</option>
+                                                </select>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label small fw-semibold text-secondary">Notes (Optional)</label>
+                                                <input type="text" name="notes" class="form-control" placeholder="e.g. Received via GPay / Cash counter">
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer border-0 pt-0">
+                                            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                                            <button type="submit" class="btn btn-success fw-semibold px-4"><i class="fa-solid fa-check me-1"></i> Update Payment</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="11" class="text-center py-5 text-muted">
+                        <i class="fa-solid fa-receipt fs-1 mb-2 text-secondary opacity-50"></i>
+                        <div>No shop bills found matching your selected filters.</div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

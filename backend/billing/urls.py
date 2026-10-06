@@ -99,6 +99,8 @@ urlpatterns = [
     # Background REST API for Windows App auto-sync and real-time live poller
     path("api/health/", api_views.HealthCheckView.as_view(), name="api-health"),
     path("api/live-status/", api_views.LiveStatusView.as_view(), name="api-live-status"),
+    path("api/updates/check/", api_views.UpdateCheckView.as_view(), name="api-update-check"),
+    path("api/updates/download/exe/", api_views.UpdateDownloadView.as_view(), name="api-update-download-exe"),
     path("api/sync/push/", api_views.SyncPushView.as_view(), name="api-sync-push"),
     path("api/sync/pull/", api_views.SyncPullView.as_view(), name="api-sync-pull"),
     path(

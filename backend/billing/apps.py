@@ -10,7 +10,7 @@ def auto_seed_default_users(sender, **kwargs):
     """
     try:
         from django.contrib.auth.models import User
-        from .models import UserProfile, CompanySettings, Branch
+        from .models import UserProfile, CompanySettings, Branch, SoftwareUpdate
 
         # 1. Initialize Company Settings
         CompanySettings.get_settings()
@@ -59,6 +59,17 @@ def auto_seed_default_users(sender, **kwargs):
         prof_op.device_limit = 5
         prof_op.access_mode = "online_offline"
         prof_op.save()
+
+        # 6. Auto-publish Current Code Version to SoftwareUpdate table
+        from .version import APP_VERSION, APP_TITLE, APP_RELEASE_NOTES
+        SoftwareUpdate.objects.update_or_create(
+            version=APP_VERSION,
+            defaults={
+                "title": APP_TITLE,
+                "release_notes": APP_RELEASE_NOTES,
+                "is_published": True,
+            }
+        )
 
     except Exception:
         pass

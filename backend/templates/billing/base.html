@@ -345,6 +345,7 @@
                 if (notesModal) notesModal.hide();
             }
 
+            const msg = data.message || "Software update applied successfully! Continuing billing uninterrupted.";
             const toast = document.createElement('div');
             toast.className = 'position-fixed bottom-0 end-0 p-3';
             toast.style.zIndex = '1100';
@@ -352,7 +353,7 @@
                 <div class="toast show align-items-center text-white bg-success border-0 shadow-lg rounded-3" role="alert">
                     <div class="d-flex">
                         <div class="toast-body fw-bold">
-                            <i class="fa-solid fa-check-circle me-2"></i> Software update applied successfully! Continuing billing uninterrupted.
+                            <i class="fa-solid fa-check-circle me-2"></i> ${msg}
                         </div>
                         <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
                     </div>

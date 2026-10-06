@@ -1,3 +1,4 @@
+import os
 import uuid
 import base64
 import csv
@@ -3196,19 +3197,40 @@ def client_apply_software_update(request):
     Client applies/acknowledges software update:
     - Does NOT disrupt active billing or reset current invoice forms.
     - Updates session state and returns JSON for AJAX calls or redirects back.
+    - If running in desktop app and pending update is ready, schedules seamless detached restart.
     """
     latest = SoftwareUpdate.get_latest_update()
     version = latest.version if latest else "v2.5.0"
     request.session["applied_update_version"] = version
 
+    is_desktop = os.getenv("IS_DESKTOP_APP") == "True"
+    restarting = False
+    if is_desktop:
+        try:
+            from auto_updater import get_auto_updater
+            updater = get_auto_updater()
+            if updater and updater.is_update_ready():
+                restarting = True
+                updater.schedule_restart()
+        except Exception:
+            pass
+
+    msg = (
+        f"Software updated to {version}! Desktop app is restarting smoothly to finalize upgrade."
+        if restarting else
+        f"Software updated to {version} successfully."
+    )
+
     if request.headers.get("x-requested-with") == "XMLHttpRequest" or request.GET.get("format") == "json":
         return JsonResponse({
             "status": "success",
-            "message": f"Software updated to {version} successfully.",
-            "version": version
+            "message": msg,
+            "version": version,
+            "is_desktop": is_desktop,
+            "restarting": restarting,
         })
 
-    messages.success(request, f"Software updated to {version} successfully.")
+    messages.success(request, msg)
     return redirect(request.META.get("HTTP_REFERER", "/"))
 
 

@@ -426,3 +426,117 @@ class LiveStatusView(views.APIView):
             "company_version": company_ver,
         })
 
+
+class UpdateCheckView(views.APIView):
+    """
+    Checks for available software updates.
+    Returns the latest published version metadata, release notes, and download URL for Windows desktop POS.
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        from .version import APP_VERSION, APP_TITLE, APP_RELEASE_NOTES
+        from django.urls import reverse
+        from django.conf import settings
+
+        current_version = request.query_params.get("current_version", "").strip()
+        latest = SoftwareUpdate.get_latest_update()
+
+        if latest:
+            latest_version = latest.version
+            title = latest.title
+            release_notes = latest.release_notes
+            published_at = latest.published_at.isoformat() if latest.published_at else ""
+        else:
+            latest_version = APP_VERSION
+            title = APP_TITLE
+            release_notes = APP_RELEASE_NOTES
+            published_at = timezone.now().isoformat()
+
+        update_available = bool(current_version and current_version != latest_version)
+        download_url = request.build_absolute_uri(reverse("billing:api-update-download-exe"))
+
+        file_size = 0
+        possible_paths = [
+            settings.BASE_DIR.parent / "MathanHub.exe",
+            settings.BASE_DIR / "MathanHub.exe",
+            settings.BASE_DIR.parent / "SmartBillingPOS.exe",
+            settings.BASE_DIR / "SmartBillingPOS.exe",
+        ]
+        for p in possible_paths:
+            try:
+                if p.exists() and p.is_file():
+                    file_size = p.stat().st_size
+                    break
+            except Exception:
+                pass
+
+        return Response({
+            "status": "success",
+            "current_version": current_version,
+            "latest_version": latest_version,
+            "update_available": update_available,
+            "title": title,
+            "release_notes": release_notes,
+            "published_at": published_at,
+            "download_url": download_url,
+            "file_size": file_size,
+        })
+
+
+class UpdateDownloadView(views.APIView):
+    """
+    Serves or redirects to the latest compiled Windows Desktop Executable binary.
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def _get_target_file(self):
+        from django.conf import settings
+        possible_paths = [
+            settings.BASE_DIR.parent / "MathanHub.exe",
+            settings.BASE_DIR / "MathanHub.exe",
+            settings.BASE_DIR.parent / "dist" / "MathanHub.exe",
+            settings.BASE_DIR.parent / "SmartBillingPOS.exe",
+            settings.BASE_DIR / "SmartBillingPOS.exe",
+        ]
+        for p in possible_paths:
+            try:
+                if p.exists() and p.is_file():
+                    return p
+            except Exception:
+                pass
+        return None
+
+    def get(self, request):
+        import os
+        from django.http import FileResponse, Http404, HttpResponseRedirect
+
+        external_url = os.getenv("EXE_DOWNLOAD_URL")
+        if external_url:
+            return HttpResponseRedirect(external_url)
+
+        target_file = self._get_target_file()
+        if not target_file:
+            raise Http404("Executable update binary is not available on this server.")
+
+        response = FileResponse(
+            open(target_file, "rb"),
+            as_attachment=True,
+            filename=target_file.name,
+            content_type="application/vnd.microsoft.portable-executable"
+        )
+        response["Content-Length"] = target_file.stat().st_size
+        return response
+
+    def head(self, request):
+        from django.http import HttpResponse
+        target_file = self._get_target_file()
+        if not target_file:
+            return HttpResponse(status=404)
+        response = HttpResponse()
+        response["Content-Length"] = target_file.stat().st_size
+        response["Content-Type"] = "application/vnd.microsoft.portable-executable"
+        return response
+

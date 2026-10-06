@@ -84,6 +84,8 @@ def build():
         "--hidden-import=django.contrib.sessions.backends.db",
         "--hidden-import=django.db.backends.sqlite3",
         "--hidden-import=sync_manager",
+        "--hidden-import=auto_updater",
+        "--hidden-import=billing.version",
         "--hidden-import=requests",
         "--hidden-import=sqlite3",
         f"--distpath={dist_dir}",

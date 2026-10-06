@@ -57,8 +57,8 @@ os.environ["DEVICE_ID"] = get_hardware_device_id()
 
 from django.core.management import call_command
 from django.contrib.auth.models import User
-from billing.models import Product, Customer, ActiveUserSession, RegisteredDevice
 from sync_manager import SyncManager
+from auto_updater import get_auto_updater
 
 
 def init_database():
@@ -184,10 +184,13 @@ def main():
     server = start_waitress_server(port)
     app_url = f"http://127.0.0.1:{port}/"
 
-    # 3. Start Background Auto-Sync Worker
+    # 3. Start Background Auto-Sync & Auto-Updater Workers
     cloud_url = os.getenv("CLOUD_SERVER_URL", "https://billing-software-render.onrender.com")
     sync_worker = SyncManager(server_url=cloud_url, interval_seconds=10)
     sync_worker.start()
+
+    updater_worker = get_auto_updater(server_url=cloud_url)
+    updater_worker.start()
 
     # 4. Launch Desktop Window
     try:
@@ -224,6 +227,7 @@ def main():
             pass
 
     # Cleanup
+    updater_worker.stop()
     sync_worker.stop()
     server.close()
     logger.info("MathanHub shut down cleanly.")

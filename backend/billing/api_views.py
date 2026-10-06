@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from .models import (
     Product, Customer, Invoice, InvoiceItem, SyncLog,
     CompanySettings, SoftwareUpdate, Purchase, PaymentRecord,
-    Branch, UserProfile, RegisteredDevice
+    Branch, UserProfile, RegisteredDevice, ProductCategory
 )
 from .serializers import (
     ProductSerializer,
@@ -196,6 +196,7 @@ class SyncPushView(views.APIView):
         products_data = data.get("products", [])
         customers_data = data.get("customers", [])
         payments_data = data.get("payments", [])
+        categories_data = data.get("categories", [])
 
         synced_uuids = []
         synced_products = []
@@ -204,6 +205,12 @@ class SyncPushView(views.APIView):
 
         try:
             with transaction.atomic():
+                # 0. Sync Categories created offline
+                for cat_name in categories_data:
+                    c_clean = (cat_name or "").strip()
+                    if c_clean:
+                        ProductCategory.objects.get_or_create(name=c_clean, client=client_user)
+
                 # 1. Sync Products (created, updated, or removed/deactivated offline)
                 for p_data in products_data:
                     sku = p_data.get("sku")
@@ -536,6 +543,7 @@ class SyncPullView(views.APIView):
             "server_time": timezone.now().isoformat(),
             "products_count": len(products_data),
             "products": products_data,
+            "categories": list(ProductCategory.objects.values_list("name", flat=True).distinct()),
             "customers_count": len(customers_data),
             "customers": customers_data,
             "invoices_count": len(invoices_data),

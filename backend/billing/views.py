@@ -163,7 +163,7 @@ def login_view(request):
 
     if switch_user and is_desktop:
         clear_desktop_remembered_user()
-        pos_cfg = {}
+        pos_cfg = get_desktop_pos_config()
 
     remembered_username = pos_cfg.get("remembered_username", "") if is_desktop else ""
     is_first_time_desktop = is_desktop and not bool(pos_cfg.get("is_activated"))
@@ -206,52 +206,73 @@ def login_view(request):
 
         user = authenticate(request, username=username, password=password)
         if user is None:
-            # Check if credentials verify against Cloud Server (e.g. client created on Web)
-            cloud_server_url = (os.getenv("CLOUD_SERVER_URL", "https://billing-software-render.onrender.com")).rstrip("/")
-            cloud_err_msg = ""
+            # Check if credentials verify against remote Web server (e.g. client created on Web Admin)
+            candidate_urls = []
             try:
-                import requests
-                auth_resp = requests.post(
-                    f"{cloud_server_url}/api/sync/auth/",
-                    json={"username": username, "password": password, "device_id": device_id},
-                    timeout=5.0
-                )
-                if auth_resp.status_code == 200:
-                    auth_data = auth_resp.json()
-                    if auth_data.get("status") == "success":
-                        u_data = auth_data.get("user", {})
-                        p_data = auth_data.get("profile", {})
-                        # Provision or update client user in local SQLite DB
-                        loc_u, _ = User.objects.get_or_create(username=username)
-                        loc_u.email = u_data.get("email", loc_u.email)
-                        loc_u.first_name = u_data.get("first_name", loc_u.first_name)
-                        loc_u.last_name = u_data.get("last_name", loc_u.last_name)
-                        loc_u.is_staff = u_data.get("is_staff", False)
-                        loc_u.is_superuser = u_data.get("is_superuser", False)
-                        loc_u.set_password(password)  # Store password hash locally so subsequent logins work offline!
-                        loc_u.save()
-
-                        loc_p, _ = UserProfile.objects.get_or_create(user=loc_u)
-                        loc_p.role = p_data.get("role", loc_p.role)
-                        loc_p.shop_name = p_data.get("shop_name", loc_p.shop_name)
-                        loc_p.shop_address = p_data.get("shop_address", loc_p.shop_address)
-                        loc_p.business_type = p_data.get("business_type", loc_p.business_type)
-                        loc_p.access_mode = p_data.get("access_mode", loc_p.access_mode)
-                        loc_p.device_limit = p_data.get("device_limit", loc_p.device_limit)
-                        loc_p.phone = p_data.get("phone", loc_p.phone)
-                        loc_p.gst_number = p_data.get("gst_number", loc_p.gst_number)
-                        loc_p.bank_name = p_data.get("bank_name", loc_p.bank_name)
-                        loc_p.account_number = p_data.get("account_number", loc_p.account_number)
-                        loc_p.ifsc_code = p_data.get("ifsc_code", loc_p.ifsc_code)
-                        loc_p.avatar_base64 = p_data.get("avatar_base64", loc_p.avatar_base64)
-                        loc_p.shop_logo_base64 = p_data.get("shop_logo_base64", loc_p.shop_logo_base64)
-                        loc_p.save()
-
-                        user = authenticate(request, username=username, password=password)
-                elif auth_resp.status_code in (401, 403):
-                    cloud_err_msg = auth_resp.json().get("message", "")
+                from sync_manager import get_sync_manager
+                candidate_urls = get_sync_manager().get_candidate_urls()
             except Exception:
                 pass
+            if not candidate_urls:
+                cfg_url = pos_cfg.get("server_url", "").strip() if is_desktop else ""
+                candidate_urls = [
+                    u for u in [
+                        cfg_url,
+                        os.getenv("CLOUD_SERVER_URL", "").strip(),
+                        "http://127.0.0.1:8000",
+                        "http://localhost:8000",
+                        "https://billing-software-render.onrender.com"
+                    ] if u
+                ]
+
+            cloud_err_msg = ""
+            for candidate_url in candidate_urls:
+                candidate_url = candidate_url.rstrip("/")
+                try:
+                    import requests
+                    auth_resp = requests.post(
+                        f"{candidate_url}/api/sync/auth/",
+                        json={"username": username, "password": password, "device_id": device_id},
+                        timeout=3.5
+                    )
+                    if auth_resp.status_code == 200:
+                        auth_data = auth_resp.json()
+                        if auth_data.get("status") == "success":
+                            u_data = auth_data.get("user", {})
+                            p_data = auth_data.get("profile", {})
+                            # Provision or update client user in local SQLite DB
+                            loc_u, _ = User.objects.get_or_create(username=username)
+                            loc_u.email = u_data.get("email", loc_u.email)
+                            loc_u.first_name = u_data.get("first_name", loc_u.first_name)
+                            loc_u.last_name = u_data.get("last_name", loc_u.last_name)
+                            loc_u.is_staff = u_data.get("is_staff", False)
+                            loc_u.is_superuser = u_data.get("is_superuser", False)
+                            loc_u.set_password(password)  # Store password hash locally so subsequent logins work offline!
+                            loc_u.save()
+
+                            loc_p, _ = UserProfile.objects.get_or_create(user=loc_u)
+                            loc_p.role = p_data.get("role", loc_p.role)
+                            loc_p.shop_name = p_data.get("shop_name", loc_p.shop_name)
+                            loc_p.shop_address = p_data.get("shop_address", loc_p.shop_address)
+                            loc_p.business_type = p_data.get("business_type", loc_p.business_type)
+                            loc_p.access_mode = p_data.get("access_mode", loc_p.access_mode)
+                            loc_p.device_limit = p_data.get("device_limit", loc_p.device_limit)
+                            loc_p.phone = p_data.get("phone", loc_p.phone)
+                            loc_p.gst_number = p_data.get("gst_number", loc_p.gst_number)
+                            loc_p.bank_name = p_data.get("bank_name", loc_p.bank_name)
+                            loc_p.account_number = p_data.get("account_number", loc_p.account_number)
+                            loc_p.ifsc_code = p_data.get("ifsc_code", loc_p.ifsc_code)
+                            loc_p.avatar_base64 = p_data.get("avatar_base64", loc_p.avatar_base64)
+                            loc_p.shop_logo_base64 = p_data.get("shop_logo_base64", loc_p.shop_logo_base64)
+                            loc_p.save()
+
+                            user = authenticate(request, username=username, password=password)
+                            if user:
+                                break
+                    elif auth_resp.status_code in (401, 403):
+                        cloud_err_msg = auth_resp.json().get("message", "")
+                except Exception:
+                    continue
 
         if user is None:
             messages.error(request, cloud_err_msg or "Invalid username or password. Please try again.")
@@ -373,6 +394,7 @@ def login_view(request):
                     StockLog.objects.all().delete()
                     Customer.objects.all().delete()
                     Product.objects.all().delete()
+                    ProductCategory.objects.all().delete()
                     Branch.objects.exclude(branch_code="MAIN-01").delete()
                 except Exception:
                     pass
@@ -437,8 +459,10 @@ def logout_view(request):
         log_activity(request, "LOGOUT", f"User '{request.user.username}' logged out.")
     if session_key:
         ActiveUserSession.objects.filter(session_key=session_key).delete()
+    if is_desktop_environment(request):
+        clear_desktop_remembered_user()
     logout(request)
-    messages.info(request, "You have been logged out successfully.")
+    messages.info(request, "You have been logged out successfully. Please enter your username and password to log in.")
     return redirect("billing:login")
 
 
@@ -1803,6 +1827,7 @@ def admin_user_create(request):
             "USER_CREATE",
             f"Created new {role.upper()} account '{username}' ({b_type_display}, Shop: {shop_name or 'N/A'}, Phone: {phone}, {device_info_str})"
         )
+        trigger_desktop_sync_safe()
         messages.success(request, f"Client/User '{username}' created successfully! ({b_type_display}, {device_info_str})")
 
     return redirect("billing:admin_panel")
@@ -1881,6 +1906,7 @@ def admin_user_edit(request, user_id):
             "USER_EDIT",
             f"Admin '{request.user.username}' updated user account '{user.username}' (Shop: {profile.shop_name}, Business: {profile.business_type}, Limit: {profile.device_limit} devices)"
         )
+        trigger_desktop_sync_safe()
         messages.success(request, f"User account '{user.username}' updated successfully!")
 
     return redirect("billing:admin_panel")
@@ -3648,3 +3674,59 @@ def admin_delete_customer_or_data(request, customer_id):
             messages.success(request, f"All {inv_count} bills for customer '{cust_name}' cleared successfully (Profile retained).")
 
     return redirect("billing:admin_panel")
+
+
+def sync_status_view(request):
+    """Returns real-time sync connectivity status and pending offline bills count"""
+    try:
+        from sync_manager import get_sync_manager
+        sm = get_sync_manager()
+        data = sm.get_status_dict()
+    except Exception:
+        data = {
+            "is_online": True,
+            "is_syncing": False,
+            "server_url": "cloud",
+            "last_sync_time": None,
+            "last_sync_status": "cloud",
+            "pending_count": 0,
+            "is_desktop": False,
+        }
+    return JsonResponse(data)
+
+
+def sync_trigger_view(request):
+    """Triggers background sync cycle and returns immediate status"""
+    if request.method == "POST":
+        try:
+            from sync_manager import get_sync_manager
+            sm = get_sync_manager()
+            sm.trigger_sync()
+            return JsonResponse({"status": "success", "message": "Database sync triggered successfully."})
+        except Exception as e:
+            return JsonResponse({"status": "error", "message": str(e)}, status=500)
+    return JsonResponse({"status": "error", "message": "POST method required."}, status=405)
+
+
+def sync_server_config_view(request):
+    """Allows setting or retrieving the target cloud sync server URL"""
+    from .device_utils import get_desktop_pos_config, save_desktop_pos_config
+    if request.method == "POST":
+        new_url = request.POST.get("server_url", "").strip().rstrip("/")
+        if new_url:
+            save_desktop_pos_config({"server_url": new_url})
+            try:
+                from sync_manager import get_sync_manager
+                sm = get_sync_manager()
+                sm.server_url = new_url
+                sm.trigger_sync()
+            except Exception:
+                pass
+            messages.success(request, f"Sync Server URL updated to: {new_url}")
+        else:
+            messages.error(request, "Please enter a valid server URL.")
+        return redirect("billing:sync_status")
+
+    cfg = get_desktop_pos_config()
+    return JsonResponse({"server_url": cfg.get("server_url", "")})
+

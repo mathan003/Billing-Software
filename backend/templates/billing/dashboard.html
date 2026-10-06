@@ -220,7 +220,12 @@
 
                 <!-- Category Filter -->
                 <div class="mb-2">
-                    <label class="form-label small fw-semibold text-secondary"><i class="fa-solid fa-filter text-primary me-1"></i>Filter Category (வகை வாரியாக வடிகட்டு)</label>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="form-label small fw-semibold text-secondary mb-0"><i class="fa-solid fa-filter text-primary me-1"></i>Filter Category (வகை)</label>
+                        <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-2 py-0 small open-add-cat-btn" style="font-size: 0.75rem;" title="Add or remove categories">
+                            <i class="fa-solid fa-tags me-1"></i> Add / Remove Category
+                        </button>
+                    </div>
                     <select class="form-select form-select-sm bg-light" id="dashCategorySelect">
                         <option value="">-- All Categories (அனைத்து வகைகள்) --</option>
                         {% for cat in categories %}

@@ -85,9 +85,8 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 
-# Long-lived persistent session: 1 year (User stays logged in until manual logout)
-SESSION_COOKIE_AGE = 31536000  # 365 days
-SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+# Persistent sessions expire when the window closes so relaunch requires password unlock
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_SAVE_EVERY_REQUEST = True
 
 ROOT_URLCONF = "billing_backend.urls"

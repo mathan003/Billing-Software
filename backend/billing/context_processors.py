@@ -54,11 +54,8 @@ def session_security_context(request):
         available_software_update = latest_update
 
     # Client-specific shop profile with fallback to company settings
-    raw_shop = (profile.shop_name if (profile and profile.shop_name) else company.company_name)
-    if "supermarket" in raw_shop.lower() and "mathanhub" in raw_shop.lower():
-        shop_name = raw_shop.replace("Supermarket", "").replace("supermarket", "").strip() or "MathanHub"
-    else:
-        shop_name = raw_shop
+    raw_shop = (profile.shop_name if (profile and profile.shop_name) else (company.company_name if company else "MathanHub"))
+    shop_name = (raw_shop or "MathanHub").replace("Supermarket", "").replace("supermarket", "").strip() or "MathanHub"
     shop_address = (profile.shop_address if (profile and profile.shop_address) else company.address)
     shop_phone = (profile.phone if (profile and profile.phone) else company.phone)
     shop_email = (request.user.email if request.user.email else company.email)
@@ -70,8 +67,8 @@ def session_security_context(request):
     business_type = (profile.business_type if profile else "grocery")
 
     from django.utils import timezone
-    from django.db.models import Q
-    from .models import Customer
+    from django.db.models import Q, Count
+    from .models import Customer, ProductCategory, Product
 
     today_date_str = timezone.now().strftime("%Y-%m-%d")
     c_filter = Q(client=request.user) | Q(client__isnull=True) if not is_admin else Q()
@@ -79,6 +76,30 @@ def session_security_context(request):
         global_customers = Customer.objects.filter(c_filter).order_by("name")
     except Exception:
         global_customers = []
+
+    global_categories = []
+    global_category_list_data = []
+    try:
+        prod_cats = set(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True))
+        saved_cats = set(ProductCategory.objects.filter(c_filter).exclude(name="").values_list("name", flat=True))
+        all_cats = {"General"} | prod_cats | saved_cats
+        global_categories = sorted([c.strip() for c in all_cats if c and c.strip()])
+        cat_counts_map = dict(
+            Product.objects.filter(c_filter, is_active=True)
+            .values("category")
+            .annotate(cnt=Count("id"))
+            .values_list("category", "cnt")
+        )
+        global_category_list_data = [
+            {
+                "name": cat_name,
+                "product_count": cat_counts_map.get(cat_name, 0),
+                "is_default": (cat_name.lower() == "general"),
+            }
+            for cat_name in global_categories
+        ]
+    except Exception:
+        pass
 
     return {
         "sec_token": sec_token,
@@ -100,6 +121,8 @@ def session_security_context(request):
         "active_ifsc_code": ifsc_code,
         "business_type": business_type,
         "global_customers": global_customers,
+        "global_categories": global_categories,
+        "global_category_list_data": global_category_list_data,
         "today_date_str": today_date_str,
     }
 

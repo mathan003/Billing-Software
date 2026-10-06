@@ -23,6 +23,9 @@ class SyncManager:
         self.thread = None
         self._manual_trigger = threading.Event()
         self.is_online = False
+        self.is_syncing = False
+        self.last_sync_time = None
+        self.last_sync_status = "idle"
         self.device_id = os.getenv("DEVICE_ID", f"WIN-POS-{hex(hash(os.environ.get('COMPUTERNAME', 'WIN')))[2:8].upper()}")
 
     def start(self):
@@ -41,9 +44,58 @@ class SyncManager:
     def trigger_sync(self):
         self._manual_trigger.set()
 
+    def get_candidate_urls(self):
+        """Returns ordered list of candidate servers to connect to (local dev, user configured, cloud)"""
+        urls = []
+        try:
+            from billing.device_utils import get_desktop_pos_config
+            pos_cfg = get_desktop_pos_config()
+            cfg_url = pos_cfg.get("server_url", "").strip()
+            if cfg_url:
+                urls.append(cfg_url.rstrip("/"))
+        except Exception:
+            pass
+
+        env_url = os.getenv("CLOUD_SERVER_URL", "").strip()
+        if env_url:
+            urls.append(env_url.rstrip("/"))
+
+        if self.server_url and self.server_url not in urls:
+            urls.append(self.server_url.rstrip("/"))
+
+        # Default local Django dev server
+        for local_url in ["http://127.0.0.1:8000", "http://localhost:8000"]:
+            if local_url not in urls:
+                urls.append(local_url)
+
+        # Fallback Render deployment
+        render_url = "https://billing-software-render.onrender.com"
+        if render_url not in urls:
+            urls.append(render_url)
+
+        return urls
+
+    def get_status_dict(self):
+        """Returns clean status summary for the web and desktop UI sync badges"""
+        try:
+            from billing.models import Invoice
+            pending_count = Invoice.objects.exclude(notes__contains="[CLOUD_SYNCED]").count()
+        except Exception:
+            pending_count = 0
+
+        return {
+            "is_online": self.is_online,
+            "is_syncing": self.is_syncing,
+            "server_url": self.server_url,
+            "last_sync_time": self.last_sync_time.strftime("%H:%M:%S") if self.last_sync_time else None,
+            "last_sync_status": self.last_sync_status,
+            "pending_count": pending_count,
+            "is_desktop": True,
+        }
+
     def _run_loop(self):
         # Initial small delay so local web server starts up first
-        time.sleep(3)
+        time.sleep(2)
         while self.running:
             try:
                 self._sync_cycle()
@@ -55,23 +107,45 @@ class SyncManager:
             self._manual_trigger.clear()
 
     def _sync_cycle(self):
-        # 1. Ping cloud server
-        try:
-            resp = requests.get(f"{self.server_url}/api/health/", timeout=4.0)
-            if resp.status_code == 200:
-                self.is_online = True
-            else:
-                self.is_online = False
-                return
-        except Exception:
+        # 1. Probe candidate servers to find a responsive endpoint
+        active_url = None
+        candidates = self.get_candidate_urls()
+        ordered_candidates = [self.server_url] + [u for u in candidates if u != self.server_url]
+
+        for url in ordered_candidates:
+            if not url:
+                continue
+            try:
+                resp = requests.get(f"{url}/api/health/", timeout=2.5)
+                if resp.status_code == 200:
+                    active_url = url
+                    break
+            except Exception:
+                continue
+
+        if not active_url:
             self.is_online = False
+            self.last_sync_status = "offline"
             return
 
-        # 2. Push unsynced local data to cloud
-        self._push_local_data()
+        self.server_url = active_url
+        self.is_online = True
+        self.is_syncing = True
 
-        # 3. Pull latest cloud data to local DB
-        self._pull_cloud_data()
+        try:
+            # 2. Push unsynced local data to cloud
+            self._push_local_data()
+
+            # 3. Pull latest cloud data to local DB
+            self._pull_cloud_data()
+
+            self.last_sync_time = datetime.now()
+            self.last_sync_status = "success"
+        except Exception as e:
+            logger.debug(f"Sync error during cycle: {e}")
+            self.last_sync_status = f"error: {e}"
+        finally:
+            self.is_syncing = False
 
     def _push_local_data(self):
         try:
@@ -120,8 +194,24 @@ class SyncManager:
                     "items": items_data,
                 })
 
-            # Master cloud catalog is authoritative. Client only pushes offline bills and customers.
+            from billing.models import ProductCategory
+            categories_payload = list(ProductCategory.objects.values_list("name", flat=True).distinct())
+
+            # Push local active products catalog
             products_payload = []
+            for p in Product.objects.filter(is_active=True):
+                products_payload.append({
+                    "sku": p.sku,
+                    "name": p.name,
+                    "name_tamil": p.name_tamil,
+                    "category": p.category,
+                    "unit": p.unit,
+                    "price": str(p.price),
+                    "cost_price": str(p.cost_price),
+                    "tax_percent": str(p.tax_percent),
+                    "stock_quantity": str(p.stock_quantity),
+                    "is_active": p.is_active,
+                })
 
             # Customers modified locally
             customers_payload = []
@@ -134,7 +224,7 @@ class SyncManager:
                     "gst_number": c.gst_number or "",
                 })
 
-            if not invoices_payload and not customers_payload:
+            if not invoices_payload and not customers_payload and not products_payload:
                 return
 
             push_data = {
@@ -143,6 +233,7 @@ class SyncManager:
                 "invoices": invoices_payload,
                 "products": products_payload,
                 "customers": customers_payload,
+                "categories": categories_payload,
             }
 
             resp = requests.post(
@@ -258,6 +349,13 @@ class SyncManager:
                                 "is_active": True,
                             }
                         )
+
+                # 3.5. Synchronize Categories locally
+                cloud_categories = data.get("categories", [])
+                from billing.models import ProductCategory
+                for c_name in cloud_categories:
+                    if c_name and c_name.strip():
+                        ProductCategory.objects.get_or_create(name=c_name.strip())
 
                 # 4. Update products locally without touching existing invoice records
                 for p_data in products:

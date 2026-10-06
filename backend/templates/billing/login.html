@@ -88,6 +88,14 @@
                     After registration, this system will remember your username and only require your password.
                 </div>
             </div>
+        {% elif is_desktop_app and not remembered_username %}
+            <!-- Desktop App Login after Manual Logout (Offline Allowed) -->
+            <div class="alert alert-light border rounded-3 small mb-3 text-secondary">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-desktop text-success"></i>
+                    <span><strong>Device Activated (சாதனம் இயக்கத்தில் உள்ளது):</strong> Enter username and password to log in.</span>
+                </div>
+            </div>
         {% endif %}
 
         <form method="post" action="{% url 'billing:login' %}">
@@ -155,7 +163,7 @@
                 </div>
 
                 <button type="submit" class="btn btn-login w-100">
-                    <i class="fa-solid fa-right-to-bracket me-2"></i> {% if is_desktop_app %}Register Device & Sign In{% else %}Sign In to Store{% endif %}
+                    <i class="fa-solid fa-right-to-bracket me-2"></i> {% if is_desktop_app %}{% if is_first_time_desktop %}Register Device & Sign In{% else %}Sign In to POS{% endif %}{% else %}Sign In to Store{% endif %}
                 </button>
             {% endif %}
             <input type="hidden" name="device_id" id="loginDeviceId" value="{{ device_id }}">

@@ -143,6 +143,15 @@ def init_database():
             Customer.objects.create(name="Ramesh Kumar", phone="9876543210")
             Customer.objects.create(name="Suresh Store", phone="9841012345")
 
+        # Clear stale active sessions on app launch so terminal requires password unlock
+        try:
+            from django.contrib.sessions.models import Session
+            Session.objects.all().delete()
+            ActiveUserSession.objects.all().delete()
+            logger.info("Cleared prior active sessions on launch; password unlock armed.")
+        except Exception as e:
+            logger.debug(f"Session cleanup notice: {e}")
+
     except Exception as e:
         logger.error(f"Error initializing local database: {e}")
 
@@ -182,7 +191,7 @@ def main():
     # 2. Pick free port & launch embedded server
     port = find_available_port(8765)
     server = start_waitress_server(port)
-    app_url = f"http://127.0.0.1:{port}/"
+    app_url = f"http://127.0.0.1:{port}/login/"
 
     # 3. Start Background Auto-Sync & Auto-Updater Workers
     cloud_url = os.getenv("CLOUD_SERVER_URL", "https://billing-software-render.onrender.com")

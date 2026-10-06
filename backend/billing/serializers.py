@@ -148,3 +148,4 @@ class SyncPushRequestSerializer(serializers.Serializer):
     products = SyncProductPayloadSerializer(many=True, required=False, default=list)
     customers = SyncCustomerPayloadSerializer(many=True, required=False, default=list)
     payments = SyncPaymentPayloadSerializer(many=True, required=False, default=list)
+    categories = serializers.ListField(child=serializers.CharField(), required=False, default=list)

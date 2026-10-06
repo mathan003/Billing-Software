@@ -370,3 +370,13 @@ class BillingFrame(ctk.CTkFrame):
         self.cust_phone_var.set("")
         self.cust_name_var.set("Cash Customer")
         self.load_products()  # Reload stock
+
+
+if __name__ == "__main__":
+    import os, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from windows_app.app import main
+    main()

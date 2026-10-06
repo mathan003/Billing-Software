@@ -106,6 +106,9 @@ urlpatterns = [
     path("api/updates/download/exe/", api_views.UpdateDownloadView.as_view(), name="api-update-download-exe"),
     path("api/sync/push/", api_views.SyncPushView.as_view(), name="api-sync-push"),
     path("api/sync/pull/", api_views.SyncPullView.as_view(), name="api-sync-pull"),
+    path("api/sync/status/", views.sync_status_view, name="api-sync-status"),
+    path("api/sync/trigger/", views.sync_trigger_view, name="api-sync-trigger"),
+    path("api/sync/server/", views.sync_server_config_view, name="api-sync-server"),
     path(
         "api/schema/",
         get_schema_view(

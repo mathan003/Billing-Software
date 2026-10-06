@@ -180,9 +180,24 @@
                             <i class="fa-solid fa-boxes-stacked me-1"></i> Products (பொருட்கள்)
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <button type="button" class="nav-link border-0 bg-transparent text-start w-100 open-add-cat-btn" title="Add & Remove Categories (வகை சேர்க்க / நீக்க)">
+                            <i class="fa-solid fa-tags me-1 text-primary"></i> Categories (வகை)
+                        </button>
+                    </li>
                 </ul>
 
                 <div class="d-flex align-items-center gap-2">
+                    <!-- Real-Time Auto-Sync Live Indicator (Online/Offline Mode) -->
+                    <div id="syncStatusBadgeContainer" class="d-inline-flex align-items-center">
+                        <button type="button" class="btn btn-sm rounded-pill px-2 py-1 border d-inline-flex align-items-center gap-1 shadow-sm text-decoration-none" id="globalSyncBtn" title="Network status & Auto-sync. Click to sync now." onclick="triggerImmediateSync(event)">
+                            <span class="spinner-grow spinner-grow-sm text-success d-none" id="syncSpinner" role="status" style="width: 8px; height: 8px;"></span>
+                            <i class="fa-solid fa-cloud-check text-success" id="syncStatusIcon"></i>
+                            <span class="small fw-semibold text-dark" id="syncStatusText" style="font-size: 0.78rem;">Online</span>
+                            <span class="badge bg-warning text-dark small d-none" id="unsyncedCountBadge" style="font-size: 0.7rem;">0 pending</span>
+                        </button>
+                    </div>
+
                     {% if user.is_authenticated %}
                         <div class="dropdown">
                             <button class="btn btn-light border dropdown-toggle d-flex align-items-center gap-2 rounded-pill px-3 py-1 shadow-sm" type="button" data-bs-toggle="dropdown">
@@ -270,7 +285,7 @@
     <footer class="mt-4 py-3 border-top bg-white text-muted small d-print-none">
         <div class="container-fluid px-lg-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
-                &copy; {% now "Y" %} <strong class="text-dark">{{ active_shop_name|default:"MathanHub" }}</strong> • Smart POS & Billing Management
+                &copy; {% now "Y" %} <strong class="text-dark">{{ active_shop_name|default:"MathanHub"|cut:"Supermarket"|cut:"supermarket"|default:"MathanHub" }}</strong> • Smart POS & Billing Management
             </div>
             <div>
                 <a href="https://mathan003.github.io/my-portfolio/" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 shadow-sm fw-semibold d-inline-flex align-items-center gap-1">
@@ -395,6 +410,9 @@
     </script>
     {% endif %}
 
+    <!-- Shared Global Add & Remove Category Modal -->
+    {% include "billing/includes/category_modal.html" %}
+
     <!-- Mobile Bottom Navigation Bar -->
     <div class="mobile-bottom-bar">
         <a href="{% url 'billing:dashboard' %}{{ sec_param }}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
@@ -458,6 +476,117 @@
     {% if user.is_authenticated %}
         {% include "billing/delete_modal.html" %}
     {% endif %}
+
+    <!-- Real-Time Auto-Sync & Network Reconnection Monitor -->
+    <script>
+        function updateSyncBadge(status) {
+            const icon = document.getElementById("syncStatusIcon");
+            const text = document.getElementById("syncStatusText");
+            const btn = document.getElementById("globalSyncBtn");
+            const badge = document.getElementById("unsyncedCountBadge");
+            const spinner = document.getElementById("syncSpinner");
+
+            if (!btn || !text || !icon) return;
+
+            if (status.is_syncing) {
+                if (spinner) spinner.classList.remove("d-none");
+                icon.className = "fa-solid fa-arrows-rotate fa-spin text-primary";
+                text.innerText = "Syncing...";
+                btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-primary-subtle bg-primary-subtle text-primary d-inline-flex align-items-center gap-1 shadow-sm";
+                return;
+            }
+
+            if (spinner) spinner.classList.add("d-none");
+
+            if (status.is_online) {
+                icon.className = "fa-solid fa-cloud-check text-success";
+                text.innerText = status.is_desktop ? "Online • Synced" : "Connected";
+                btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-success-subtle bg-success-subtle text-success d-inline-flex align-items-center gap-1 shadow-sm";
+                if (badge) {
+                    if (status.pending_count > 0) {
+                        badge.classList.remove("d-none");
+                        badge.innerText = `${status.pending_count} pending`;
+                    } else {
+                        badge.classList.add("d-none");
+                    }
+                }
+            } else {
+                icon.className = "fa-solid fa-cloud-slash text-warning";
+                text.innerText = "Offline Mode";
+                btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-warning-subtle bg-warning-subtle text-dark d-inline-flex align-items-center gap-1 shadow-sm";
+                if (badge) {
+                    if (status.pending_count > 0) {
+                        badge.classList.remove("d-none");
+                        badge.innerText = `${status.pending_count} offline`;
+                    } else {
+                        badge.classList.add("d-none");
+                    }
+                }
+            }
+        }
+
+        function checkSyncStatus() {
+            fetch("/api/sync/status/", { headers: { "X-Requested-With": "XMLHttpRequest" } })
+                .then(res => res.json())
+                .then(data => {
+                    updateSyncBadge(data);
+                })
+                .catch(() => {
+                    updateSyncBadge({ is_online: navigator.onLine, is_desktop: true, pending_count: 0 });
+                });
+        }
+
+        function triggerImmediateSync(e) {
+            if (e) e.preventDefault();
+            updateSyncBadge({ is_syncing: true });
+
+            function getCookie(name) {
+                let cookieValue = null;
+                if (document.cookie && document.cookie !== '') {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                            break;
+                        }
+                    }
+                }
+                return cookieValue;
+            }
+
+            fetch("/api/sync/trigger/", {
+                method: "POST",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRFToken": getCookie("csrftoken") || ""
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                setTimeout(checkSyncStatus, 1200);
+            })
+            .catch(() => {
+                setTimeout(checkSyncStatus, 1500);
+            });
+        }
+
+        // When device reconnects to network: Automatically trigger database sync immediately!
+        window.addEventListener("online", function() {
+            console.log("[Auto-Sync] Network connection detected! Automatically syncing database...");
+            triggerImmediateSync();
+        });
+
+        window.addEventListener("offline", function() {
+            console.log("[Auto-Sync] Network offline. Operating in local mode.");
+            updateSyncBadge({ is_online: false, is_desktop: true, pending_count: 0 });
+        });
+
+        document.addEventListener("DOMContentLoaded", function() {
+            checkSyncStatus();
+            setInterval(checkSyncStatus, 10000);
+        });
+    </script>
 
     {% block extra_js %}{% endblock %}
 </body>

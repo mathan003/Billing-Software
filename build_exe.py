@@ -132,7 +132,7 @@ def build():
         shutil.make_archive(str(mathan_zip_output), "zip", root_dir=str(base_dir), base_dir="MathanHub.exe")
         
         # Copy to artifacts directory if exists
-        for conv_id in ["13f8f699-258b-4440-abd3-3e754c3bb6b0", "d52feb94-acb7-4123-b76c-fd6b7e2235c8"]:
+        for conv_id in ["28e27bde-cb9f-4bbc-acbe-c8cc02b1bb8b", "13f8f699-258b-4440-abd3-3e754c3bb6b0", "d52feb94-acb7-4123-b76c-fd6b7e2235c8"]:
             artifacts_dir = Path(r"C:\Users\Netcom\.gemini\antigravity\brain") / conv_id
             if artifacts_dir.exists():
                 shutil.copy2(f"{zip_output}.zip", artifacts_dir / "SmartBillingPOS_Windows.zip")

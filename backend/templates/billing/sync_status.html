@@ -69,6 +69,81 @@
     </div>
 </div>
 
+<!-- Database Connection & Sync Settings Card -->
+<div class="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h5 class="fw-bold mb-0"><i class="fa-solid fa-server text-primary me-2"></i>Database Connection & Server Target</h5>
+            <p class="text-muted small mb-0">Configure the remote cloud database URL or local network server</p>
+        </div>
+        <button type="button" class="btn btn-primary-custom" onclick="triggerImmediateSync(event)">
+            <i class="fa-solid fa-arrows-rotate me-1"></i> Sync Database Now
+        </button>
+    </div>
+    <form method="post" action="{% url 'billing:api-sync-server' %}" class="row g-2 align-items-center">
+        {% csrf_token %}
+        <div class="col-12 col-md-8">
+            <div class="input-group">
+                <span class="input-group-text bg-light"><i class="fa-solid fa-link text-muted"></i></span>
+                <input type="url" name="server_url" id="targetServerUrlInput" class="form-control" placeholder="http://127.0.0.1:8000 or https://your-server.com" required>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
+            <button type="submit" class="btn btn-dark w-100">
+                <i class="fa-solid fa-floppy-disk me-1"></i> Save URL
+            </button>
+        </div>
+        <div class="col-6 col-md-2">
+            <button type="button" class="btn btn-outline-secondary w-100" onclick="testServerUrl()">
+                <i class="fa-solid fa-stethoscope me-1"></i> Test Link
+            </button>
+        </div>
+    </form>
+    <div id="serverTestAlert" class="alert d-none mt-3 mb-0 py-2 small" role="alert"></div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        fetch("{% url 'billing:api-sync-server' %}")
+            .then(res => res.json())
+            .then(data => {
+                const input = document.getElementById("targetServerUrlInput");
+                if (input && data.server_url) {
+                    input.value = data.server_url;
+                } else if (input) {
+                    input.value = window.location.origin;
+                }
+            })
+            .catch(() => {});
+    });
+
+    function testServerUrl() {
+        const input = document.getElementById("targetServerUrlInput");
+        const alertBox = document.getElementById("serverTestAlert");
+        const url = (input ? input.value : "").trim().replace(/\/+$/, "");
+        if (!url) return;
+
+        alertBox.className = "alert alert-info mt-3 mb-0 py-2 small";
+        alertBox.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Probing server connection...';
+        alertBox.classList.remove("d-none");
+
+        fetch(`${url}/api/health/`)
+            .then(res => {
+                if (res.ok) {
+                    alertBox.className = "alert alert-success mt-3 mb-0 py-2 small";
+                    alertBox.innerHTML = '<i class="fa-solid fa-circle-check text-success me-1"></i> Connection successful! Server is healthy and ready to sync.';
+                } else {
+                    alertBox.className = "alert alert-warning mt-3 mb-0 py-2 small";
+                    alertBox.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-warning me-1"></i> Server responded with status ${res.status}. Check URL endpoint.`;
+                }
+            })
+            .catch(err => {
+                alertBox.className = "alert alert-danger mt-3 mb-0 py-2 small";
+                alertBox.innerHTML = `<i class="fa-solid fa-circle-xmark text-danger me-1"></i> Cannot reach server at ${url}. Ensure the server is online.`;
+            });
+    }
+</script>
+
 <!-- Sync History Table -->
 <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4">
     <h5 class="fw-bold mb-3"><i class="fa-solid fa-list-check text-secondary me-2"></i>Recent Synchronization Logs</h5>

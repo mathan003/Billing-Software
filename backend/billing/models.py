@@ -392,6 +392,13 @@ class UserProfile(models.Model):
     class Meta:
         ordering = ["user__username"]
 
+    def save(self, *args, **kwargs):
+        if self.shop_name and "supermarket" in self.shop_name.lower():
+            self.shop_name = self.shop_name.replace("Supermarket", "").replace("supermarket", "").strip()
+            if not self.shop_name:
+                self.shop_name = "MathanHub"
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.user.username} ({self.get_role_display()}) - {self.get_business_type_display()}"
 
@@ -554,11 +561,17 @@ class CompanySettings(models.Model):
     @classmethod
     def get_settings(cls):
         obj, _ = cls.objects.get_or_create(id=1)
+        needs_save = False
         if obj.company_name and "supermarket" in obj.company_name.lower():
             obj.company_name = obj.company_name.replace("Supermarket", "").replace("supermarket", "").strip()
             if not obj.company_name:
                 obj.company_name = "MathanHub"
-            obj.save(update_fields=["company_name"])
+            needs_save = True
+        if obj.email and "supermarket" in obj.email.lower():
+            obj.email = "contact@mathanhub.com"
+            needs_save = True
+        if needs_save:
+            obj.save()
         return obj
 
     @property

@@ -1,0 +1,272 @@
+<!-- Client Data Cleanup & Deletion Modal (4 Options: Particular Date, Date Range, Customer, Fully) -->
+<div class="modal fade" id="deleteClientDataModal" tabindex="-1" aria-labelledby="deleteClientDataModalLabel" aria-hidden="true" style="z-index: 1060;">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white border-0 px-4 py-3">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-3 bg-white bg-opacity-25 p-2">
+                        <i class="fa-solid fa-trash-can fs-5 text-white"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0" id="deleteClientDataModalLabel">Delete Store Data (தரவு நீக்குதல்)</h5>
+                        <small class="text-white-50">Safely delete records by date, range, customer, or full reset.</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body p-4">
+                <div class="alert alert-warning border-0 rounded-3 d-flex align-items-center gap-2 mb-3 py-2 px-3 small">
+                    <i class="fa-solid fa-shield-halved fs-5 text-warning flex-shrink-0"></i>
+                    <span><strong>Multi-Tenant Safe:</strong> This deletion strictly affects only your own store records. It never affects any other store or admin database. Dashboard totals update automatically.</span>
+                </div>
+
+                <!-- 4 Action Navigation Tabs -->
+                <ul class="nav nav-pills nav-fill mb-4 p-1 bg-light rounded-3 gap-1" id="deleteDataTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active fw-semibold py-2 small" id="del-by-single-date-tab" data-bs-toggle="pill" data-bs-target="#del-by-single-date-pane" type="button" role="tab">
+                            <i class="fa-solid fa-calendar-day me-1 text-primary"></i> 1. Particular Date (தேதி)
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-semibold py-2 small" id="del-by-date-tab" data-bs-toggle="pill" data-bs-target="#del-by-date-pane" type="button" role="tab">
+                            <i class="fa-solid fa-calendar-days me-1 text-info"></i> 2. Date to Date (தேதி எல்லை)
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-semibold py-2 small" id="del-by-customer-tab" data-bs-toggle="pill" data-bs-target="#del-by-customer-pane" type="button" role="tab">
+                            <i class="fa-solid fa-user-xmark me-1 text-warning"></i> 3. Customer (வாடிக்கையாளர்)
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-semibold py-2 small text-danger" id="del-all-bills-tab" data-bs-toggle="pill" data-bs-target="#del-all-bills-pane" type="button" role="tab">
+                            <i class="fa-solid fa-dumpster-fire me-1"></i> 4. Fully Delete (முழுவதும்)
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="deleteDataTabContent">
+                    <!-- ========================================== -->
+                    <!-- TAB 1: Particular Single Date Delete       -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade show active" id="del-by-single-date-pane" role="tabpanel">
+                        <form method="post" action="{% url 'billing:client_delete_data' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="delete_type" value="single_date">
+                            <input type="hidden" name="next_url" value="{{ request.path }}">
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold text-dark">Choose Particular Date (குறிப்பிட்ட தேதியை தேர்வு செய்யவும்) *</label>
+                                <input type="date" name="single_date" class="form-control form-control-lg border" value="{{ today_date_str }}" required>
+                                <div class="form-text small text-muted mt-1">
+                                    All invoices, bill items, and payments created on this specific date will be permanently deleted. Inventory stock quantities will be restored back to stock catalog.
+                                </div>
+                            </div>
+
+                            <div class="alert alert-info border-0 rounded-3 py-2 px-3 small mb-3">
+                                <i class="fa-solid fa-circle-info me-1"></i>
+                                <strong>Example:</strong> Pick today's date to delete all test bills issued today without affecting previous days.
+                            </div>
+
+                            <div class="form-check mb-4">
+                                <input class="form-check-input border-danger" type="checkbox" id="confirmSingleDateCheck" required>
+                                <label class="form-check-label text-danger small fw-semibold" for="confirmSingleDateCheck">
+                                    I confirm that I want to delete all bills issued on this particular date.
+                                </label>
+                            </div>
+
+                            <div class="d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-danger fw-bold px-4">
+                                    <i class="fa-solid fa-trash-can me-2"></i> Delete This Date's Bills
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- TAB 2: Date to Date Range Delete           -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="del-by-date-pane" role="tabpanel">
+                        <form method="post" action="{% url 'billing:client_delete_data' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="delete_type" value="date_range">
+                            <input type="hidden" name="next_url" value="{{ request.path }}">
+
+                            <div class="row g-3 mb-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold text-dark">From Date (தொடக்க தேதி) *</label>
+                                    <input type="date" name="start_date" class="form-control form-control-lg border" required>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold text-dark">To Date (முடிவு தேதி) *</label>
+                                    <input type="date" name="end_date" class="form-control form-control-lg border" required>
+                                </div>
+                            </div>
+
+                            <div class="form-text small text-muted mb-3">
+                                All invoices, items, and transactions between the selected dates (inclusive) will be purged, and product stock will be returned to inventory.
+                            </div>
+
+                            <div class="form-check mb-4">
+                                <input class="form-check-input border-danger" type="checkbox" id="confirmDateRangeCheck" required>
+                                <label class="form-check-label text-danger small fw-semibold" for="confirmDateRangeCheck">
+                                    I confirm that I want to permanently delete all store bills within this date range.
+                                </label>
+                            </div>
+
+                            <div class="d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-danger fw-bold px-4">
+                                    <i class="fa-solid fa-trash-can me-2"></i> Delete Date Range Bills
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- TAB 3: Particular Customer Delete          -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="del-by-customer-pane" role="tabpanel">
+                        <form method="post" action="{% url 'billing:client_delete_data' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="delete_type" value="customer">
+                            <input type="hidden" name="next_url" value="{{ request.path }}">
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold text-dark">Select Customer (வாடிக்கையாளரை தேர்ந்தெடுக்கவும்) *</label>
+                                <select name="customer_id" class="form-select form-select-lg border" required>
+                                    <option value="" selected disabled>-- Choose Customer --</option>
+                                    {% for c in global_customers|default:customers %}
+                                        <option value="{{ c.id }}">
+                                            {{ c.name }}{% if c.phone %} ({{ c.phone }}){% endif %}
+                                        </option>
+                                    {% empty %}
+                                        <option value="" disabled>No customers found in directory.</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text small text-muted">All invoice history, bill line items, and payment transactions for this customer will be deleted.</div>
+                            </div>
+
+                            <div class="card bg-light border-0 rounded-3 p-3 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="delete_customer_profile" value="1" id="delCustProfileCheckModal">
+                                    <label class="form-check-label fw-semibold text-dark small" for="delCustProfileCheckModal">
+                                        Also delete the customer profile permanently from Customers Directory
+                                    </label>
+                                </div>
+                                <div class="small text-muted ms-4">If unchecked, the customer contact card remains saved with balance reset to ₹0.00.</div>
+                            </div>
+
+                            <div class="form-check mb-4">
+                                <input class="form-check-input border-danger" type="checkbox" id="confirmCustDelCheckModal" required>
+                                <label class="form-check-label text-danger small fw-semibold" for="confirmCustDelCheckModal">
+                                    I confirm that I want to delete this customer's transaction records.
+                                </label>
+                            </div>
+
+                            <div class="d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-danger fw-bold px-4">
+                                    <i class="fa-solid fa-trash-can me-2"></i> Delete Customer Records
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- TAB 4: Fully Delete / Full Store Reset     -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="del-all-bills-pane" role="tabpanel">
+                        <form method="post" action="{% url 'billing:client_delete_data' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next_url" value="{{ request.path }}">
+
+                            <div class="alert alert-danger border-0 rounded-3 p-3 mb-3 small">
+                                <div class="fw-bold mb-1"><i class="fa-solid fa-triangle-exclamation me-1"></i> Irreversible Action Warning</div>
+                                Choose whether you want to delete only bills or completely reset all store customer transactions. Stock quantities will be safely restored into catalog.
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-bold text-dark">Select Full Deletion Scope *</label>
+                                <div class="card border p-3 mb-2 rounded-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="delete_type" id="scopeAllInvoices" value="all_invoices" checked>
+                                        <label class="form-check-label fw-semibold text-dark" for="scopeAllInvoices">
+                                            Delete All Store Bills Only (அனைத்து பில்கள் மட்டும்)
+                                        </label>
+                                    </div>
+                                    <div class="small text-muted ms-4">Permanently deletes all invoices & sales history. Resets store sales totals to ₹0.00. Customer cards remain saved with ₹0 balance.</div>
+                                </div>
+
+                                <div class="card border border-danger-subtle bg-danger-subtle bg-opacity-25 p-3 rounded-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input border-danger" type="radio" name="delete_type" id="scopeWipeAll" value="wipe_all">
+                                        <label class="form-check-label fw-bold text-danger" for="scopeWipeAll">
+                                            Fully Wipe All Bills & Customer Records (முழு தரவையும் முற்றிலும் அழி)
+                                        </label>
+                                    </div>
+                                    <div class="small text-danger-emphasis ms-4">Deletes ALL invoices, payments, and all customer directory profiles. Full factory cleanup.</div>
+                                </div>
+                            </div>
+
+                            <div class="form-check mb-4">
+                                <input class="form-check-input border-danger" type="checkbox" id="confirmFullWipeCheck" required>
+                                <label class="form-check-label text-danger small fw-semibold" for="confirmFullWipeCheck">
+                                    I confirm that I understand this is permanent and wish to proceed with full store deletion.
+                                </label>
+                            </div>
+
+                            <div class="d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-danger fw-bold px-4">
+                                    <i class="fa-solid fa-trash-can me-2"></i> Confirm & Permanently Delete
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reliable Delete Modal Opener Script -->
+<script>
+    (function() {
+        window.openDeleteDataModal = function(tabId) {
+            var modalEl = document.getElementById("deleteClientDataModal");
+            if (!modalEl) return;
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            } else {
+                modalEl.style.display = 'block';
+                modalEl.classList.add('show');
+            }
+            if (tabId) {
+                var tabBtn = document.querySelector('[data-bs-target="' + tabId + '"]');
+                if (tabBtn) {
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                        var tab = new bootstrap.Tab(tabBtn);
+                        tab.show();
+                    } else {
+                        tabBtn.click();
+                    }
+                }
+            }
+        };
+
+        document.addEventListener("DOMContentLoaded", function() {
+            document.querySelectorAll('[data-bs-target="#deleteClientDataModal"]').forEach(function(btn) {
+                btn.addEventListener("click", function(e) {
+                    var modalEl = document.getElementById("deleteClientDataModal");
+                    if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                        var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                        modal.show();
+                    }
+                });
+            });
+        });
+    })();
+</script>

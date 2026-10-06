@@ -63,6 +63,17 @@ def session_security_context(request):
     ifsc_code = (profile.ifsc_code if (profile and profile.ifsc_code) else company.ifsc_code)
     business_type = (profile.business_type if profile else "grocery")
 
+    from django.utils import timezone
+    from django.db.models import Q
+    from .models import Customer
+
+    today_date_str = timezone.now().strftime("%Y-%m-%d")
+    c_filter = Q(client=request.user) | Q(client__isnull=True) if not is_admin else Q()
+    try:
+        global_customers = Customer.objects.filter(c_filter).order_by("name")
+    except Exception:
+        global_customers = []
+
     return {
         "sec_token": sec_token,
         "sec_param": f"?sec={sec_token}",
@@ -81,5 +92,7 @@ def session_security_context(request):
         "active_account_number": account_number,
         "active_ifsc_code": ifsc_code,
         "business_type": business_type,
+        "global_customers": global_customers,
+        "today_date_str": today_date_str,
     }
 

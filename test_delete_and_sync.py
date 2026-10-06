@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath("backend"))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "billing_backend.settings")
 django.setup()
 
+from django.utils import timezone
 from django.test import RequestFactory
 from django.contrib.auth.models import User
 from django.contrib.messages.storage.fallback import FallbackStorage
@@ -109,7 +110,40 @@ def run_tests():
     assert str(inv.invoice_uuid) not in data["active_invoice_uuids"], "Deleted invoice UUID is still in active UUIDs!"
     print(f"[4] Verified SyncPullView: Deleted invoice UUID is omitted from active_invoice_uuids [OK]")
 
-    # 7. Test client_delete_data with all_invoices
+    # 7. Test client_delete_data with single_date
+    today_str = timezone.now().strftime("%Y-%m-%d")
+    inv_single = Invoice.objects.create(
+        invoice_number=f"INV-TEST-{uuid.uuid4().hex[:6]}",
+        invoice_uuid=uuid.uuid4(),
+        grand_total=Decimal("350.00"),
+        client=user
+    )
+    req = rf.post("/delete-data/", {"delete_type": "single_date", "single_date": today_str})
+    req.user = user
+    setattr(req, "session", {"sec_token": "abc12345"})
+    setattr(req, "_messages", FallbackStorage(req))
+    resp = client_delete_data(req)
+    assert resp.status_code == 302
+    assert not Invoice.objects.filter(pk=inv_single.id).exists(), "Single date delete failed!"
+    print(f"[5] Verified client_delete_data 'single_date': Bill deleted for date {today_str} [OK]")
+
+    # 8. Test client_delete_data with date_range
+    inv_range = Invoice.objects.create(
+        invoice_number=f"INV-TEST-{uuid.uuid4().hex[:6]}",
+        invoice_uuid=uuid.uuid4(),
+        grand_total=Decimal("450.00"),
+        client=user
+    )
+    req = rf.post("/delete-data/", {"delete_type": "date_range", "start_date": today_str, "end_date": today_str})
+    req.user = user
+    setattr(req, "session", {"sec_token": "abc12345"})
+    setattr(req, "_messages", FallbackStorage(req))
+    resp = client_delete_data(req)
+    assert resp.status_code == 302
+    assert not Invoice.objects.filter(pk=inv_range.id).exists(), "Date range delete failed!"
+    print(f"[6] Verified client_delete_data 'date_range': Bills deleted between dates [OK]")
+
+    # 9. Test client_delete_data with all_invoices
     inv2 = Invoice.objects.create(
         invoice_number=f"INV-TEST-{uuid.uuid4().hex[:6]}",
         invoice_uuid=uuid.uuid4(),
@@ -123,13 +157,32 @@ def run_tests():
     resp = client_delete_data(req)
     assert resp.status_code == 302
     assert not Invoice.objects.filter(pk=inv2.id).exists(), "All invoices delete failed!"
-    print(f"[5] Verified client_delete_data 'all_invoices': Store bills purged cleanly [OK]")
+    print(f"[7] Verified client_delete_data 'all_invoices': Store bills purged cleanly [OK]")
+
+    # 10. Test client_delete_data with wipe_all
+    cust_wipe = Customer.objects.create(name="Wipe Me", phone="9988776655", client=user)
+    inv_wipe = Invoice.objects.create(
+        invoice_number=f"INV-TEST-{uuid.uuid4().hex[:6]}",
+        invoice_uuid=uuid.uuid4(),
+        customer=cust_wipe,
+        grand_total=Decimal("150.00"),
+        client=user
+    )
+    req = rf.post("/delete-data/", {"delete_type": "wipe_all"})
+    req.user = user
+    setattr(req, "session", {"sec_token": "abc12345"})
+    setattr(req, "_messages", FallbackStorage(req))
+    resp = client_delete_data(req)
+    assert resp.status_code == 302
+    assert not Invoice.objects.filter(pk=inv_wipe.id).exists(), "Wipe all invoice failed!"
+    assert not Customer.objects.filter(pk=cust_wipe.id).exists(), "Wipe all customer failed!"
+    print(f"[8] Verified client_delete_data 'wipe_all': Complete store wipe successful [OK]")
 
     # Cleanup test user and product
     prod.delete()
     user.delete()
     print("=" * 60)
-    print("  ALL DELETE & SYNC PROPAGATION TESTS PASSED! [100% OK]")
+    print("  ALL 4 DELETE MODES & SYNC PROPAGATION TESTS PASSED! [100% OK]")
     print("=" * 60)
 
 if __name__ == "__main__":

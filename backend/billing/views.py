@@ -1569,37 +1569,108 @@ def admin_wipe_client_database(request, client_id):
 
 def client_delete_data(request):
     """
-    Client or Admin data deletion tool:
+    Shop Data Deletion & Cleanup Tool:
     Allows deleting:
-    1. A particular customer's bills (or customer record + all their bills)
-    2. Date range (from start_date to end_date) bills
-    Immediately updates dashboard totals and logs activity.
+    1. Particular Date (single_date): Delete all bills issued on a specific single date
+    2. Date to Date Range (date_range): Delete all bills between start_date and end_date
+    3. Particular Customer (customer): Delete bills for customer or customer + all bills
+    4. All Invoices (all_invoices): Delete all store bills & reset dashboard sales to 0
+    5. Full Store Reset (wipe_all): Purge all bills and all customers
+    Automatically restores inventory stock and propagates deletions to the desktop app.
     """
     if not request.user.is_authenticated:
         return redirect("billing:login")
+
+    redirect_url = request.POST.get("next_url") or request.META.get("HTTP_REFERER") or "billing:dashboard"
 
     if request.method == "POST":
         delete_type = request.POST.get("delete_type", "").strip()
         c_filter = get_client_filter(request)
         user_name = request.user.username
 
-        if delete_type == "customer":
+        def _restore_and_delete_invoices(qs):
+            for inv in qs.prefetch_related("items"):
+                for item in inv.items.all():
+                    if item.product:
+                        Product.objects.filter(pk=item.product.id).update(
+                            stock_quantity=F("stock_quantity") + item.quantity
+                        )
+                inv.items.all().delete()
+            count = qs.count()
+            qs.delete()
+            return count
+
+        if delete_type == "single_date":
+            single_date_str = request.POST.get("single_date", "").strip()
+            if not single_date_str:
+                messages.error(request, "Please choose a specific date to delete records.")
+                return redirect(redirect_url)
+
+            try:
+                target_date = datetime.strptime(single_date_str, "%Y-%m-%d").date()
+            except Exception as e:
+                messages.error(request, f"Invalid date format: {e}")
+                return redirect(redirect_url)
+
+            invoices = Invoice.objects.filter(c_filter, created_at__date=target_date)
+            inv_count = _restore_and_delete_invoices(invoices)
+
+            log_activity(
+                request,
+                "DATA_CLEANUP",
+                f"User '{user_name}' deleted {inv_count} invoice(s) for specific date {single_date_str}. Stock restored."
+            )
+            messages.success(request, f"Successfully deleted {inv_count} invoice(s) for date {single_date_str}. Inventory stock restored.")
+
+        elif delete_type == "date_range":
+            start_date_str = request.POST.get("start_date", "").strip()
+            end_date_str = request.POST.get("end_date", "").strip()
+
+            if not start_date_str or not end_date_str:
+                messages.error(request, "Please specify both Start Date and End Date.")
+                return redirect(redirect_url)
+
+            try:
+                start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+            except Exception as e:
+                messages.error(request, f"Invalid date format: {e}")
+                return redirect(redirect_url)
+
+            if start_date > end_date:
+                messages.error(request, "Start date cannot be after end date.")
+                return redirect(redirect_url)
+
+            invoices = Invoice.objects.filter(
+                c_filter,
+                created_at__date__gte=start_date,
+                created_at__date__lte=end_date
+            )
+            inv_count = _restore_and_delete_invoices(invoices)
+
+            log_activity(
+                request,
+                "DATA_CLEANUP",
+                f"User '{user_name}' deleted {inv_count} invoice(s) between {start_date_str} and {end_date_str}. Stock restored."
+            )
+            messages.success(request, f"Successfully deleted {inv_count} invoice(s) from {start_date_str} to {end_date_str}. Stock restored.")
+
+        elif delete_type == "customer":
             customer_id = request.POST.get("customer_id", "").strip()
             delete_customer_profile = request.POST.get("delete_customer_profile") == "1"
 
             if not customer_id:
                 messages.error(request, "Please select a customer to delete data.")
-                return redirect("billing:dashboard")
+                return redirect(redirect_url)
 
             customer = Customer.objects.filter(c_filter, pk=customer_id).first()
             if not customer:
                 messages.error(request, "Customer not found or unauthorized.")
-                return redirect("billing:dashboard")
+                return redirect(redirect_url)
 
             cust_name = customer.name
             invoices = Invoice.objects.filter(c_filter, customer=customer)
-            inv_count = invoices.count()
-            invoices.delete()
+            inv_count = _restore_and_delete_invoices(invoices)
 
             if delete_customer_profile:
                 customer.delete()
@@ -1617,55 +1688,19 @@ def client_delete_data(request):
                 )
                 messages.success(request, f"Successfully deleted {inv_count} bill(s) for '{cust_name}'. Customer balance reset to ₹0.00. Dashboard updated.")
 
-        elif delete_type == "date_range":
-            start_date_str = request.POST.get("start_date", "").strip()
-            end_date_str = request.POST.get("end_date", "").strip()
-
-            if not start_date_str or not end_date_str:
-                messages.error(request, "Please specify both Start Date and End Date.")
-                return redirect("billing:dashboard")
-
-            try:
-                start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-                end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
-            except Exception as e:
-                messages.error(request, f"Invalid date format: {e}")
-                return redirect("billing:dashboard")
-
-            if start_date > end_date:
-                messages.error(request, "Start date cannot be after end date.")
-                return redirect("billing:dashboard")
-
-            invoices = Invoice.objects.filter(
-                c_filter,
-                created_at__date__gte=start_date,
-                created_at__date__lte=end_date
-            )
-            inv_count = invoices.count()
-            invoices.delete()
-
-            log_activity(
-                request,
-                "DATA_CLEANUP",
-                f"User '{user_name}' deleted {inv_count} invoice(s) between {start_date_str} and {end_date_str}."
-            )
-            messages.success(request, f"Successfully deleted {inv_count} invoice(s) from {start_date_str} to {end_date_str}. Dashboard updated.")
-
         elif delete_type == "all_invoices":
             invoices = Invoice.objects.filter(c_filter)
-            inv_count = invoices.count()
-            invoices.delete()
+            inv_count = _restore_and_delete_invoices(invoices)
             log_activity(
                 request,
                 "DATA_CLEANUP",
-                f"User '{user_name}' deleted all {inv_count} store invoices."
+                f"User '{user_name}' deleted all {inv_count} store invoices. Stock restored."
             )
             messages.success(request, f"Successfully deleted all {inv_count} store invoices. Dashboard and sales figures reset to ₹0.00.")
 
         elif delete_type == "wipe_all":
             invoices = Invoice.objects.filter(c_filter)
-            inv_count = invoices.count()
-            invoices.delete()
+            inv_count = _restore_and_delete_invoices(invoices)
             customers = Customer.objects.filter(c_filter)
             cust_count = customers.count()
             customers.delete()
@@ -1679,7 +1714,7 @@ def client_delete_data(request):
         else:
             messages.error(request, "Invalid delete action specified.")
 
-    return redirect("billing:dashboard")
+    return redirect(redirect_url)
 
 
 @admin_required

@@ -9,6 +9,9 @@
         <p class="text-muted small mb-0">Select customer, track payments, apply discounts/offers, and manage receipts</p>
     </div>
     <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-danger fw-semibold delete-data-btn" data-bs-toggle="modal" data-bs-target="#deleteClientDataModal" onclick="window.openDeleteDataModal && window.openDeleteDataModal()">
+            <i class="fa-solid fa-trash-can me-1"></i> Delete Data (தரவு நீக்கு)
+        </button>
         <a href="{% url 'billing:invoice_create' %}" class="btn btn-primary-custom">
             <i class="fa-solid fa-plus me-1"></i> New Invoice
         </a>

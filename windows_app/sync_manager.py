@@ -78,6 +78,10 @@ class SyncManager:
             from billing.models import Invoice, InvoiceItem, Product, Customer, PaymentRecord
             from django.db import transaction
 
+            from billing.device_utils import get_desktop_pos_config
+            pos_cfg = get_desktop_pos_config()
+            client_username = pos_cfg.get("last_logged_in_client") or pos_cfg.get("remembered_username") or ""
+
             # Find invoices that haven't been synced to cloud yet
             # In local SQLite, invoices created locally have source='windows_app'
             # We track cloud sync using notes or notes containing '[SYNCED]' or a local log
@@ -108,6 +112,7 @@ class SyncManager:
                     "discount_amount": str(inv.discount_amount),
                     "grand_total": str(inv.grand_total),
                     "paid_amount": str(inv.paid_amount),
+                    "balance_amount": str(inv.balance_amount),
                     "payment_method": inv.payment_method,
                     "payment_status": inv.payment_status,
                     "notes": inv.notes,
@@ -134,6 +139,7 @@ class SyncManager:
 
             push_data = {
                 "device_id": self.device_id,
+                "client_username": client_username,
                 "invoices": invoices_payload,
                 "products": products_payload,
                 "customers": customers_payload,
@@ -159,11 +165,20 @@ class SyncManager:
 
     def _pull_cloud_data(self):
         try:
-            from billing.models import Product, Customer, CompanySettings, Invoice
+            from billing.models import Product, Customer, CompanySettings, Invoice, Branch
+            from django.contrib.auth.models import User
+            from billing.device_utils import get_desktop_pos_config
             from django.db import transaction
             from django.db.models import Q
 
-            resp = requests.get(f"{self.server_url}/api/sync/pull/", timeout=10.0)
+            pos_cfg = get_desktop_pos_config()
+            client_username = pos_cfg.get("last_logged_in_client") or pos_cfg.get("remembered_username") or ""
+
+            params = {}
+            if client_username:
+                params["client_username"] = client_username
+
+            resp = requests.get(f"{self.server_url}/api/sync/pull/", params=params, timeout=10.0)
             if resp.status_code != 200:
                 return
 
@@ -171,6 +186,12 @@ class SyncManager:
             products = data.get("products", [])
             customers = data.get("customers", [])
             company_data = data.get("company_settings")
+            client_prof_data = data.get("client_profile")
+            branches_data = data.get("branches", [])
+
+            client_user = None
+            if client_username:
+                client_user = User.objects.filter(username=client_username).first()
 
             with transaction.atomic():
                 # 1. Update company settings safely
@@ -189,7 +210,56 @@ class SyncManager:
                     except Exception as ce:
                         logger.debug(f"Error updating local company settings: {ce}")
 
-                # 2. Update products locally without touching existing invoice records
+                # 2. Update Client Profile locally so Admin edits on Web reflect immediately in App
+                if client_prof_data:
+                    try:
+                        uname = client_prof_data.get("username")
+                        if uname:
+                            client_user, _ = User.objects.get_or_create(username=uname)
+                            client_user.email = client_prof_data.get("email", client_user.email)
+                            client_user.first_name = client_prof_data.get("first_name", client_user.first_name)
+                            client_user.last_name = client_prof_data.get("last_name", client_user.last_name)
+                            client_user.is_active = client_prof_data.get("is_active", True)
+                            client_user.save()
+
+                            from billing.models import UserProfile
+                            prof, _ = UserProfile.objects.get_or_create(user=client_user)
+                            prof.shop_name = client_prof_data.get("shop_name", prof.shop_name)
+                            prof.shop_address = client_prof_data.get("shop_address", prof.shop_address)
+                            prof.phone = client_prof_data.get("phone", prof.phone)
+                            prof.business_type = client_prof_data.get("business_type", prof.business_type)
+                            prof.access_mode = client_prof_data.get("access_mode", prof.access_mode)
+                            prof.device_limit = client_prof_data.get("device_limit", prof.device_limit)
+                            prof.gst_number = client_prof_data.get("gst_number", prof.gst_number)
+                            prof.bank_name = client_prof_data.get("bank_name", prof.bank_name)
+                            prof.account_number = client_prof_data.get("account_number", prof.account_number)
+                            prof.ifsc_code = client_prof_data.get("ifsc_code", prof.ifsc_code)
+                            prof.avatar_base64 = client_prof_data.get("avatar_base64", prof.avatar_base64)
+                            prof.shop_logo_base64 = client_prof_data.get("shop_logo_base64", prof.shop_logo_base64)
+                            prof.role = client_prof_data.get("role", prof.role)
+                            prof.save()
+                    except Exception as pe:
+                        logger.debug(f"Error updating local client profile: {pe}")
+
+                # 3. Synchronize Branches
+                for br_d in branches_data:
+                    b_code = br_d.get("branch_code")
+                    if b_code:
+                        Branch.objects.update_or_create(
+                            branch_code=b_code,
+                            defaults={
+                                "name": br_d.get("name", "Branch"),
+                                "client": client_user,
+                                "phone": br_d.get("phone", ""),
+                                "email": br_d.get("email", ""),
+                                "address": br_d.get("address", ""),
+                                "manager_name": br_d.get("manager_name", ""),
+                                "is_default": br_d.get("is_default", False),
+                                "is_active": True,
+                            }
+                        )
+
+                # 4. Update products locally without touching existing invoice records
                 for p_data in products:
                     sku = p_data.get("sku")
                     if not sku:
@@ -197,6 +267,7 @@ class SyncManager:
                     prod, created = Product.objects.get_or_create(
                         sku=sku,
                         defaults={
+                            "client": client_user,
                             "name": p_data.get("name", ""),
                             "name_tamil": p_data.get("name_tamil", ""),
                             "category": p_data.get("category", "General"),
@@ -218,15 +289,18 @@ class SyncManager:
                         prod.tax_percent = Decimal(str(p_data.get("tax_percent", prod.tax_percent)))
                         prod.stock_quantity = Decimal(str(p_data.get("stock_quantity", prod.stock_quantity)))
                         prod.is_active = p_data.get("is_active", prod.is_active)
+                        if not prod.client and client_user:
+                            prod.client = client_user
                         prod.save()
 
-                # 3. Update customers locally
+                # 5. Update customers locally
                 for c_data in customers:
                     phone = c_data.get("phone", "").strip()
                     if phone:
                         cust, created = Customer.objects.get_or_create(
                             phone=phone,
                             defaults={
+                                "client": client_user,
                                 "name": c_data["name"],
                                 "email": c_data.get("email", ""),
                                 "address": c_data.get("address", ""),
@@ -238,9 +312,11 @@ class SyncManager:
                             cust.email = c_data.get("email", cust.email)
                             cust.address = c_data.get("address", cust.address)
                             cust.gst_number = c_data.get("gst_number", cust.gst_number)
+                            if not cust.client and client_user:
+                                cust.client = client_user
                             cust.save()
 
-                # 4. Synchronize Cloud Invoices to Desktop Local App
+                # 6. Synchronize Cloud Invoices to Desktop Local App
                 cloud_invoices = data.get("invoices", [])
                 for inv_data in cloud_invoices:
                     inv_uuid = inv_data.get("invoice_uuid")
@@ -256,6 +332,7 @@ class SyncManager:
                         new_inv = Invoice.objects.create(
                             invoice_uuid=inv_uuid,
                             invoice_number=inv_data.get("invoice_number"),
+                            client=client_user,
                             branch_name=inv_data.get("branch_name", "Main Shop Branch"),
                             customer=c_match,
                             customer_name=inv_data.get("customer_name", "Cash Customer"),
@@ -297,7 +374,7 @@ class SyncManager:
                             local_inv.payment_status = inv_data.get("payment_status", local_inv.payment_status)
                             local_inv.save(update_fields=["paid_amount", "balance_amount", "payment_status"])
 
-                # 5. Synchronize Web Deletions to Desktop App
+                # 7. Synchronize Web Deletions to Desktop App
                 if "active_invoice_uuids" in data:
                     active_uuids = set(data.get("active_invoice_uuids", []))
                     # Remove locally synced invoices that have been deleted on the web
@@ -324,3 +401,19 @@ class SyncManager:
 
         except Exception as e:
             logger.debug(f"Error during pull: {e}")
+
+
+_sync_manager_instance = None
+
+
+def get_sync_manager(server_url=None, interval_seconds=10):
+    global _sync_manager_instance
+    if _sync_manager_instance is None:
+        _sync_manager_instance = SyncManager(server_url=server_url, interval_seconds=interval_seconds)
+    return _sync_manager_instance
+
+
+def trigger_desktop_sync():
+    global _sync_manager_instance
+    if _sync_manager_instance:
+        _sync_manager_instance.trigger_sync()

@@ -1,13 +1,16 @@
 import logging
 from decimal import Decimal
+from django.contrib.auth import authenticate
+from django.contrib.auth.models import User
 from django.db import transaction
-from django.db.models import Sum, F
+from django.db.models import Sum, F, Q
 from django.utils import timezone
 from rest_framework import status, views, viewsets
 from rest_framework.response import Response
 from .models import (
     Product, Customer, Invoice, InvoiceItem, SyncLog,
-    CompanySettings, SoftwareUpdate, Purchase, PaymentRecord
+    CompanySettings, SoftwareUpdate, Purchase, PaymentRecord,
+    Branch, UserProfile, RegisteredDevice
 )
 from .serializers import (
     ProductSerializer,
@@ -33,6 +36,89 @@ class HealthCheckView(views.APIView):
             "server": "Django Billing Cloud Server",
             "version": "1.0.0",
             "server_time": timezone.now().isoformat(),
+        })
+
+
+class ClientAuthVerifyView(views.APIView):
+    """
+    Endpoint for Windows Desktop App to verify and fetch client credentials from Cloud Server.
+    Enables clients created in the Web Admin Panel to seamlessly log into the Desktop App.
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        username = request.data.get("username", "").strip()
+        password = request.data.get("password", "")
+        device_id = request.data.get("device_id", "").strip()
+        device_name = request.data.get("device_name", "Windows POS Terminal")
+
+        if not username or not password:
+            return Response({"status": "error", "message": "Username and password are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = authenticate(username=username, password=password)
+        if not user:
+            return Response({"status": "error", "message": "Invalid username or password on Cloud Server."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not user.is_active:
+            return Response({"status": "error", "message": "This account is inactive. Please contact Administrator."}, status=status.HTTP_403_FORBIDDEN)
+
+        profile = getattr(user, "profile", None)
+        is_admin = user.is_superuser or (profile and profile.role == "admin")
+
+        if not is_admin and profile and profile.access_mode == "online_only":
+            return Response({
+                "status": "error",
+                "message": "Access Denied: This client account is authorized for Web Portal only. Desktop POS login is not permitted."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if not is_admin and profile and device_id:
+            dev_limit = profile.device_limit or 5
+            current_active_devices = RegisteredDevice.objects.filter(user=user, is_active=True).count()
+            existing_dev = RegisteredDevice.objects.filter(user=user, device_id=device_id, is_active=True).first()
+            if not existing_dev and current_active_devices >= dev_limit:
+                return Response({
+                    "status": "error",
+                    "message": f"Device Limit Exceeded ({current_active_devices}/{dev_limit}). Admin has configured maximum {dev_limit} devices."
+                }, status=status.HTTP_403_FORBIDDEN)
+            if not existing_dev:
+                RegisteredDevice.objects.create(
+                    user=user,
+                    device_id=device_id,
+                    device_name=device_name,
+                    device_type="desktop_exe",
+                    is_active=True,
+                )
+
+        profile_data = {}
+        if profile:
+            profile_data = {
+                "role": profile.role,
+                "shop_name": profile.shop_name,
+                "shop_address": profile.shop_address,
+                "business_type": profile.business_type,
+                "access_mode": profile.access_mode,
+                "device_limit": profile.device_limit,
+                "phone": profile.phone,
+                "gst_number": profile.gst_number,
+                "bank_name": profile.bank_name,
+                "account_number": profile.account_number,
+                "ifsc_code": profile.ifsc_code,
+                "avatar_base64": profile.avatar_base64,
+                "shop_logo_base64": profile.shop_logo_base64,
+            }
+
+        return Response({
+            "status": "success",
+            "user": {
+                "username": user.username,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "is_staff": user.is_staff,
+                "is_superuser": user.is_superuser,
+            },
+            "profile": profile_data,
         })
 
 
@@ -103,6 +189,9 @@ class SyncPushView(views.APIView):
 
         data = serializer.validated_data
         device_id = data["device_id"]
+        client_username = data.get("client_username", "").strip()
+        client_user = User.objects.filter(username=client_username).first() if client_username else None
+
         invoices_data = data.get("invoices", [])
         products_data = data.get("products", [])
         customers_data = data.get("customers", [])
@@ -123,6 +212,7 @@ class SyncPushView(views.APIView):
                     product, created = Product.objects.get_or_create(
                         sku=sku,
                         defaults={
+                            "client": client_user,
                             "name": p_data.get("name", ""),
                             "name_tamil": p_data.get("name_tamil", ""),
                             "category": p_data.get("category", "General"),
@@ -137,7 +227,9 @@ class SyncPushView(views.APIView):
                     if not created:
                         # Cloud server is the master authority for existing product catalog & pricing.
                         # Preserve admin prices against client pushes so admin edits are not reverted.
-                        pass
+                        if not product.client and client_user:
+                            product.client = client_user
+                            product.save(update_fields=["client"])
                     else:
                         synced_products.append(sku)
 
@@ -145,20 +237,26 @@ class SyncPushView(views.APIView):
                 for c_data in customers_data:
                     phone = c_data.get("phone", "").strip()
                     if phone:
-                        cust, created = Customer.objects.get_or_create(
-                            phone=phone,
-                            defaults={
-                                "name": c_data["name"],
-                                "email": c_data.get("email", ""),
-                                "address": c_data.get("address", ""),
-                                "gst_number": c_data.get("gst_number", ""),
-                            }
-                        )
-                        if not created:
+                        cust_filter = Q(phone=phone)
+                        if client_user:
+                            cust_filter &= (Q(client=client_user) | Q(client__isnull=True))
+                        cust = Customer.objects.filter(cust_filter).first()
+                        if not cust:
+                            cust = Customer.objects.create(
+                                name=c_data["name"],
+                                client=client_user,
+                                phone=phone,
+                                email=c_data.get("email", ""),
+                                address=c_data.get("address", ""),
+                                gst_number=c_data.get("gst_number", ""),
+                            )
+                        else:
                             cust.name = c_data["name"]
                             cust.email = c_data.get("email", cust.email)
                             cust.address = c_data.get("address", cust.address)
                             cust.gst_number = c_data.get("gst_number", cust.gst_number)
+                            if not cust.client and client_user:
+                                cust.client = client_user
                             cust.save()
                         synced_customers.append(phone)
 
@@ -169,6 +267,9 @@ class SyncPushView(views.APIView):
                     # Check if already synced previously
                     existing_inv = Invoice.objects.filter(invoice_uuid=inv_uuid).first()
                     if existing_inv:
+                        if not existing_inv.client and client_user:
+                            existing_inv.client = client_user
+                            existing_inv.save(update_fields=["client"])
                         synced_uuids.append(str(inv_uuid))
                         continue
 
@@ -178,10 +279,14 @@ class SyncPushView(views.APIView):
                     cust_name = inv_data.get("customer_name", "Cash Customer").strip()
 
                     if cust_phone:
-                        cust_obj = Customer.objects.filter(phone=cust_phone).first()
+                        cust_q = Q(phone=cust_phone)
+                        if client_user:
+                            cust_q &= (Q(client=client_user) | Q(client__isnull=True))
+                        cust_obj = Customer.objects.filter(cust_q).first()
                         if not cust_obj and cust_name:
                             cust_obj = Customer.objects.create(
                                 name=cust_name,
+                                client=client_user,
                                 phone=cust_phone,
                                 email=inv_data.get("customer_email", ""),
                             )
@@ -189,12 +294,17 @@ class SyncPushView(views.APIView):
                     # Ensure unique invoice_number on server
                     inv_num = inv_data["invoice_number"]
                     if Invoice.objects.filter(invoice_number=inv_num).exists():
-                        inv_num = f"{inv_num}-{str(inv_uuid)[:6]}"
+                        existing_same = Invoice.objects.filter(invoice_number=inv_num, invoice_uuid=inv_uuid).first()
+                        if not existing_same:
+                            inv_num = f"{inv_num}-{str(inv_uuid)[:6]}"
 
                     # Create Invoice record
+                    paid_amt = inv_data.get("paid_amount", inv_data["grand_total"])
+                    bal_amt = inv_data.get("balance_amount", Decimal("0.00"))
                     invoice = Invoice.objects.create(
                         invoice_uuid=inv_uuid,
                         invoice_number=inv_num,
+                        client=client_user,
                         customer=cust_obj,
                         customer_name=cust_name or "Cash Customer",
                         customer_phone=cust_phone,
@@ -202,7 +312,8 @@ class SyncPushView(views.APIView):
                         tax_amount=inv_data["tax_amount"],
                         discount_amount=inv_data["discount_amount"],
                         grand_total=inv_data["grand_total"],
-                        paid_amount=inv_data.get("paid_amount", inv_data["grand_total"]),
+                        paid_amount=paid_amt,
+                        balance_amount=bal_amt,
                         payment_method=inv_data.get("payment_method", "Cash"),
                         payment_status=inv_data.get("payment_status", "Paid"),
                         source="windows_app",
@@ -301,8 +412,26 @@ class SyncPullView(views.APIView):
 
     def get(self, request):
         since_str = request.query_params.get("since")
-        products_qs = Product.objects.all()
-        customers_qs = Customer.objects.all()
+        client_username = request.query_params.get("client_username", "").strip()
+        client_user = User.objects.filter(username=client_username).first() if client_username else None
+        is_client_only = client_user and not (client_user.is_superuser or (hasattr(client_user, "profile") and client_user.profile.role == "admin"))
+
+        if is_client_only:
+            products_qs = Product.objects.filter(Q(client=client_user) | Q(client__isnull=True))
+            customers_qs = Customer.objects.filter(Q(client=client_user) | Q(client__isnull=True))
+            invoices_qs = Invoice.objects.filter(client=client_user).prefetch_related("items").order_by("-created_at")[:100]
+            branches_qs = Branch.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_active=True)
+            active_uuids = [str(u) for u in Invoice.objects.filter(client=client_user).values_list("invoice_uuid", flat=True)]
+            active_customer_phones = list(Customer.objects.filter(Q(client=client_user) | Q(client__isnull=True)).exclude(phone="").values_list("phone", flat=True))
+            active_product_skus = list(Product.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_active=True).values_list("sku", flat=True))
+        else:
+            products_qs = Product.objects.all()
+            customers_qs = Customer.objects.all()
+            invoices_qs = Invoice.objects.prefetch_related("items").order_by("-created_at")[:100]
+            branches_qs = Branch.objects.filter(is_active=True)
+            active_uuids = [str(u) for u in Invoice.objects.values_list("invoice_uuid", flat=True)]
+            active_customer_phones = list(Customer.objects.exclude(phone="").values_list("phone", flat=True))
+            active_product_skus = list(Product.objects.filter(is_active=True).values_list("sku", flat=True))
 
         if since_str:
             try:
@@ -329,8 +458,44 @@ class SyncPullView(views.APIView):
             "updated_at": cs.updated_at.isoformat() if (cs and hasattr(cs, "updated_at") and cs.updated_at) else "",
         }
 
+        # Client profile metadata for instant reflection of Admin edits on Web
+        client_profile_data = None
+        if client_user and hasattr(client_user, "profile"):
+            p = client_user.profile
+            client_profile_data = {
+                "username": client_user.username,
+                "first_name": client_user.first_name,
+                "last_name": client_user.last_name,
+                "email": client_user.email,
+                "is_active": client_user.is_active,
+                "role": p.role,
+                "shop_name": p.shop_name,
+                "shop_address": p.shop_address,
+                "business_type": p.business_type,
+                "access_mode": p.access_mode,
+                "device_limit": p.device_limit,
+                "phone": p.phone,
+                "gst_number": p.gst_number,
+                "bank_name": p.bank_name,
+                "account_number": p.account_number,
+                "ifsc_code": p.ifsc_code,
+                "avatar_base64": p.avatar_base64,
+                "shop_logo_base64": p.shop_logo_base64,
+            }
+
+        branches_data = []
+        for br in branches_qs:
+            branches_data.append({
+                "name": br.name,
+                "branch_code": br.branch_code,
+                "phone": br.phone,
+                "email": br.email,
+                "address": br.address,
+                "manager_name": br.manager_name,
+                "is_default": br.is_default,
+            })
+
         # Cloud Invoices to pull down to desktop app (with items)
-        invoices_qs = Invoice.objects.prefetch_related("items").order_by("-created_at")[:100]
         invoices_data = []
         for inv in invoices_qs:
             items_list = []
@@ -366,10 +531,6 @@ class SyncPullView(views.APIView):
                 "items": items_list,
             })
 
-        active_uuids = [str(u) for u in Invoice.objects.values_list("invoice_uuid", flat=True)]
-        active_customer_phones = list(Customer.objects.exclude(phone="").values_list("phone", flat=True))
-        active_product_skus = list(Product.objects.filter(is_active=True).values_list("sku", flat=True))
-
         return Response({
             "status": "success",
             "server_time": timezone.now().isoformat(),
@@ -380,6 +541,8 @@ class SyncPullView(views.APIView):
             "invoices_count": len(invoices_data),
             "invoices": invoices_data,
             "company_settings": company_data,
+            "client_profile": client_profile_data,
+            "branches": branches_data,
             "active_invoice_uuids": active_uuids,
             "active_customer_phones": active_customer_phones,
             "active_product_skus": active_product_skus,

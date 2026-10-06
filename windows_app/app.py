@@ -57,7 +57,7 @@ os.environ["DEVICE_ID"] = get_hardware_device_id()
 
 from django.core.management import call_command
 from django.contrib.auth.models import User
-from sync_manager import SyncManager
+from sync_manager import SyncManager, get_sync_manager
 from auto_updater import get_auto_updater
 
 
@@ -186,7 +186,7 @@ def main():
 
     # 3. Start Background Auto-Sync & Auto-Updater Workers
     cloud_url = os.getenv("CLOUD_SERVER_URL", "https://billing-software-render.onrender.com")
-    sync_worker = SyncManager(server_url=cloud_url, interval_seconds=10)
+    sync_worker = get_sync_manager(server_url=cloud_url, interval_seconds=10)
     sync_worker.start()
 
     updater_worker = get_auto_updater(server_url=cloud_url)

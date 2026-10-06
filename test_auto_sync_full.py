@@ -55,7 +55,7 @@ def test_full_auto_sync_ecosystem():
 
     # Admin updates Company Settings on website
     cs = CompanySettings.get_settings()
-    cs.company_name = "MathanHub Supermarket"
+    cs.company_name = "MathanHub Retail"
     cs.phone = "+91 98765 43210"
     cs.save()
     print(f"    -> Admin updated company branding on website: '{cs.company_name}'")
@@ -68,7 +68,7 @@ def test_full_auto_sync_ecosystem():
     assert pull_resp.status_code == 200
     pull_data = pull_resp.json()
     assert "company_settings" in pull_data, "Company settings missing from pull"
-    assert pull_data["company_settings"]["company_name"] == "MathanHub Supermarket"
+    assert pull_data["company_settings"]["company_name"] == "MathanHub Retail"
     print("    -> Client pulled company branding:", pull_data["company_settings"]["company_name"])
 
     pulled_prods = {p["sku"]: p for p in pull_data["products"]}

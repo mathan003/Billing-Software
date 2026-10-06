@@ -554,6 +554,11 @@ class CompanySettings(models.Model):
     @classmethod
     def get_settings(cls):
         obj, _ = cls.objects.get_or_create(id=1)
+        if obj.company_name and "supermarket" in obj.company_name.lower():
+            obj.company_name = obj.company_name.replace("Supermarket", "").replace("supermarket", "").strip()
+            if not obj.company_name:
+                obj.company_name = "MathanHub"
+            obj.save(update_fields=["company_name"])
         return obj
 
     @property

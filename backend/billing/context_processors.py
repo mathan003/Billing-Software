@@ -20,7 +20,7 @@ def session_security_context(request):
             "max_allowed_devices": 5,
             "available_software_update": None,
             "company": company,
-            "active_shop_name": company.company_name,
+            "active_shop_name": (company.company_name.replace("Supermarket", "").replace("supermarket", "").strip() or "MathanHub") if company else "MathanHub",
             "active_shop_address": company.address,
             "active_shop_phone": company.phone,
             "active_shop_email": company.email,
@@ -54,7 +54,11 @@ def session_security_context(request):
         available_software_update = latest_update
 
     # Client-specific shop profile with fallback to company settings
-    shop_name = (profile.shop_name if (profile and profile.shop_name) else company.company_name)
+    raw_shop = (profile.shop_name if (profile and profile.shop_name) else company.company_name)
+    if "supermarket" in raw_shop.lower() and "mathanhub" in raw_shop.lower():
+        shop_name = raw_shop.replace("Supermarket", "").replace("supermarket", "").strip() or "MathanHub"
+    else:
+        shop_name = raw_shop
     shop_address = (profile.shop_address if (profile and profile.shop_address) else company.address)
     shop_phone = (profile.phone if (profile and profile.phone) else company.phone)
     shop_email = (request.user.email if request.user.email else company.email)

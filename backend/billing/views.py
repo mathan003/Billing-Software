@@ -102,14 +102,31 @@ def get_available_categories(request):
     distinct Product categories, and default retail departments.
     """
     c_filter = get_client_filter(request)
-    default_cats = {"General", "Grocery", "Fruits", "Vegetables", "Snacks", "Beverages", "Dairy", "Spices", "Stationery", "Electronics", "Mobile & Computer"}
+    if not ProductCategory.objects.exists():
+        initial_cats = [
+            "General", "Grocery", "Fruits", "Vegetables",
+            "Snacks", "Beverages", "Dairy", "Spices",
+            "Stationery", "Electronics", "Mobile & Computer"
+        ]
+        for c_name in initial_cats:
+            ProductCategory.objects.get_or_create(name=c_name)
+
     prod_cats = set(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True))
     saved_cats = set(ProductCategory.objects.filter(c_filter).exclude(name="").values_list("name", flat=True))
-    all_cats = default_cats | prod_cats | saved_cats
+    all_cats = {"General"} | prod_cats | saved_cats
     return sorted([c.strip() for c in all_cats if c and c.strip()])
 
 
 
+
+
+def trigger_desktop_sync_safe():
+    """Triggers background desktop sync to immediately reflect changes on web cloud database"""
+    try:
+        from sync_manager import trigger_desktop_sync
+        trigger_desktop_sync()
+    except Exception:
+        pass
 
 
 # ==========================================
@@ -189,7 +206,55 @@ def login_view(request):
 
         user = authenticate(request, username=username, password=password)
         if user is None:
-            messages.error(request, "Invalid username or password. Please try again.")
+            # Check if credentials verify against Cloud Server (e.g. client created on Web)
+            cloud_server_url = (os.getenv("CLOUD_SERVER_URL", "https://billing-software-render.onrender.com")).rstrip("/")
+            cloud_err_msg = ""
+            try:
+                import requests
+                auth_resp = requests.post(
+                    f"{cloud_server_url}/api/sync/auth/",
+                    json={"username": username, "password": password, "device_id": device_id},
+                    timeout=5.0
+                )
+                if auth_resp.status_code == 200:
+                    auth_data = auth_resp.json()
+                    if auth_data.get("status") == "success":
+                        u_data = auth_data.get("user", {})
+                        p_data = auth_data.get("profile", {})
+                        # Provision or update client user in local SQLite DB
+                        loc_u, _ = User.objects.get_or_create(username=username)
+                        loc_u.email = u_data.get("email", loc_u.email)
+                        loc_u.first_name = u_data.get("first_name", loc_u.first_name)
+                        loc_u.last_name = u_data.get("last_name", loc_u.last_name)
+                        loc_u.is_staff = u_data.get("is_staff", False)
+                        loc_u.is_superuser = u_data.get("is_superuser", False)
+                        loc_u.set_password(password)  # Store password hash locally so subsequent logins work offline!
+                        loc_u.save()
+
+                        loc_p, _ = UserProfile.objects.get_or_create(user=loc_u)
+                        loc_p.role = p_data.get("role", loc_p.role)
+                        loc_p.shop_name = p_data.get("shop_name", loc_p.shop_name)
+                        loc_p.shop_address = p_data.get("shop_address", loc_p.shop_address)
+                        loc_p.business_type = p_data.get("business_type", loc_p.business_type)
+                        loc_p.access_mode = p_data.get("access_mode", loc_p.access_mode)
+                        loc_p.device_limit = p_data.get("device_limit", loc_p.device_limit)
+                        loc_p.phone = p_data.get("phone", loc_p.phone)
+                        loc_p.gst_number = p_data.get("gst_number", loc_p.gst_number)
+                        loc_p.bank_name = p_data.get("bank_name", loc_p.bank_name)
+                        loc_p.account_number = p_data.get("account_number", loc_p.account_number)
+                        loc_p.ifsc_code = p_data.get("ifsc_code", loc_p.ifsc_code)
+                        loc_p.avatar_base64 = p_data.get("avatar_base64", loc_p.avatar_base64)
+                        loc_p.shop_logo_base64 = p_data.get("shop_logo_base64", loc_p.shop_logo_base64)
+                        loc_p.save()
+
+                        user = authenticate(request, username=username, password=password)
+                elif auth_resp.status_code in (401, 403):
+                    cloud_err_msg = auth_resp.json().get("message", "")
+            except Exception:
+                pass
+
+        if user is None:
+            messages.error(request, cloud_err_msg or "Invalid username or password. Please try again.")
             return render(request, "billing/login.html", {
                 "is_desktop_app": is_desktop,
                 "remembered_username": remembered_username,
@@ -296,14 +361,36 @@ def login_view(request):
                 existing_device.device_name = device_name
                 existing_device.save()
 
-        # 4. Save persistent local configuration for Desktop App
+        # 4. Save persistent local configuration & Erase previous client data if switching client
         if is_desktop:
+            last_client = pos_cfg.get("last_logged_in_client", "")
+            if last_client and last_client != user.username:
+                # User switched clients! Erase previous client's cached local records so new client has a clean slate
+                try:
+                    InvoiceItem.objects.all().delete()
+                    Invoice.objects.all().delete()
+                    PaymentRecord.objects.all().delete()
+                    StockLog.objects.all().delete()
+                    Customer.objects.all().delete()
+                    Product.objects.all().delete()
+                    Branch.objects.exclude(branch_code="MAIN-01").delete()
+                except Exception:
+                    pass
+
             save_desktop_pos_config({
                 "device_id": device_id,
                 "remembered_username": user.username,
+                "last_logged_in_client": user.username,
                 "shop_name": getattr(profile, "shop_name", ""),
                 "is_activated": True,
             })
+
+            # Trigger immediate background sync to pull latest data for this client from cloud
+            try:
+                from sync_manager import trigger_desktop_sync
+                trigger_desktop_sync()
+            except Exception:
+                pass
 
         # 5. Login and create session
         login(request, user)
@@ -650,6 +737,8 @@ def billing_page(request):
             f"Created bill #{inv_number} at branch '{invoice.branch_name}' for customer '{invoice.customer_name}'. Grand Total: ₹{grand_total}, Paid: ₹{paid_amount}, Balance Due: ₹{invoice.balance_amount}"
         )
 
+        trigger_desktop_sync_safe()
+
         messages.success(request, f"Invoice {inv_number} created successfully! Grand Total: ₹{grand_total}")
         return redirect(f"/invoices/{invoice.id}/?autoprint=1")
 
@@ -825,6 +914,8 @@ def quick_bill_create(request):
                 f"Quick bill #{inv_number} created at branch '{invoice.branch_name}' for '{invoice.customer_name}'. Grand Total: ₹{grand_total}, Paid: ₹{paid_amount}, Balance Due: ₹{invoice.balance_amount}"
             )
 
+            trigger_desktop_sync_safe()
+
             messages.success(request, f"Invoice {inv_number} created successfully! Grand Total: ₹{grand_total}")
             return redirect(f"/invoices/{invoice.id}/?autoprint=1")
 
@@ -944,6 +1035,7 @@ def invoice_delete(request, invoice_id):
             "INVOICE_DELETE",
             f"User '{request.user.username}' deleted invoice #{inv_number} (UUID: {inv_uuid}). Stock restored."
         )
+        trigger_desktop_sync_safe()
         messages.success(request, f"Invoice #{inv_number} deleted successfully and product stock restored.")
     return redirect("billing:invoice_list")
 
@@ -1101,6 +1193,8 @@ def invoice_edit(request, invoice_id):
             f"Altered/edited bill #{invoice.invoice_number} for customer '{invoice.customer_name}'. Grand Total changed from ₹{old_total} to ₹{invoice.grand_total}. Remaining Balance: ₹{invoice.balance_amount}"
         )
 
+        trigger_desktop_sync_safe()
+
         messages.success(
             request,
             f"Invoice #{invoice.invoice_number} updated successfully! New Total: ₹{invoice.grand_total}, Remaining Due: ₹{invoice.balance_amount}"
@@ -1165,6 +1259,8 @@ def invoice_update_payment(request, invoice_id):
                 f"Recorded payment of ₹{pay_amt} via {pay_mode} for invoice #{invoice.invoice_number} ({invoice.customer_name}). Remaining Balance: ₹{invoice.balance_amount}"
             )
 
+            trigger_desktop_sync_safe()
+
             messages.success(
                 request,
                 f"Recorded ₹{pay_amt} via {pay_mode} for {invoice.invoice_number}. Remaining Balance: ₹{invoice.balance_amount}"
@@ -1222,6 +1318,8 @@ def invoice_apply_discount(request, invoice_id):
                 f"Updated discount on invoice #{invoice.invoice_number} ({invoice.customer_name}): ₹{old_discount} -> ₹{invoice.discount_amount}. Grand Total: ₹{old_total} -> ₹{invoice.grand_total}, Remaining Balance: ₹{invoice.balance_amount}. Offer: '{offer_name or 'None'}'"
             )
 
+            trigger_desktop_sync_safe()
+
             messages.success(
                 request,
                 f"Discount/Offer applied to {invoice.invoice_number}! New Total: ₹{invoice.grand_total}, Remaining Balance: ₹{invoice.balance_amount}"
@@ -1258,10 +1356,25 @@ def product_list(request):
         products = products.filter(category=category)
 
     categories = get_available_categories(request)
+    cat_counts_map = dict(
+        Product.objects.filter(c_filter, is_active=True)
+        .values("category")
+        .annotate(cnt=Count("id"))
+        .values_list("category", "cnt")
+    )
+    category_list_data = [
+        {
+            "name": cat_name,
+            "product_count": cat_counts_map.get(cat_name, 0),
+            "is_default": (cat_name.lower() == "general"),
+        }
+        for cat_name in categories
+    ]
 
     return render(request, "billing/products.html", {
         "products": products,
         "categories": categories,
+        "category_list_data": category_list_data,
         "search": search,
         "selected_category": category,
         "unit_choices": Product.UNIT_CHOICES,
@@ -1272,23 +1385,91 @@ def category_add(request):
     """Add a new product category"""
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
+        is_ajax = (
+            request.headers.get("x-requested-with") == "XMLHttpRequest"
+            or request.content_type == "application/json"
+        )
         if not name:
+            if is_ajax:
+                return JsonResponse({"status": "error", "message": "Please enter a valid category name."}, status=400)
             messages.error(request, "Please enter a valid category name.")
         else:
             client_user = get_client_user(request)
             c_filter = get_client_filter(request)
-            exists = ProductCategory.objects.filter(c_filter, name__iexact=name).exists() or \
-                     Product.objects.filter(c_filter, category__iexact=name).exists()
+            exists = (
+                ProductCategory.objects.filter(c_filter, name__iexact=name).exists()
+                or Product.objects.filter(c_filter, category__iexact=name).exists()
+            )
             if exists:
+                if is_ajax:
+                    return JsonResponse({"status": "info", "message": f"Category '{name}' already exists.", "name": name})
                 messages.info(request, f"Category '{name}' already exists.")
             else:
-                ProductCategory.objects.create(name=name, client=client_user)
+                cat = ProductCategory.objects.create(name=name, client=client_user)
                 log_activity(
                     request,
                     "PRODUCT_ADD",
                     f"Created new product category '{name}'"
                 )
-                messages.success(request, f"Category '{name}' added successfully! You can now select it when adding products.")
+                trigger_desktop_sync_safe()
+                msg = f"Category '{name}' added successfully! You can now select it when adding products."
+                if is_ajax:
+                    return JsonResponse({"status": "success", "message": msg, "name": name, "id": cat.id})
+                messages.success(request, msg)
+
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or ""
+    if next_url and next_url.startswith("/"):
+        return redirect(next_url)
+    return redirect("billing:product_list")
+
+
+def category_delete(request):
+    """Remove / delete a product category and safely reassign its products to 'General'"""
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        is_ajax = (
+            request.headers.get("x-requested-with") == "XMLHttpRequest"
+            or request.content_type == "application/json"
+        )
+        if not name:
+            if is_ajax:
+                return JsonResponse({"status": "error", "message": "Please specify a category name to remove."}, status=400)
+            messages.error(request, "Please specify a valid category name to remove.")
+        elif name.lower() == "general":
+            msg = "The default 'General' category cannot be deleted as it is required as a fallback."
+            if is_ajax:
+                return JsonResponse({"status": "error", "message": msg}, status=400)
+            messages.warning(request, msg)
+        else:
+            c_filter = get_client_filter(request)
+            # Reassign all affected products under this scope to 'General'
+            affected_count = Product.objects.filter(c_filter, category__iexact=name).update(category="General")
+
+            # Remove from ProductCategory table
+            if is_admin_user(request.user):
+                ProductCategory.objects.filter(name__iexact=name).delete()
+            else:
+                ProductCategory.objects.filter(
+                    Q(client=request.user) | Q(client__isnull=True),
+                    name__iexact=name
+                ).delete()
+
+            log_activity(
+                request,
+                "PRODUCT_DELETE",
+                f"Removed category '{name}' (reassigned {affected_count} product(s) to 'General')"
+            )
+            trigger_desktop_sync_safe()
+
+            success_msg = f"Category '{name}' removed successfully! ({affected_count} product(s) reassigned to 'General')"
+            if is_ajax:
+                return JsonResponse({
+                    "status": "success",
+                    "message": success_msg,
+                    "name": name,
+                    "reassigned_count": affected_count,
+                })
+            messages.success(request, success_msg)
 
     next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or ""
     if next_url and next_url.startswith("/"):
@@ -1338,6 +1519,7 @@ def product_add(request):
             "PRODUCT_ADD",
             f"Added product '{prod.display_name}' (SKU: {prod.sku}, Unit: {prod.unit}, Price: ₹{prod.price}, Stock: {prod.stock_quantity})"
         )
+        trigger_desktop_sync_safe()
         messages.success(request, f"Product '{name_tamil or name}' added successfully!")
 
     return redirect("billing:product_list")
@@ -1364,6 +1546,7 @@ def product_edit(request, product_id):
             "PRODUCT_EDIT",
             f"Updated product '{product.display_name}' (SKU: {product.sku}, Unit: {product.unit}, Price: ₹{product.price}, Stock: {product.stock_quantity})"
         )
+        trigger_desktop_sync_safe()
 
         messages.success(request, f"Product '{product.display_name}' updated successfully!")
 
@@ -1387,6 +1570,7 @@ def product_delete(request, product_id):
             "PRODUCT_DELETE",
             f"Removed/deactivated product '{prod_name}' (SKU: {product.sku})"
         )
+        trigger_desktop_sync_safe()
         messages.success(request, f"Product '{prod_name}' removed from active inventory.")
 
     return redirect("billing:product_list")
@@ -1428,6 +1612,7 @@ def customer_add(request):
                 "CUSTOMER_ADD",
                 f"Added customer '{cust.name}' (Phone: {cust.phone or 'N/A'}, GST: {cust.gst_number or 'N/A'})"
             )
+            trigger_desktop_sync_safe()
             messages.success(request, f"Customer '{name}' added successfully!")
 
     return redirect(request.META.get("HTTP_REFERER", "billing:dashboard"))
@@ -1452,6 +1637,7 @@ def customer_edit(request, customer_id):
             "CUSTOMER_EDIT",
             f"Updated customer details for '{customer.name}' (Phone: {customer.phone or 'N/A'}, GST: {customer.gst_number or 'N/A'})"
         )
+        trigger_desktop_sync_safe()
         messages.success(request, f"Customer '{customer.name}' updated successfully!")
 
     return redirect(request.META.get("HTTP_REFERER", "billing:dashboard"))
@@ -2568,6 +2754,7 @@ def customer_delete(request, customer_id):
             "CUSTOMER_DELETE",
             f"User '{request.user.username}' deleted customer record '{cust_name}' (Phone: {cust_phone})."
         )
+        trigger_desktop_sync_safe()
         messages.success(request, f"Customer record '{cust_name}' was deleted successfully.")
 
     return redirect("billing:customer_list")
@@ -3125,6 +3312,7 @@ def client_profile_view(request):
             "PROFILE_UPDATE",
             f"User '{request.user.username}' updated business profile (Shop: {shop_name or 'N/A'}, Phone: {phone or 'N/A'}, GSTIN: {gst_number or 'N/A'}, Bank: {bank_name or 'N/A'})"
         )
+        trigger_desktop_sync_safe()
         messages.success(request, "Shop Profile & GST details updated successfully! All bills automatically reflect this GST number.")
         return redirect("billing:client_profile")
 

@@ -104,6 +104,8 @@ class SyncInvoicePayloadSerializer(serializers.Serializer):
     tax_amount = serializers.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     discount_amount = serializers.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     grand_total = serializers.DecimalField(max_digits=12, decimal_places=2)
+    paid_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0.00)
+    balance_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0.00)
     payment_method = serializers.CharField(max_length=30, default="Cash")
     payment_status = serializers.CharField(max_length=20, default="Paid")
     notes = serializers.CharField(required=False, allow_blank=True, default="")
@@ -141,6 +143,7 @@ class SyncPaymentPayloadSerializer(serializers.Serializer):
 
 class SyncPushRequestSerializer(serializers.Serializer):
     device_id = serializers.CharField(max_length=100)
+    client_username = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
     invoices = SyncInvoicePayloadSerializer(many=True, required=False, default=list)
     products = SyncProductPayloadSerializer(many=True, required=False, default=list)
     customers = SyncCustomerPayloadSerializer(many=True, required=False, default=list)

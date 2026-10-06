@@ -55,6 +55,7 @@ urlpatterns = [
     path("products/", views.product_list, name="product_list"),
     path("products/add/", views.product_add, name="product_add"),
     path("products/category/add/", views.category_add, name="category_add"),
+    path("products/category/delete/", views.category_delete, name="category_delete"),
     path("products/<int:product_id>/edit/", views.product_edit, name="product_edit"),
     path("products/<int:product_id>/delete/", views.product_delete, name="product_delete"),
 
@@ -99,6 +100,7 @@ urlpatterns = [
 
     # Background REST API for Windows App auto-sync and real-time live poller
     path("api/health/", api_views.HealthCheckView.as_view(), name="api-health"),
+    path("api/sync/auth/", api_views.ClientAuthVerifyView.as_view(), name="api-sync-auth"),
     path("api/live-status/", api_views.LiveStatusView.as_view(), name="api-live-status"),
     path("api/updates/check/", api_views.UpdateCheckView.as_view(), name="api-update-check"),
     path("api/updates/download/exe/", api_views.UpdateDownloadView.as_view(), name="api-update-download-exe"),

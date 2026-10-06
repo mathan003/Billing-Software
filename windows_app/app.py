@@ -218,11 +218,27 @@ def main():
             text_select=True,
         )
 
+        # Locate application icon
+        icon_path = None
+        for p in [
+            BACKEND_DIR / "static" / "img" / "logo.ico",
+            PROJECT_ROOT / "logo.ico",
+        ]:
+            if p.exists():
+                icon_path = str(p)
+                break
+
         # Try EdgeChromium, fall back to default
         try:
-            webview.start(gui="edgechromium", private_mode=False)
+            if icon_path:
+                webview.start(gui="edgechromium", private_mode=False, icon=icon_path)
+            else:
+                webview.start(gui="edgechromium", private_mode=False)
         except Exception:
-            webview.start(private_mode=False)
+            if icon_path:
+                webview.start(private_mode=False, icon=icon_path)
+            else:
+                webview.start(private_mode=False)
 
     except Exception as e:
         logger.warning(f"Native desktop window unavailable ({e}). Opening in default browser...")

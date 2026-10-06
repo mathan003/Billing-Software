@@ -33,6 +33,7 @@ def build():
         "--onefile",                  # Pack into single standalone executable
         "--clean",                    # Clean cache before build
         f"--icon={base_dir / 'logo.ico'}", # Set application icon from MathanHub logo
+        f"--add-data={base_dir / 'logo.ico'};.", # Bundle icon for runtime window
         # Bundle templates & static assets
         f"--add-data={backend_dir / 'templates'};templates",
         f"--add-data={backend_dir / 'staticfiles'};staticfiles",

@@ -40,6 +40,12 @@ CSRF_TRUSTED_ORIGINS = [
     "https://*.railway.app",
     "https://*.up.railway.app",
 ]
+railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+if railway_domain:
+    CSRF_TRUSTED_ORIGINS.extend([
+        f"https://{railway_domain}",
+        f"http://{railway_domain}",
+    ])
 custom_csrf = os.getenv("CSRF_TRUSTED_ORIGINS")
 if custom_csrf:
     CSRF_TRUSTED_ORIGINS.extend([origin.strip() for origin in custom_csrf.split(",")])
@@ -117,47 +123,113 @@ WSGI_APPLICATION = "billing_backend.wsgi.application"
 
 # Database Configuration
 # Priority:
-# 1. DATABASE_URL (used by Render, Heroku, Aiven, Railway, etc.)
-# 2. Local MySQL database
-# 3. Fallback to SQLite if MySQL is not available or USE_SQLITE=True
-DATABASE_URL = os.getenv("DATABASE_URL")
-IS_CLOUD = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RENDER") or os.getenv("DYNO"))
+# 1. Cloud Database URL (DATABASE_URL, MYSQL_URL, POSTGRES_URL)
+# 2. Remote MySQL host (DB_HOST, MYSQLHOST)
+# 3. Cloud deployment fallback to SQLite if no remote database configured (prevents Railway crash)
+# 4. Local MySQL with auto-fallback to SQLite if MySQL daemon is not running
+
+IS_RAILWAY = bool(
+    os.getenv("RAILWAY_ENVIRONMENT_NAME")
+    or os.getenv("RAILWAY_ENVIRONMENT")
+    or os.getenv("RAILWAY_PROJECT_ID")
+    or os.getenv("RAILWAY_SERVICE_ID")
+    or os.getenv("RAILWAY_PUBLIC_DOMAIN")
+)
+IS_RENDER = bool(os.getenv("RENDER"))
+IS_HEROKU = bool(os.getenv("DYNO"))
+IS_CLOUD = IS_RAILWAY or IS_RENDER or IS_HEROKU or bool(os.getenv("K_SERVICE"))
+
+DATABASE_URL = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("MYSQL_URL")
+    or os.getenv("MYSQL_PRIVATE_URL")
+    or os.getenv("MYSQL_PUBLIC_URL")
+    or os.getenv("POSTGRES_URL")
+)
+
+DB_HOST = os.getenv("DB_HOST") or os.getenv("MYSQLHOST")
+DB_PORT = os.getenv("DB_PORT") or os.getenv("MYSQLPORT", "3306")
+DB_USER = os.getenv("DB_USER") or os.getenv("MYSQLUSER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD") or os.getenv("MYSQLPASSWORD", "root")
+DB_NAME = os.getenv("DB_NAME") or os.getenv("MYSQLDATABASE", "billing_db")
 USE_SQLITE = os.getenv("USE_SQLITE", "False").lower() in ("true", "1", "yes")
 
 LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH")
 sqlite_db_file = Path(LOCAL_DB_PATH) if LOCAL_DB_PATH else (BASE_DIR / "billing_local.sqlite3")
 
+def _check_port_open(host, port, timeout=0.8):
+    import socket
+    try:
+        s = socket.create_connection((host, int(port)), timeout=timeout)
+        s.close()
+        return True
+    except Exception:
+        return False
+
 if DATABASE_URL:
-    DATABASES = {
-        "default": dj_database_url.config(
-            default=DATABASE_URL,
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
-elif USE_SQLITE or (IS_CLOUD and not os.getenv("DB_HOST")):
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": sqlite_db_file,
-        }
-    }
-else:
-    # Default to MySQL
+    db_config = dj_database_url.config(
+        default=DATABASE_URL,
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+    if "mysql" in db_config.get("ENGINE", ""):
+        db_config.setdefault("OPTIONS", {})
+        db_config["OPTIONS"].setdefault("charset", "utf8mb4")
+        db_config["OPTIONS"].setdefault("init_command", "SET sql_mode='STRICT_TRANS_TABLES'")
+    DATABASES = {"default": db_config}
+
+elif DB_HOST and DB_HOST not in ("127.0.0.1", "localhost"):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.mysql",
-            "NAME": os.getenv("DB_NAME", "billing_db"),
-            "USER": os.getenv("DB_USER", "root"),
-            "PASSWORD": os.getenv("DB_PASSWORD", "root"),
-            "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-            "PORT": os.getenv("DB_PORT", "3306"),
+            "NAME": DB_NAME,
+            "USER": DB_USER,
+            "PASSWORD": DB_PASSWORD,
+            "HOST": DB_HOST,
+            "PORT": DB_PORT,
             "OPTIONS": {
                 "charset": "utf8mb4",
                 "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
             },
         }
     }
+
+elif USE_SQLITE or IS_CLOUD:
+    # On Cloud (Railway / Render) without an attached remote database, or when requested:
+    # Use SQLite so migrations and server run cleanly without connection errors.
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": sqlite_db_file,
+        }
+    }
+
+else:
+    # Local development: check if MySQL server is actually listening on localhost
+    host = DB_HOST or "127.0.0.1"
+    port = DB_PORT or "3306"
+    if _check_port_open(host, port):
+        DATABASES = {
+            "default": {
+                "ENGINE": "django.db.backends.mysql",
+                "NAME": DB_NAME,
+                "USER": DB_USER,
+                "PASSWORD": DB_PASSWORD,
+                "HOST": host,
+                "PORT": port,
+                "OPTIONS": {
+                    "charset": "utf8mb4",
+                    "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+                },
+            }
+        }
+    else:
+        DATABASES = {
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": sqlite_db_file,
+            }
+        }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

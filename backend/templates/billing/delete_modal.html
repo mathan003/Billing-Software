@@ -137,13 +137,21 @@
                                 <label class="form-label fw-semibold text-dark">Select Customer (வாடிக்கையாளரை தேர்ந்தெடுக்கவும்) *</label>
                                 <select name="customer_id" class="form-select form-select-lg border" required>
                                     <option value="" selected disabled>-- Choose Customer --</option>
-                                    {% for c in global_customers|default:customers %}
-                                        <option value="{{ c.id }}">
-                                            {{ c.name }}{% if c.phone %} ({{ c.phone }}){% endif %}
-                                        </option>
-                                    {% empty %}
+                                    {% if global_customers %}
+                                        {% for c in global_customers %}
+                                            <option value="{{ c.id }}">
+                                                {{ c.name }}{% if c.phone %} ({{ c.phone }}){% endif %}
+                                            </option>
+                                        {% endfor %}
+                                    {% elif customers %}
+                                        {% for c in customers %}
+                                            <option value="{{ c.id }}">
+                                                {{ c.name }}{% if c.phone %} ({{ c.phone }}){% endif %}
+                                            </option>
+                                        {% endfor %}
+                                    {% else %}
                                         <option value="" disabled>No customers found in directory.</option>
-                                    {% endfor %}
+                                    {% endif %}
                                 </select>
                                 <div class="form-text small text-muted">All invoice history, bill line items, and payment transactions for this customer will be deleted.</div>
                             </div>

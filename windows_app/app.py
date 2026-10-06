@@ -52,9 +52,12 @@ os.environ["LOCAL_DB_PATH"] = str(db_file)
 import django
 django.setup()
 
+from billing.device_utils import get_hardware_device_id
+os.environ["DEVICE_ID"] = get_hardware_device_id()
+
 from django.core.management import call_command
 from django.contrib.auth.models import User
-from billing.models import Product, Customer, ActiveUserSession
+from billing.models import Product, Customer, ActiveUserSession, RegisteredDevice
 from sync_manager import SyncManager
 
 
@@ -70,14 +73,14 @@ def init_database():
         # Verify all billing tables exist; if any is missing, run syncdb and schema_editor
         from billing.models import (
             UserProfile, CompanySettings, ActivityLog, ActiveUserSession,
-            Product, Customer, Invoice, InvoiceItem, PaymentRecord, Purchase,
-            Branch, StockLog, SoftwareUpdate, purge_old_customer_data
+            RegisteredDevice, Product, Customer, Invoice, InvoiceItem,
+            PaymentRecord, Purchase, Branch, StockLog, SoftwareUpdate, purge_old_customer_data
         )
 
         all_models = [
             UserProfile, CompanySettings, ActivityLog, ActiveUserSession,
-            Product, Customer, Invoice, InvoiceItem, PaymentRecord, Purchase,
-            Branch, StockLog, SoftwareUpdate
+            RegisteredDevice, Product, Customer, Invoice, InvoiceItem,
+            PaymentRecord, Purchase, Branch, StockLog, SoftwareUpdate
         ]
 
         missing_models = []

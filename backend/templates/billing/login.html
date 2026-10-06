@@ -22,7 +22,7 @@
             padding: 1rem;
         }
         .login-card {
-            max-width: 440px;
+            max-width: 450px;
             width: 100%;
             background: #ffffff;
             border-radius: 18px;
@@ -73,35 +73,90 @@
             {% endfor %}
         {% endif %}
 
+        {% if is_desktop_app and is_first_time_desktop %}
+            <!-- First-Time Desktop App Notice (Internet Mandatory) -->
+            <div class="alert alert-primary border-0 rounded-3 small mb-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <i class="fa-solid fa-wifi text-primary fa-lg"></i>
+                    <strong>First-Time Setup (முதல் முறை பதிவு):</strong>
+                </div>
+                <div class="text-secondary small">
+                    An active internet connection is mandatory to register this machine with the cloud server.
+                    After registration, this system will remember your username and only require your password.
+                </div>
+            </div>
+        {% endif %}
+
         <form method="post" action="{% url 'billing:login' %}">
             {% csrf_token %}
-            <div class="mb-3">
-                <label class="form-label small fw-semibold text-secondary">Username / Login ID</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-user"></i></span>
-                    <input type="text" name="username" class="form-control bg-light border-start-0" placeholder="Enter Login ID" required autofocus>
-                </div>
-            </div>
 
-            <div class="mb-4">
-                <label class="form-label small fw-semibold text-secondary">Password</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-lock"></i></span>
-                    <input type="password" name="password" class="form-control bg-light border-start-0" placeholder="Enter Password" required>
+            {% if is_desktop_app and remembered_username %}
+                <!-- DESKTOP APP: REMEMBERED USER (PASSWORD ONLY ENTRY) -->
+                <div class="text-center mb-4 p-3 bg-light rounded-4 border">
+                    <div class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1 mb-2">
+                        <i class="fa-solid fa-circle-check me-1"></i> Registered System POS Terminal
+                    </div>
+                    <div class="d-flex align-items-center justify-content-center gap-2">
+                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold shadow-sm" style="width: 44px; height: 44px; font-size: 1.2rem;">
+                            {{ remembered_username|slice:":1"|upper }}
+                        </div>
+                        <div class="text-start">
+                            <h5 class="fw-bold mb-0 text-dark">{{ remembered_username }}</h5>
+                            <small class="text-muted">Enter password to unlock POS</small>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <button type="submit" class="btn btn-login w-100">
-                <i class="fa-solid fa-right-to-bracket me-2"></i> Sign In to Store
-            </button>
+                <input type="hidden" name="username" value="{{ remembered_username }}">
+
+                <div class="mb-4">
+                    <label class="form-label small fw-semibold text-secondary">Password (கடவுச்சொல்)</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-lock"></i></span>
+                        <input type="password" name="password" class="form-control bg-light border-start-0" placeholder="Enter Password" required autofocus>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-login w-100">
+                    <i class="fa-solid fa-lock-open me-2"></i> Unlock & Sign In to POS
+                </button>
+
+                <div class="text-center mt-3">
+                    <a href="?switch_user=1" class="text-muted small text-decoration-none">
+                        <i class="fa-solid fa-arrow-right-arrow-left me-1"></i> Switch Account / வேறு பயனர் கணக்கு
+                    </a>
+                </div>
+
+            {% else %}
+                <!-- WEB LOGIN EVERY TIME OR FIRST-TIME SETUP: BOTH USERNAME & PASSWORD -->
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-secondary">Username / Login ID</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-user"></i></span>
+                        <input type="text" name="username" class="form-control bg-light border-start-0" placeholder="Enter Login ID" required autofocus>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label small fw-semibold text-secondary">Password</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-lock"></i></span>
+                        <input type="password" name="password" class="form-control bg-light border-start-0" placeholder="Enter Password" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-login w-100">
+                    <i class="fa-solid fa-right-to-bracket me-2"></i> {% if is_desktop_app %}Register Device & Sign In{% else %}Sign In to Store{% endif %}
+                </button>
+            {% endif %}
         </form>
 
         <div class="mt-4 pt-3 border-top text-center">
             <div class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 small">
-                <i class="fa-solid fa-shield-halved me-1"></i> Multi-User Protected • Max 5 Concurrent Devices
+                <i class="fa-solid fa-shield-halved me-1"></i> Strict Device Quota Protected • Admin Managed
             </div>
             <p class="text-muted small mt-2 mb-0" style="font-size: 11px;">
-                Authorized personnel access only. Unauthorized logins are blocked.
+                Authorized personnel access only. Unapproved devices are strictly blocked.
             </p>
         </div>
     </div>

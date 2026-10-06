@@ -240,7 +240,64 @@ class SyncManager:
                             cust.gst_number = c_data.get("gst_number", cust.gst_number)
                             cust.save()
 
-                # 4. Synchronize Web Deletions to Desktop App
+                # 4. Synchronize Cloud Invoices to Desktop Local App
+                cloud_invoices = data.get("invoices", [])
+                for inv_data in cloud_invoices:
+                    inv_uuid = inv_data.get("invoice_uuid")
+                    if not inv_uuid:
+                        continue
+                    local_inv = Invoice.objects.filter(invoice_uuid=inv_uuid).first()
+                    if not local_inv:
+                        cust_phone = inv_data.get("customer_phone", "").strip()
+                        c_match = None
+                        if cust_phone:
+                            c_match = Customer.objects.filter(phone=cust_phone).first()
+
+                        new_inv = Invoice.objects.create(
+                            invoice_uuid=inv_uuid,
+                            invoice_number=inv_data.get("invoice_number"),
+                            branch_name=inv_data.get("branch_name", "Main Shop Branch"),
+                            customer=c_match,
+                            customer_name=inv_data.get("customer_name", "Cash Customer"),
+                            customer_phone=cust_phone,
+                            subtotal=Decimal(str(inv_data.get("subtotal", "0.00"))),
+                            tax_amount=Decimal(str(inv_data.get("tax_amount", "0.00"))),
+                            discount_amount=Decimal(str(inv_data.get("discount_amount", "0.00"))),
+                            grand_total=Decimal(str(inv_data.get("grand_total", "0.00"))),
+                            paid_amount=Decimal(str(inv_data.get("paid_amount", "0.00"))),
+                            balance_amount=Decimal(str(inv_data.get("balance_amount", "0.00"))),
+                            payment_method=inv_data.get("payment_method", "Cash"),
+                            payment_status=inv_data.get("payment_status", "Paid"),
+                            source=inv_data.get("source", "web_mobile"),
+                            notes=(inv_data.get("notes", "") + " [CLOUD_SYNCED]").strip(),
+                            created_at=inv_data.get("created_at"),
+                        )
+                        from billing.models import InvoiceItem
+                        for it_d in inv_data.get("items", []):
+                            sku = it_d.get("product_sku", "")
+                            prod_obj = Product.objects.filter(sku=sku).first() if sku else None
+                            InvoiceItem.objects.create(
+                                invoice=new_inv,
+                                product=prod_obj,
+                                product_name=it_d.get("product_name", ""),
+                                product_sku=sku,
+                                unit=it_d.get("unit", "KG"),
+                                unit_price=Decimal(str(it_d.get("unit_price", "0.00"))),
+                                quantity=Decimal(str(it_d.get("quantity", "1.00"))),
+                                tax_percent=Decimal(str(it_d.get("tax_percent", "0.00"))),
+                                tax_amount=Decimal(str(it_d.get("tax_amount", "0.00"))),
+                                discount_percent=Decimal(str(it_d.get("discount_percent", "0.00"))),
+                                total_price=Decimal(str(it_d.get("total_price", "0.00"))),
+                            )
+                    else:
+                        updated_paid = Decimal(str(inv_data.get("paid_amount", local_inv.paid_amount)))
+                        if updated_paid != local_inv.paid_amount or inv_data.get("payment_status") != local_inv.payment_status:
+                            local_inv.paid_amount = updated_paid
+                            local_inv.balance_amount = Decimal(str(inv_data.get("balance_amount", "0.00")))
+                            local_inv.payment_status = inv_data.get("payment_status", local_inv.payment_status)
+                            local_inv.save(update_fields=["paid_amount", "balance_amount", "payment_status"])
+
+                # 5. Synchronize Web Deletions to Desktop App
                 if "active_invoice_uuids" in data:
                     active_uuids = set(data.get("active_invoice_uuids", []))
                     # Remove locally synced invoices that have been deleted on the web

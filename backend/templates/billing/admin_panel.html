@@ -176,9 +176,12 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <div class="d-flex align-items-center gap-2">
-                                        <span class="badge {% if u.active_sessions.count >= u.profile.device_limit %}bg-danger{% elif u.active_sessions.count > 0 %}bg-success{% else %}bg-secondary{% endif %} rounded-pill px-3 py-1">
-                                            <i class="fa-solid fa-laptop me-1"></i>{{ u.active_sessions.count }} / {{ u.profile.device_limit }} Devices
+                                    <div class="d-flex flex-column gap-1">
+                                        <span class="badge {% if u.registered_devices.count >= u.profile.device_limit %}bg-danger{% elif u.registered_devices.count > 0 %}bg-success{% else %}bg-secondary{% endif %} rounded-pill px-3 py-1">
+                                            <i class="fa-solid fa-laptop me-1"></i>{{ u.registered_devices.count }} / {{ u.profile.device_limit }} Devices Allowed
+                                        </span>
+                                        <span class="badge bg-light text-secondary border px-2 py-1 small" style="font-size: 11px;">
+                                            <i class="fa-solid fa-shield-halved me-1 text-primary"></i>{{ u.profile.get_access_mode_display }}
                                         </span>
                                     </div>
                                 </td>
@@ -351,6 +354,14 @@
                                                                     <option value="10" {% if u.profile.device_limit == 10 %}selected{% endif %}>10 Devices</option>
                                                                 </select>
                                                             </div>
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label class="form-label small fw-semibold">Platform Access Mode (அணுகல் முறை)</label>
+                                                            <select name="access_mode" class="form-select form-select-sm">
+                                                                <option value="online_offline" {% if u.profile.access_mode == 'online_offline' %}selected{% endif %}>Online & Offline (Web + Desktop POS)</option>
+                                                                <option value="offline_only" {% if u.profile.access_mode == 'offline_only' %}selected{% endif %}>Offline POS Only (Desktop EXE)</option>
+                                                                <option value="online_only" {% if u.profile.access_mode == 'online_only' %}selected{% endif %}>Online Only (Web Portal)</option>
+                                                            </select>
                                                         </div>
                                                         <div class="mb-3">
                                                             <label class="form-label small fw-semibold">Shop Address</label>
@@ -600,13 +611,96 @@
     </div>
 
     <!-- ========================================== -->
-    <!-- TAB 3: ACTIVE DEVICE SESSIONS MONITOR -->
+    <!-- TAB 3: ACTIVE DEVICE SESSIONS & HARDWARE REGISTRY -->
     <!-- ========================================== -->
     <div class="tab-pane fade" id="devices-pane" role="tabpanel">
+        <!-- 1. Registered Approved Devices (Quota slots) -->
         <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
-                    <h5 class="fw-bold mb-1 text-dark">Active Connected Devices Monitor</h5>
+                    <h5 class="fw-bold mb-1 text-dark">
+                        <i class="fa-solid fa-laptop-code text-primary me-2"></i> Approved Devices Registry (அனுமதிக்கப்பட்ட சாதனங்கள்)
+                    </h5>
+                    <p class="text-muted small mb-0">
+                        Tracks hardware slots allocated per client account. If a client reaches their limit (e.g. 5 devices), a 6th device is strictly blocked until an old device is removed here.
+                    </p>
+                </div>
+                <span class="badge bg-primary-subtle text-primary border px-3 py-2 fw-semibold">
+                    Approved Devices: {{ registered_devices|length }}
+                </span>
+            </div>
+
+            {% if registered_devices %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light small text-muted">
+                            <tr>
+                                <th>Client / User</th>
+                                <th>Device Identifier (Hardware ID)</th>
+                                <th>Platform / Type</th>
+                                <th>IP Address</th>
+                                <th>Last Active</th>
+                                <th>Quota Status</th>
+                                <th class="text-end">Manage Slot</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in registered_devices %}
+                            <tr>
+                                <td>
+                                    <div class="fw-bold text-dark">{{ d.user.username }}</div>
+                                    <div class="text-muted small">Limit: {{ d.user.profile.device_limit }} devices</div>
+                                </td>
+                                <td>
+                                    <span class="font-monospace small text-primary fw-semibold bg-light px-2 py-1 rounded border">
+                                        <i class="fa-solid fa-fingerprint me-1"></i>{{ d.device_id }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div>
+                                        {% if d.device_type == 'desktop_exe' %}
+                                            <span class="badge bg-primary-subtle text-primary px-2 py-1 me-1"><i class="fa-brands fa-windows me-1"></i>Desktop POS (EXE)</span>
+                                        {% else %}
+                                            <span class="badge bg-info-subtle text-info px-2 py-1 me-1"><i class="fa-solid fa-globe me-1"></i>Web Browser</span>
+                                        {% endif %}
+                                        <span class="small text-muted">{{ d.device_name|truncatechars:35 }}</span>
+                                    </div>
+                                </td>
+                                <td class="small font-monospace text-secondary">{{ d.ip_address }}</td>
+                                <td class="small text-muted">{{ d.last_login|timesince }} ago</td>
+                                <td>
+                                    {% if d.is_active %}
+                                        <span class="badge bg-success-subtle text-success px-2 py-1"><i class="fa-solid fa-circle-check me-1"></i> Authorized</span>
+                                    {% else %}
+                                        <span class="badge bg-danger-subtle text-danger px-2 py-1"><i class="fa-solid fa-circle-xmark me-1"></i> Blocked</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <form method="post" action="{% url 'billing:admin_revoke_registered_device' d.id %}" class="d-inline" onsubmit="return confirm('Remove approved device slot for {{ d.device_name }}? This will free up a device slot for a new device.');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fa-solid fa-trash me-1"></i> Remove Device
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="fa-solid fa-laptop fa-2x mb-2 text-secondary opacity-50"></i>
+                    <p class="small mb-0">No approved devices registered yet. Devices register automatically upon first login up to the client limit.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- 2. Active Live Sessions Monitor -->
+        <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark">Active Connected Sessions Monitor</h5>
                     <p class="text-muted small mb-0">View all devices currently logged in. Admins can revoke/disconnect any device session instantly.</p>
                 </div>
             </div>
@@ -989,6 +1083,15 @@
                                 <option value="10">10 Devices</option>
                             </select>
                         </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Platform Access Mode (அணுகல் முறை) *</label>
+                        <select name="access_mode" class="form-select">
+                            <option value="online_offline" selected>Online & Offline (Web + Desktop App)</option>
+                            <option value="offline_only">Offline POS Only (Desktop EXE)</option>
+                            <option value="online_only">Online Only (Web Portal)</option>
+                        </select>
                     </div>
 
                     <div class="row g-2 mb-3">

@@ -329,6 +329,43 @@ class SyncPullView(views.APIView):
             "updated_at": cs.updated_at.isoformat() if (cs and hasattr(cs, "updated_at") and cs.updated_at) else "",
         }
 
+        # Cloud Invoices to pull down to desktop app (with items)
+        invoices_qs = Invoice.objects.prefetch_related("items").order_by("-created_at")[:100]
+        invoices_data = []
+        for inv in invoices_qs:
+            items_list = []
+            for item in inv.items.all():
+                items_list.append({
+                    "product_name": item.product_name,
+                    "product_sku": item.product_sku,
+                    "unit": item.unit,
+                    "unit_price": str(item.unit_price),
+                    "quantity": str(item.quantity),
+                    "tax_percent": str(item.tax_percent),
+                    "tax_amount": str(item.tax_amount),
+                    "discount_percent": str(item.discount_percent),
+                    "total_price": str(item.total_price),
+                })
+            invoices_data.append({
+                "invoice_uuid": str(inv.invoice_uuid),
+                "invoice_number": inv.invoice_number,
+                "branch_name": inv.branch_name,
+                "customer_name": inv.customer_name,
+                "customer_phone": inv.customer_phone,
+                "subtotal": str(inv.subtotal),
+                "tax_amount": str(inv.tax_amount),
+                "discount_amount": str(inv.discount_amount),
+                "grand_total": str(inv.grand_total),
+                "paid_amount": str(inv.paid_amount),
+                "balance_amount": str(inv.balance_amount),
+                "payment_method": inv.payment_method,
+                "payment_status": inv.payment_status,
+                "source": inv.source,
+                "notes": inv.notes,
+                "created_at": inv.created_at.isoformat(),
+                "items": items_list,
+            })
+
         active_uuids = [str(u) for u in Invoice.objects.values_list("invoice_uuid", flat=True)]
         active_customer_phones = list(Customer.objects.exclude(phone="").values_list("phone", flat=True))
         active_product_skus = list(Product.objects.filter(is_active=True).values_list("sku", flat=True))
@@ -340,6 +377,8 @@ class SyncPullView(views.APIView):
             "products": products_data,
             "customers_count": len(customers_data),
             "customers": customers_data,
+            "invoices_count": len(invoices_data),
+            "invoices": invoices_data,
             "company_settings": company_data,
             "active_invoice_uuids": active_uuids,
             "active_customer_phones": active_customer_phones,

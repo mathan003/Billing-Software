@@ -169,9 +169,9 @@
         </div>
     </div>
 
-    <!-- Itemized Invoices List -->
-    <div class="col-12">
-        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+    <!-- Main Content Grid: Invoices Table (Left) + Customer Footfall Analytics Side Section (Right) -->
+    <div class="col-lg-8 col-12">
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden h-100">
             <div class="card-header bg-white border-0 pt-4 px-4 pb-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div>
                     <h5 class="fw-bold mb-0 text-dark">
@@ -265,6 +265,148 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SIDE SECTION: Customer Footfall & Visits Analytics (வாடிக்கையாளர்கள் வருகை அறிக்கை) -->
+    <div class="col-lg-4 col-12">
+        <div class="card border-0 shadow-sm rounded-4 h-100 bg-white">
+            <div class="card-header bg-white border-0 pt-4 px-4 pb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width: 42px; height: 42px; background: linear-gradient(135deg, #0d9488 0%, #06b6d4 100%);">
+                        <i class="fa-solid fa-users fa-lg"></i>
+                    </div>
+                    <div>
+                        <h5 class="fw-bold mb-0 text-dark">Customer Footfall</h5>
+                        <p class="text-muted small mb-0">வாடிக்கையாளர்கள் வருகை அறிக்கை</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-body p-4">
+                <!-- Selected Date-to-Date Filter Footfall Highlight Card -->
+                <div class="p-3 rounded-4 mb-4" style="background: linear-gradient(135deg, #f0fdfa 0%, #e0f2fe 100%); border: 1px solid #ccfbf1;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge text-white px-2 py-1 small fw-semibold" style="background: #0d9488;">
+                            <i class="fa-solid fa-calendar-check me-1"></i> {{ period_label }}
+                        </span>
+                        <small class="text-muted fw-semibold">தேர்ந்தெடுத்த காலம்</small>
+                    </div>
+                    <div class="d-flex align-items-baseline gap-2">
+                        <h2 class="fw-bold text-dark mb-0 font-monospace">{{ customer_footfall.range.total_customers }}</h2>
+                        <span class="text-secondary fw-semibold">Customers Visited</span>
+                    </div>
+                    <div class="small text-muted mt-2 d-flex justify-content-between pt-2 border-top">
+                        <span><i class="fa-solid fa-receipt me-1 text-primary"></i> Total Bills: <strong>{{ customer_footfall.range.total_bills }}</strong></span>
+                        <span><i class="fa-solid fa-chart-pie me-1 text-success"></i> Avg Spend: <strong>₹{{ customer_footfall.range.avg_spend|floatformat:1 }}</strong></span>
+                    </div>
+                    <div class="small text-muted mt-1 d-flex justify-content-between">
+                        <span><i class="fa-solid fa-user-check me-1 text-info"></i> Regular: <strong>{{ customer_footfall.range.registered }}</strong></span>
+                        <span><i class="fa-solid fa-person-walking me-1 text-secondary"></i> Walk-in: <strong>{{ customer_footfall.range.walkin }}</strong></span>
+                    </div>
+                </div>
+
+                <!-- Footfall Breakdown by Period: Today, Week, Month, Year -->
+                <h6 class="fw-bold text-dark mb-3">
+                    <i class="fa-solid fa-chart-simple text-primary me-2"></i> Footfall Summary (கால அளவு வருகை)
+                </h6>
+
+                <div class="d-flex flex-column gap-3">
+                    <!-- Today -->
+                    <div class="d-flex align-items-center justify-content-between p-3 rounded-3 bg-light border-start border-4 border-primary">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rounded-3 p-2 bg-primary-subtle text-primary">
+                                <i class="fa-solid fa-calendar-day fa-lg"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-dark">Today (இன்று)</div>
+                                <small class="text-muted">{{ customer_footfall.today.total_bills }} bills issued</small>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <h4 class="fw-bold text-primary mb-0 font-monospace">{{ customer_footfall.today.total_customers }}</h4>
+                            <small class="text-muted" style="font-size: 11px;">வாடிக்கையாளர்கள்</small>
+                        </div>
+                    </div>
+
+                    <!-- This Week -->
+                    <div class="d-flex align-items-center justify-content-between p-3 rounded-3 bg-light border-start border-4 border-success">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rounded-3 p-2 bg-success-subtle text-success">
+                                <i class="fa-solid fa-calendar-week fa-lg"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-dark">This Week (இந்த வாரம்)</div>
+                                <small class="text-muted">{{ customer_footfall.week.total_bills }} bills issued</small>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <h4 class="fw-bold text-success mb-0 font-monospace">{{ customer_footfall.week.total_customers }}</h4>
+                            <small class="text-muted" style="font-size: 11px;">வாடிக்கையாளர்கள்</small>
+                        </div>
+                    </div>
+
+                    <!-- This Month -->
+                    <div class="d-flex align-items-center justify-content-between p-3 rounded-3 bg-light border-start border-4 border-info">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rounded-3 p-2 bg-info-subtle text-info">
+                                <i class="fa-solid fa-calendar fa-lg"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-dark">This Month (இந்த மாதம்)</div>
+                                <small class="text-muted">{{ customer_footfall.month.total_bills }} bills issued</small>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <h4 class="fw-bold text-info mb-0 font-monospace">{{ customer_footfall.month.total_customers }}</h4>
+                            <small class="text-muted" style="font-size: 11px;">வாடிக்கையாளர்கள்</small>
+                        </div>
+                    </div>
+
+                    <!-- This Year -->
+                    <div class="d-flex align-items-center justify-content-between p-3 rounded-3 bg-light border-start border-4 border-warning">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rounded-3 p-2 bg-warning-subtle text-warning">
+                                <i class="fa-solid fa-calendar-days fa-lg"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-dark">This Year (இந்த வருடம்)</div>
+                                <small class="text-muted">{{ customer_footfall.year.total_bills }} bills issued</small>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <h4 class="fw-bold text-warning mb-0 font-monospace">{{ customer_footfall.year.total_customers }}</h4>
+                            <small class="text-muted" style="font-size: 11px;">வாடிக்கையாளர்கள்</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Custom Date-to-Date Inspector Widget -->
+                <div class="mt-4 pt-3 border-top">
+                    <label class="form-label small fw-bold text-secondary mb-2">
+                        <i class="fa-solid fa-filter me-1 text-primary"></i> Date to Date Footfall (தேதி முதல் தேதி):
+                    </label>
+                    <form method="GET" action="{% url 'billing:reports_dashboard' %}">
+                        <input type="hidden" name="sec" value="{{ sec_token }}">
+                        <input type="hidden" name="range" value="custom">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label text-muted" style="font-size: 11px;">From Date (முதல்)</label>
+                                <input type="date" name="start_date" class="form-control form-control-sm rounded-3" value="{{ start_date }}" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-muted" style="font-size: 11px;">To Date (வரை)</label>
+                                <input type="date" name="end_date" class="form-control form-control-sm rounded-3" value="{{ end_date }}" required>
+                            </div>
+                            <div class="col-12 mt-2">
+                                <button type="submit" class="btn btn-sm btn-primary-custom w-100 py-2">
+                                    <i class="fa-solid fa-magnifying-glass me-1"></i> Calculate Footfall (கணக்கிடு)
+                                </button>
+                            </div>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>

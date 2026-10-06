@@ -45,6 +45,7 @@ urlpatterns = [
     path("admin-panel/users/<int:user_id>/password/", views.admin_user_password_change, name="admin_user_password_change"),
     path("admin-panel/clients/<int:client_id>/wipe-db/", views.admin_wipe_client_database, name="admin_wipe_client_database"),
     path("admin-panel/sessions/<int:session_id>/revoke/", views.admin_revoke_device_session, name="admin_revoke_device_session"),
+    path("admin-panel/devices/<int:device_id>/revoke/", views.admin_revoke_registered_device, name="admin_revoke_registered_device"),
     path("admin-panel/activity/export-txt/", views.admin_export_activity_log_txt, name="admin_export_activity_log_txt"),
 
     # Products (Add, Edit, Update, Remove)

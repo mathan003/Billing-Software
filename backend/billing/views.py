@@ -13,8 +13,12 @@ from django.contrib.auth.models import User
 from django.http import HttpResponse, JsonResponse
 from .models import (
     Product, Customer, Invoice, InvoiceItem, Purchase,
-    PaymentRecord, ActiveUserSession, UserProfile, ActivityLog,
+    PaymentRecord, ActiveUserSession, RegisteredDevice, UserProfile, ActivityLog,
     CompanySettings, Branch, StockLog, SoftwareUpdate, purge_old_customer_data, log_activity
+)
+from .device_utils import (
+    get_hardware_device_id, get_desktop_pos_config, save_desktop_pos_config,
+    clear_desktop_remembered_user, is_desktop_environment, check_internet_connection
 )
 from .pdf_generator import generate_invoice_pdf, generate_statement_pdf, generate_sales_report_pdf
 
@@ -83,10 +87,18 @@ def login_view(request):
     """
     Dedicated Login Page:
     - Same fixed login link for everyone: /login/
-    - Admin: Strictly restricted to 1 active device at any time.
-    - Client: Shared client ID allows up to 5 concurrent members/devices.
-    - Internal pages dynamically use session security tokens (?sec=...).
-    - No registration link.
+    - Desktop App (EXE):
+        * First-time login: Mandatory internet connection to verify credentials and register device with server.
+        * Subsequent logins on same machine: Remembers username, requires PASSWORD ONLY.
+        * Offers option to switch account if needed.
+    - Web Browser:
+        * Always prompts for both username and password every time ('web login every time').
+    - Strict Admin Device Quotas:
+        * Admin specifies allowed devices (e.g., 5 devices).
+        * Exactly allowed number can login. A 6th device is STRICTLY BLOCKED with a clear error.
+    - Access Mode Split:
+        * 'offline_only' clients cannot log in via Web.
+        * 'online_only' clients cannot log in via Desktop App.
     """
     if request.user.is_authenticated:
         sec = request.session.get("sec_token")
@@ -95,68 +107,207 @@ def login_view(request):
             request.session["sec_token"] = sec
         return redirect(f"/?sec={sec}")
 
+    is_desktop = is_desktop_environment(request)
+    pos_cfg = get_desktop_pos_config() if is_desktop else {}
+    switch_user = request.GET.get("switch_user") == "1"
+
+    if switch_user and is_desktop:
+        clear_desktop_remembered_user()
+        pos_cfg = {}
+
+    remembered_username = pos_cfg.get("remembered_username", "") if is_desktop else ""
+    is_first_time_desktop = is_desktop and not bool(pos_cfg.get("is_activated"))
+    device_id = get_hardware_device_id() if is_desktop else (
+        request.POST.get("device_id") or request.COOKIES.get("billing_device_id") or f"WEB-{uuid.uuid4().hex[:12].upper()}"
+    )
+
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
         password = request.POST.get("password", "")
 
+        # For desktop app in password-only mode, fallback to remembered username if not submitted
+        if not username and is_desktop and remembered_username:
+            username = remembered_username
+
+        if not username or not password:
+            messages.error(request, "Please enter your login credentials.")
+            return render(request, "billing/login.html", {
+                "is_desktop_app": is_desktop,
+                "remembered_username": remembered_username,
+                "is_first_time_desktop": is_first_time_desktop,
+                "device_id": device_id,
+            })
+
+        # 1. Desktop App First-Time Login: Mandatory Internet Verification
+        if is_first_time_desktop:
+            has_internet, net_msg = check_internet_connection()
+            if not has_internet:
+                messages.error(
+                    request,
+                    "First-time system activation requires an active internet connection to register this computer. "
+                    "முதல் முறை உள்நுழைய இணைய இணைப்பு (Internet) கட்டாயமாகும். Please connect to internet and retry."
+                )
+                return render(request, "billing/login.html", {
+                    "is_desktop_app": is_desktop,
+                    "remembered_username": "",
+                    "is_first_time_desktop": True,
+                    "device_id": device_id,
+                })
+
         user = authenticate(request, username=username, password=password)
-        if user is not None:
-            # Login the user
-            login(request, user)
-
-            # Ensure session key exists
-            if not request.session.session_key:
-                request.session.save()
-
-            session_key = request.session.session_key
-            user_agent = request.META.get("HTTP_USER_AGENT", "Desktop/Mobile")[:200]
-            ip_addr = request.META.get("REMOTE_ADDR", "127.0.0.1")
-
-            # Dynamic security token for this login session (changes automatically every time)
-            sec_token = uuid.uuid4().hex[:12]
-            request.session["sec_token"] = sec_token
-
-            # Device limit check based on account role:
-            # 1. Admin: Strictly ONLY 1 active device
-            # 2. Client: Up to MAXIMUM 5 active devices/members
-            is_admin_user = user.is_superuser or (
-                hasattr(user, "profile") and user.profile.role == "admin"
-            )
-
-            if is_admin_user:
-                # Terminate any existing sessions for this administrator (Single Device Mode)
-                ActiveUserSession.objects.filter(user=user).delete()
-            else:
-                # Client: Evict oldest sessions if count >= client device_limit
-                dev_limit = user.profile.device_limit if (hasattr(user, "profile") and user.profile.device_limit) else 5
-                user_sessions = ActiveUserSession.objects.filter(user=user).order_by("created_at")
-                while user_sessions.count() >= dev_limit:
-                    oldest = user_sessions.first()
-                    oldest.delete()
-                    user_sessions = ActiveUserSession.objects.filter(user=user).order_by("created_at")
-
-            # Register current active device session
-            ActiveUserSession.objects.create(
-                user=user,
-                session_key=session_key,
-                device_info=user_agent,
-                ip_address=ip_addr,
-            )
-
-            # Log login activity into cloud database
-            role_title = "Administrator (Single Device)" if is_admin_user else "Client Operator (Max 5 Devices)"
-            log_activity(
-                request,
-                "LOGIN",
-                f"{role_title} '{user.username}' logged in successfully ({user_agent[:40]} | IP: {ip_addr})."
-            )
-
-            messages.success(request, f"Welcome back, {user.username}!")
-            return redirect(f"/?sec={sec_token}")
-        else:
+        if user is None:
             messages.error(request, "Invalid username or password. Please try again.")
+            return render(request, "billing/login.html", {
+                "is_desktop_app": is_desktop,
+                "remembered_username": remembered_username,
+                "is_first_time_desktop": is_first_time_desktop,
+                "device_id": device_id,
+            })
 
-    return render(request, "billing/login.html")
+        profile = getattr(user, "profile", None)
+        is_admin_user = user.is_superuser or (profile and profile.role == "admin")
+
+        # 2. Access Mode Split Verification (Online & Offline vs Offline Only vs Online Only)
+        if not is_admin_user and profile:
+            access_mode = profile.access_mode
+            if access_mode == "offline_only" and not is_desktop:
+                messages.error(
+                    request,
+                    "Access Denied: This client account is authorized for Desktop Offline POS only. Web login is not permitted."
+                )
+                return render(request, "billing/login.html", {
+                    "is_desktop_app": is_desktop,
+                    "remembered_username": "",
+                    "device_id": device_id,
+                })
+            elif access_mode == "online_only" and is_desktop:
+                messages.error(
+                    request,
+                    "Access Denied: This client account is authorized for Web Portal only. Desktop POS login is not permitted."
+                )
+                return render(request, "billing/login.html", {
+                    "is_desktop_app": is_desktop,
+                    "remembered_username": "",
+                    "device_id": device_id,
+                })
+
+        # 3. Strict Device Quota Enforcement
+        device_type = "desktop_exe" if is_desktop else "web_browser"
+        device_name = "Windows POS Terminal" if is_desktop else (request.META.get("HTTP_USER_AGENT", "Web Browser")[:100])
+        user_agent = request.META.get("HTTP_USER_AGENT", "Desktop/Mobile")[:200]
+        ip_addr = request.META.get("REMOTE_ADDR", "127.0.0.1")
+
+        if is_admin_user:
+            # Administrator: strictly restricted to 1 active device
+            ActiveUserSession.objects.filter(user=user).delete()
+            RegisteredDevice.objects.filter(user=user).update(is_active=False)
+            RegisteredDevice.objects.update_or_create(
+                user=user,
+                device_id=device_id,
+                defaults={
+                    "device_name": device_name,
+                    "device_type": device_type,
+                    "ip_address": ip_addr,
+                    "is_active": True,
+                }
+            )
+        else:
+            # Client: Admin specifies allowed devices (e.g. 5 devices). 6th device is STRICTLY BLOCKED!
+            dev_limit = profile.device_limit if (profile and profile.device_limit) else 5
+
+            # Check if this physical device/token is already registered
+            existing_device = RegisteredDevice.objects.filter(
+                user=user,
+                device_id=device_id,
+                is_active=True
+            ).first()
+
+            if not existing_device:
+                current_active_devices = RegisteredDevice.objects.filter(user=user, is_active=True).count()
+                if current_active_devices >= dev_limit:
+                    # STRICTLY BLOCK 6th DEVICE!
+                    log_activity(
+                        request,
+                        "DEVICE_LIMIT_BLOCKED",
+                        f"Blocked login attempt from unauthorized device for client '{user.username}' (Quota: {dev_limit}/{dev_limit} devices already in use)."
+                    )
+                    messages.error(
+                        request,
+                        f"Device Limit Exceeded! Admin has configured a maximum of {dev_limit} devices for this account. "
+                        f"Login on this device is strictly NOT ALLOWED ({current_active_devices + 1}th device blocked). "
+                        f"அனுமதிக்கப்பட்ட சாதனங்கள் வரம்பு முடிந்துவிட்டது ({dev_limit}/{dev_limit}). புதிய சாதனம் உள்நுழைய அனுமதி இல்லை. "
+                        f"Please contact your Administrator or revoke an existing device in the Admin Panel."
+                    )
+                    return render(request, "billing/login.html", {
+                        "is_desktop_app": is_desktop,
+                        "remembered_username": remembered_username,
+                        "device_id": device_id,
+                    })
+
+                # Register new approved device within allowed quota
+                RegisteredDevice.objects.create(
+                    user=user,
+                    device_id=device_id,
+                    device_name=device_name,
+                    device_type=device_type,
+                    ip_address=ip_addr,
+                    is_active=True,
+                )
+                log_activity(
+                    request,
+                    "DEVICE_REGISTER",
+                    f"Registered new device '{device_name}' ({device_id[:12]}) for client '{user.username}' ({current_active_devices + 1}/{dev_limit})."
+                )
+            else:
+                existing_device.ip_address = ip_addr
+                existing_device.device_name = device_name
+                existing_device.save()
+
+        # 4. Save persistent local configuration for Desktop App
+        if is_desktop:
+            save_desktop_pos_config({
+                "device_id": device_id,
+                "remembered_username": user.username,
+                "shop_name": getattr(profile, "shop_name", ""),
+                "is_activated": True,
+            })
+
+        # 5. Login and create session
+        login(request, user)
+        if not request.session.session_key:
+            request.session.save()
+
+        session_key = request.session.session_key
+        sec_token = uuid.uuid4().hex[:12]
+        request.session["sec_token"] = sec_token
+
+        ActiveUserSession.objects.create(
+            user=user,
+            session_key=session_key,
+            device_info=f"{device_name} ({device_id[:12]})",
+            ip_address=ip_addr,
+        )
+
+        role_title = "Administrator (Single Device)" if is_admin_user else f"Client Operator (Max {profile.device_limit if profile else 5} Devices)"
+        log_activity(
+            request,
+            "LOGIN",
+            f"{role_title} '{user.username}' logged in successfully ({device_name} | IP: {ip_addr})."
+        )
+
+        messages.success(request, f"Welcome back, {user.username}!")
+        response = redirect(f"/?sec={sec_token}")
+        response.set_cookie("billing_device_id", device_id, max_age=365*24*3600*5)
+        if is_desktop:
+            response.set_cookie("is_desktop_pos", "true", max_age=365*24*3600*5)
+        return response
+
+    return render(request, "billing/login.html", {
+        "is_desktop_app": is_desktop,
+        "remembered_username": remembered_username,
+        "is_first_time_desktop": is_first_time_desktop,
+        "device_id": device_id,
+    })
 
 
 def logout_view(request):
@@ -325,9 +476,14 @@ def billing_page(request):
         final_customer_name = cust_obj.name if cust_obj else (customer_name or "Cash Customer")
         final_customer_phone = cust_obj.phone if cust_obj else customer_phone
 
-        # Generate unique Invoice Number
-        count = Invoice.objects.count() + 1
-        inv_number = f"BILL-{timezone.now().strftime('%Y%m%d')}-{count:04d}"
+        # Generate unique collision-free sequential Invoice Number
+        prefix = "POS" if is_desktop_environment(request) else "WEB"
+        date_str = timezone.now().strftime("%Y%m%d")
+        count = Invoice.objects.filter(invoice_number__startswith=f"{prefix}-{date_str}").count() + 1
+        inv_number = f"{prefix}-{date_str}-{count:04d}"
+        while Invoice.objects.filter(invoice_number=inv_number).exists():
+            count += 1
+            inv_number = f"{prefix}-{date_str}-{count:04d}"
 
         # Calculate line items
         line_items = []
@@ -397,7 +553,7 @@ def billing_page(request):
             grand_total=grand_total,
             paid_amount=paid_amount,
             payment_method=payment_method,
-            source="windows_app" if "PyWebView" in request.META.get("HTTP_USER_AGENT", "") else "web_mobile",
+            source="windows_app" if is_desktop_environment(request) else "web_mobile",
             notes=notes,
         )
 
@@ -540,9 +696,14 @@ def quick_bill_create(request):
             final_customer_name = cust_obj.name if cust_obj else (customer_name or "Cash Customer")
             final_customer_phone = cust_obj.phone if cust_obj else customer_phone
 
-            # Generate Invoice Number
-            count = Invoice.objects.count() + 1
-            inv_number = f"BILL-{timezone.now().strftime('%Y%m%d')}-{count:04d}"
+            # Generate collision-free sequential Invoice Number
+            prefix = "POS" if is_desktop_environment(request) else "WEB"
+            date_str = timezone.now().strftime("%Y%m%d")
+            count = Invoice.objects.filter(invoice_number__startswith=f"{prefix}-{date_str}").count() + 1
+            inv_number = f"{prefix}-{date_str}-{count:04d}"
+            while Invoice.objects.filter(invoice_number=inv_number).exists():
+                count += 1
+                inv_number = f"{prefix}-{date_str}-{count:04d}"
 
             # Create Invoice
             invoice = Invoice.objects.create(
@@ -560,8 +721,8 @@ def quick_bill_create(request):
                 grand_total=grand_total,
                 paid_amount=paid_amount,
                 payment_method=payment_method,
-                source="web_mobile",
-                notes=f"Quick Bill ({unit_type})",
+                source="windows_app" if is_desktop_environment(request) else "web_mobile",
+                notes=f"Express Bill ({unit_type})",
             )
 
             # Create line item
@@ -1238,6 +1399,7 @@ def admin_panel(request):
     admin_users = [u for u in users if u.is_superuser or (getattr(u, "profile", None) and u.profile.role == "admin")]
 
     active_device_sessions = ActiveUserSession.objects.select_related("user", "user__profile").order_by("-last_activity")
+    registered_devices = RegisteredDevice.objects.select_related("user", "user__profile").order_by("-last_login")
 
     log_qs = ActivityLog.objects.select_related("user").order_by("-created_at")
     action_filter = request.GET.get("action", "").strip()
@@ -1263,6 +1425,7 @@ def admin_panel(request):
         "clients": clients,
         "branches": branches,
         "active_device_sessions": active_device_sessions,
+        "registered_devices": registered_devices,
         "activity_logs": log_qs[:200],
         "total_log_count": ActivityLog.objects.count(),
         "action_types": action_types,
@@ -1293,6 +1456,7 @@ def admin_user_create(request):
         email = request.POST.get("email", "").strip()
         phone = request.POST.get("phone", "").strip()
         role = request.POST.get("role", "client").strip()
+        access_mode = request.POST.get("access_mode", "online_offline").strip()
         bank_name = request.POST.get("bank_name", "").strip()
         account_number = request.POST.get("account_number", "").strip()
         ifsc_code = request.POST.get("ifsc_code", "").strip()
@@ -1332,6 +1496,7 @@ def admin_user_create(request):
         profile.shop_name = shop_name
         profile.shop_address = shop_address
         profile.business_type = business_type
+        profile.access_mode = access_mode
         profile.device_limit = 1 if is_admin_role else device_limit
         profile.bank_name = bank_name
         profile.account_number = account_number
@@ -1383,6 +1548,7 @@ def admin_user_edit(request, user_id):
         email = request.POST.get("email", "").strip()
         phone = request.POST.get("phone", "").strip()
         role = request.POST.get("role", "client").strip()
+        access_mode = request.POST.get("access_mode", "").strip()
         bank_name = request.POST.get("bank_name", "").strip()
         account_number = request.POST.get("account_number", "").strip()
         ifsc_code = request.POST.get("ifsc_code", "").strip()
@@ -1410,6 +1576,8 @@ def admin_user_edit(request, user_id):
         profile.shop_name = shop_name
         profile.shop_address = shop_address
         profile.business_type = business_type
+        if access_mode in dict(UserProfile.ACCESS_MODES):
+            profile.access_mode = access_mode
         profile.device_limit = 1 if role == "admin" else device_limit
         profile.bank_name = bank_name
         profile.account_number = account_number
@@ -1491,6 +1659,32 @@ def admin_revoke_device_session(request, session_id):
             f"Admin revoked device session for user '{u_name}' ({d_info[:35]} | IP: {ip_addr})"
         )
         messages.success(request, f"Disconnected active device session for '{u_name}'.")
+
+    return redirect("billing:admin_panel")
+
+
+@admin_required
+def admin_revoke_registered_device(request, device_id):
+    """
+    Admin revokes an approved device slot to allow a new or replacement device.
+    Frees up the device quota slot immediately.
+    """
+    if request.method == "POST":
+        device = get_object_or_404(RegisteredDevice, pk=device_id)
+        u_name = device.user.username
+        d_name = device.device_name
+        d_id = device.device_id
+
+        # Disconnect any active sessions for this device
+        ActiveUserSession.objects.filter(user=device.user).delete()
+        device.delete()
+
+        log_activity(
+            request,
+            "DEVICE_REVOKE",
+            f"Admin revoked approved device '{d_name}' ({d_id[:12]}) for client '{u_name}'."
+        )
+        messages.success(request, f"Approved device '{d_name}' removed successfully. Slot is now free for a new device.")
 
     return redirect("billing:admin_panel")
 
@@ -2596,6 +2790,59 @@ def _get_filtered_report_data(request):
         "online_total": online_total,
     }
 
+    # -------------------------------------------------------------------------
+    # Customer Footfall & Visits Analytics (வாடிக்கையாளர்கள் வருகை)
+    # Today, Week, Month, Year, and Date-to-Date Range
+    # -------------------------------------------------------------------------
+    def _compute_customer_footfall(qs):
+        # Registered customers
+        reg_count = qs.values("customer_id").distinct().exclude(customer_id=None).count()
+        # Walk-in customers with contact phone
+        walkin_phone_count = qs.filter(customer_id=None).exclude(customer_phone="").values("customer_phone").distinct().count()
+        # Walk-in customers without phone
+        walkin_anon_count = qs.filter(customer_id=None, customer_phone="").count()
+        total_unique = reg_count + walkin_phone_count + (1 if walkin_anon_count > 0 else 0)
+        total_bills = qs.count()
+        return {
+            "total_customers": total_unique if total_unique > 0 else total_bills,
+            "total_bills": total_bills,
+            "registered": reg_count,
+            "walkin": walkin_phone_count + walkin_anon_count,
+        }
+
+    # 1. Today
+    today_bills = Invoice.objects.filter(c_filter, created_at__date=today)
+    today_footfall = _compute_customer_footfall(today_bills)
+
+    # 2. This Week
+    week_start = today - timedelta(days=today.weekday())
+    week_bills = Invoice.objects.filter(c_filter, created_at__date__gte=week_start, created_at__date__lte=today)
+    week_footfall = _compute_customer_footfall(week_bills)
+
+    # 3. This Month
+    month_start = today.replace(day=1)
+    month_bills = Invoice.objects.filter(c_filter, created_at__date__gte=month_start, created_at__date__lte=today)
+    month_footfall = _compute_customer_footfall(month_bills)
+
+    # 4. This Year
+    year_start = today.replace(month=1, day=1)
+    year_bills = Invoice.objects.filter(c_filter, created_at__date__gte=year_start, created_at__date__lte=today)
+    year_footfall = _compute_customer_footfall(year_bills)
+
+    # 5. Selected Period / Date-to-Date Range
+    range_footfall = _compute_customer_footfall(bills_qs)
+    total_sales_val = aggregates["total_sales"] or Decimal("0.00")
+    avg_spend = (total_sales_val / range_footfall["total_customers"]) if range_footfall["total_customers"] > 0 else Decimal("0.00")
+    range_footfall["avg_spend"] = avg_spend
+
+    customer_footfall = {
+        "today": today_footfall,
+        "week": week_footfall,
+        "month": month_footfall,
+        "year": year_footfall,
+        "range": range_footfall,
+    }
+
     return {
         "range_filter": range_filter,
         "start_date": start_date,
@@ -2607,6 +2854,7 @@ def _get_filtered_report_data(request):
         "search": search,
         "bills_qs": bills_qs,
         "summary": summary,
+        "customer_footfall": customer_footfall,
     }
 
 
@@ -2615,6 +2863,7 @@ def reports_dashboard_view(request):
     Dedicated Statements & Reports Dashboard:
     - Provides Daily, Weekly, Monthly, and Custom Range revenue and invoice statements.
     - KPI cards: Total Sales, Customer Paid, Pending Balance, Bills Count, Cash/Online splits.
+    - Side Section: Customer Footfall Analytics (Today, Week, Month, Year, Date-to-Date).
     - Export buttons: Download CSV and Download PDF.
     """
     data = _get_filtered_report_data(request)
@@ -2623,6 +2872,7 @@ def reports_dashboard_view(request):
     return render(request, "billing/reports.html", {
         "bills": data["bills_qs"][:300],
         "summary": data["summary"],
+        "customer_footfall": data["customer_footfall"],
         "branches": branches,
         "range_filter": data["range_filter"],
         "start_date": data["start_date"].strftime("%Y-%m-%d"),

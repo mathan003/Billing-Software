@@ -290,6 +290,35 @@ class ActiveUserSession(models.Model):
         return f"{self.user.username} session {self.session_key[:8]} ({self.device_info})"
 
 
+class RegisteredDevice(models.Model):
+    """
+    Admin-controlled Device Quota Enforcement:
+    Tracks approved devices for each client. When an admin specifies a device limit
+    (e.g., 5 devices), only up to 5 unique devices can log in.
+    Any attempt by a 6th device is strictly BLOCKED.
+    """
+    DEVICE_TYPES = (
+        ("desktop_exe", "Windows Desktop POS (EXE)"),
+        ("web_browser", "Web Browser / Mobile"),
+    )
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="registered_devices")
+    device_id = models.CharField(max_length=120, db_index=True, help_text="Unique hardware/device fingerprint")
+    device_name = models.CharField(max_length=150, default="POS Terminal")
+    device_type = models.CharField(max_length=50, choices=DEVICE_TYPES, default="desktop_exe")
+    ip_address = models.CharField(max_length=50, default="127.0.0.1")
+    is_active = models.BooleanField(default=True)
+    last_login = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "device_id")
+        ordering = ["-last_login"]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.device_name} ({self.device_id[:12]})"
+
+
 class SyncLog(models.Model):
     device_id = models.CharField(max_length=100, db_index=True)
     sync_type = models.CharField(max_length=20)  # 'push' or 'pull'
@@ -321,11 +350,18 @@ class UserProfile(models.Model):
         ("mobile_computer", "Mobile & Computer Shop"),
     )
 
+    ACCESS_MODES = (
+        ("online_offline", "Online & Offline (Web + Desktop App)"),
+        ("offline_only", "Offline POS Only (Desktop EXE)"),
+        ("online_only", "Online Only (Web Portal)"),
+    )
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     phone = models.CharField(max_length=20, blank=True, default="", help_text="Mobile / Contact number")
     shop_name = models.CharField(max_length=150, blank=True, default="", help_text="Client Business / Shop Name")
     shop_address = models.TextField(blank=True, default="", help_text="Client Business / Shop Address")
     business_type = models.CharField(max_length=30, choices=BUSINESS_TYPES, default="grocery", help_text="Store Business Category")
+    access_mode = models.CharField(max_length=30, choices=ACCESS_MODES, default="online_offline", help_text="Platform access permissions")
     device_limit = models.IntegerField(default=5, help_text="Maximum allowed active devices")
     bank_name = models.CharField(max_length=150, blank=True, default="", help_text="Bank Name")
     account_number = models.CharField(max_length=60, blank=True, default="", help_text="Bank Account Number")
@@ -406,6 +442,9 @@ class ActivityLog(models.Model):
         ("UPDATE_PUBLISH", "Software Update Published"),
         ("PROFILE_UPDATE", "Client Profile & Business Details Updated"),
         ("REPORT_EXPORT", "Statement / Sales Report Exported"),
+        ("DEVICE_REGISTER", "Device Registered / Activated"),
+        ("DEVICE_REVOKE", "Device Access Revoked"),
+        ("DEVICE_LIMIT_BLOCKED", "Device Quota Exceeded Blocked"),
     )
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="activity_logs")

@@ -28,6 +28,18 @@
         background-color: #ef4444;
         color: #ffffff;
     }
+    .prod-dropdown {
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        border: 1px solid #cbd5e1;
+    }
+    .prod-item:hover, .cust-suggest-item:hover {
+        background-color: #f1f5f9;
+    }
+    .cat-pill.active {
+        background-color: #0284c7 !important;
+        color: #ffffff !important;
+        border-color: #0284c7 !important;
+    }
 </style>
 {% endblock %}
 
@@ -38,7 +50,7 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
                 <h4 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-receipt text-primary me-2"></i>Billing Terminal</h4>
-                <p class="text-muted small mb-0">Multi-product billing • Unlimited quantities (>500 units) • Print & Save</p>
+                <p class="text-muted small mb-0">Multi-product billing • Unlimited quantities (>500 units) • Instant letter filter • Print & Save</p>
             </div>
             <div class="d-flex gap-2">
                 <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm">
@@ -76,22 +88,30 @@
                         </select>
                     </div>
 
+                    <div class="col-12 col-md-4 position-relative">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label small fw-semibold text-secondary mb-1">Customer (வாடிக்கையாளர் - Type any letter)</label>
+                            <span class="badge bg-light text-muted border small">{{ customers|length }} Customers</span>
+                        </div>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light text-muted"><i class="fa-solid fa-user"></i></span>
+                            <input type="text" name="customer_name" class="form-control" id="customerNameInput" value="" placeholder="Type any letter (Name / Phone)..." autocomplete="off">
+                            <input type="hidden" name="customer_id" id="customerIdInput" value="">
+                            <button class="btn btn-outline-secondary" type="button" id="clearCustomerBtn" title="Clear customer"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div id="customerSuggestions" class="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-1 mt-1" style="max-height: 220px; overflow-y: auto; z-index: 1055; display: none;"></div>
+                    </div>
+
                     <div class="col-12 col-md-4">
-                        <label class="form-label small fw-semibold text-secondary">Select Existing Customer</label>
-                        <select name="customer_id" class="form-select bg-light" id="existingCustomerSelect">
-                            <option value="">-- Choose Existing or Enter Below --</option>
+                        <label class="form-label small fw-semibold text-secondary">Quick Choose Existing</label>
+                        <select class="form-select bg-light" id="existingCustomerSelect">
+                            <option value="">-- Choose Existing or Enter --</option>
                             {% for c in customers %}
                                 <option value="{{ c.id }}" data-name="{{ c.name }}" data-phone="{{ c.phone|default:'' }}">
                                     {{ c.name }} {% if c.phone %}({{ c.phone }}){% endif %}
                                 </option>
                             {% endfor %}
                         </select>
-                    </div>
-
-                    <div class="col-12 col-md-4">
-                        <label class="form-label small fw-semibold text-secondary">Customer Name (வாடிக்கையாளர்)</label>
-                        <!-- Blank by default as required -->
-                        <input type="text" name="customer_name" class="form-control" id="customerNameInput" value="" placeholder="Customer Name (Leave blank for Cash Customer)">
                     </div>
                 </div>
 
@@ -109,26 +129,47 @@
 
             <!-- SECTION 2: PRODUCTS TABLE (MULTI-ITEM WITH UNLIMITED QTY & REMOVE OPTION) -->
             <div class="card billing-card p-3 p-md-4 mb-3">
-                <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
                     <div>
                         <h6 class="fw-bold text-dark mb-0"><i class="fa-solid fa-boxes-stacked me-2 text-primary"></i>Bill Items (பொருட்கள்)</h6>
-                        <span class="text-muted small">Add multiple products to the same bill. Remove any item with one click.</span>
+                        <span class="text-muted small">Multi-product billing • Unlimited quantities (>500 units) • Instant letter filter</span>
                     </div>
-                    <!-- Add Product Button (Remains permanently available!) -->
-                    <button type="button" class="btn btn-primary-custom" id="addProductRowBtn">
-                        <i class="fa-solid fa-plus me-1"></i> Add Product (+ பொருள் சேர்க்க)
-                    </button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-primary-custom btn-sm" id="addProductRowBtn">
+                            <i class="fa-solid fa-plus me-1"></i> Add Product (+ பொருள் சேர்க்க)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Instant Category Filter Toolbar -->
+                <div class="p-2 px-3 bg-light rounded-3 border mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-grow-1 flex-wrap">
+                        <span class="small fw-bold text-secondary text-nowrap"><i class="fa-solid fa-filter text-primary me-1"></i>Category Filter (வகை):</span>
+                        <select class="form-select form-select-sm bg-white" id="terminalCategorySelect" style="max-width: 240px;">
+                            <option value="">-- All Categories (அனைத்து வகைகள்) --</option>
+                            {% for cat in categories %}
+                                <option value="{{ cat }}">{{ cat }}</option>
+                            {% endfor %}
+                        </select>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle" id="catalogCountBadge">{{ products|length }} Products</span>
+                    </div>
+                    <div class="d-flex gap-1 flex-wrap" id="quickCategoryPills">
+                        <button type="button" class="btn btn-sm btn-outline-primary active cat-pill" data-cat="">All</button>
+                        {% for cat in categories|slice:":6" %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary cat-pill" data-cat="{{ cat }}">{{ cat }}</button>
+                        {% endfor %}
+                    </div>
                 </div>
 
                 <div class="table-responsive">
                     <table class="table table-bordered align-middle table-items" id="billItemsTable">
                         <thead>
                             <tr>
-                                <th style="width: 35%;">Product (பொருள் பெயர்)</th>
-                                <th style="width: 15%;">Unit Type</th>
+                                <th style="width: 38%;">Product (பொருள் பெயர் - Type any letter)</th>
+                                <th style="width: 14%;">Unit Type</th>
                                 <th style="width: 14%;">Rate / Price (₹)</th>
                                 <th style="width: 16%;">Quantity (அளவு)</th>
-                                <th style="width: 14%;">Total (₹)</th>
+                                <th style="width: 12%;">Total (₹)</th>
                                 <th style="width: 6%;" class="text-center">Action</th>
                             </tr>
                         </thead>
@@ -139,10 +180,11 @@
                 </div>
 
                 <!-- Bottom Add Product Shortcut -->
-                <div class="mt-2">
+                <div class="mt-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3" id="addProductRowBtn2">
                         <i class="fa-solid fa-circle-plus me-1"></i> Add Another Product (+ மேலும் பொருள் சேர்க்க)
                     </button>
+                    <span class="text-muted small"><i class="fa-solid fa-keyboard me-1"></i>Tip: Type any letter (Tamil/English/SKU) in product box to search 500+ items instantly.</span>
                 </div>
             </div>
 
@@ -234,6 +276,8 @@
             name_tamil: "{{ p.name_tamil|escapejs }}",
             name_english: "{{ p.name|escapejs }}",
             display_name: "{{ p.display_name|escapejs }}",
+            category: "{{ p.category|default:'General'|escapejs }}",
+            sku: "{{ p.sku|default:''|escapejs }}",
             unit: "{{ p.unit }}",
             price: {{ p.price }},
             tax: {{ p.tax_percent }},
@@ -242,34 +286,109 @@
         {% endfor %}
     ];
 
+    // Customers Data serialized for instant lookup
+    const terminalCustomers = [
+        {% for c in customers %}
+        {
+            id: {{ c.id }},
+            name: "{{ c.name|escapejs }}",
+            phone: "{{ c.phone|default:''|escapejs }}"
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
     const itemsBody = document.getElementById("billItemsBody");
     const addRowBtn = document.getElementById("addProductRowBtn");
     const addRowBtn2 = document.getElementById("addProductRowBtn2");
     const paidInput = document.getElementById("paidAmountInput");
+    const termCategory = document.getElementById("terminalCategorySelect");
+    const catalogCountBadge = document.getElementById("catalogCountBadge");
     let isPaidCustom = false;
 
-    // Build product options HTML
-    function getProductOptionsHtml(selectedId = null) {
-        let html = '<option value="">-- Select Product (பொருள்) --</option>';
-        catalog.forEach(p => {
-            const isSel = (selectedId && p.id == selectedId) ? 'selected' : '';
-            html += `<option value="${p.id}" data-price="${p.price}" data-unit="${p.unit}" data-tax="${p.tax}" ${isSel}>${p.display_name} - ₹${p.price.toFixed(2)}</option>`;
-        });
-        return html;
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 
-    // Add a new product row
+    // 1. Category Filter Management
+    function getSelectedCategory() {
+        return termCategory ? termCategory.value.trim() : "";
+    }
+
+    function updateCategoryFilter(cat) {
+        if (termCategory) {
+            termCategory.value = cat;
+        }
+        // Update pills
+        document.querySelectorAll("#quickCategoryPills .cat-pill").forEach(btn => {
+            if (btn.getAttribute("data-cat") === cat) {
+                btn.classList.add("active");
+                btn.classList.remove("btn-outline-secondary");
+                btn.classList.add("btn-outline-primary");
+            } else {
+                btn.classList.remove("active");
+                btn.classList.remove("btn-outline-primary");
+                btn.classList.add("btn-outline-secondary");
+            }
+        });
+
+        // Update count badge
+        const count = cat ? catalog.filter(p => p.category === cat).length : catalog.length;
+        if (catalogCountBadge) {
+            catalogCountBadge.innerText = `${count} Products${cat ? ' in ' + cat : ''}`;
+        }
+    }
+
+    if (termCategory) {
+        termCategory.addEventListener("change", function() {
+            updateCategoryFilter(this.value);
+        });
+    }
+
+    document.querySelectorAll("#quickCategoryPills .cat-pill").forEach(btn => {
+        btn.addEventListener("click", function() {
+            const cat = this.getAttribute("data-cat");
+            updateCategoryFilter(cat);
+        });
+    });
+
+    // 2. Add dynamic product row with instant letter filter & unlimited qty
     function addProductRow(selectedId = null) {
         const tr = document.createElement("tr");
+        tr.className = "item-row";
+
+        let initialProd = null;
+        if (selectedId) {
+            initialProd = catalog.find(p => p.id == selectedId);
+        }
+
+        const initialDisplayName = initialProd ? escapeHtml(initialProd.display_name) : "";
+        const initialId = initialProd ? initialProd.id : "";
+        const initialPrice = initialProd ? initialProd.price.toFixed(2) : "0.00";
+        const initialUnit = initialProd ? initialProd.unit : "KG";
+        const initialTax = initialProd ? initialProd.tax : 0;
+        const initialCatText = initialProd ? `Category: ${escapeHtml(initialProd.category)}${initialProd.sku ? ' • SKU: ' + escapeHtml(initialProd.sku) : ''}` : "";
 
         tr.innerHTML = `
             <td>
-                <select name="product_id[]" class="form-select prod-select" required>
-                    ${getProductOptionsHtml(selectedId)}
-                </select>
+                <div class="position-relative prod-search-container">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-light text-muted border-end-0"><i class="fa-solid fa-magnifying-glass"></i></span>
+                        <input type="text" class="form-control bg-light border-start-0 prod-search-input" placeholder="Type any letter (e.g. rice, dal, அரிசி)..." autocomplete="off" value="${initialDisplayName}">
+                        <button class="btn btn-outline-secondary toggle-catalog-btn" type="button" title="View catalog"><i class="fa-solid fa-chevron-down"></i></button>
+                    </div>
+                    <input type="hidden" name="product_id[]" class="prod-id-input" value="${initialId}" required>
+                    <div class="prod-dropdown position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-1 mt-1" style="max-height: 250px; overflow-y: auto; z-index: 1060; display: none;"></div>
+                </div>
+                <div class="prod-category-tag small text-muted mt-1" style="font-size: 0.75rem;">${initialCatText}</div>
             </td>
             <td>
-                <select name="unit[]" class="form-select unit-select">
+                <select name="unit[]" class="form-select form-select-sm unit-select">
                     <option value="KG">KG (கிலோ)</option>
                     <option value="Gram">Gram (கிராம்)</option>
                     <option value="Pack">Pack / Bag (பேக்)</option>
@@ -282,14 +401,14 @@
                 </select>
             </td>
             <td>
-                <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control price-input text-end" value="0.00" required>
+                <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control form-control-sm price-input text-end" value="${initialPrice}" required>
             </td>
             <td>
-                <input type="number" step="any" min="0.001" name="quantity[]" class="form-control qty-input text-center fw-bold" value="1" placeholder="Unlimited (>500)" required>
+                <input type="number" step="any" min="0.001" name="quantity[]" class="form-control form-control-sm qty-input text-center fw-bold" value="1" placeholder="Unlimited (>500)" required>
             </td>
             <td>
-                <input type="text" class="form-control total-input text-end fw-bold bg-light" readonly value="₹0.00">
-                <input type="hidden" class="tax-pct" value="0">
+                <input type="text" class="form-control form-control-sm total-input text-end fw-bold bg-light" readonly value="₹0.00">
+                <input type="hidden" class="tax-pct" value="${initialTax}">
             </td>
             <td class="text-center">
                 <button type="button" class="btn btn-sm remove-row-btn" title="Remove Product (பொருளை நீக்கு)">
@@ -300,8 +419,12 @@
 
         itemsBody.appendChild(tr);
 
-        // Bind Row Events
-        const prodSelect = tr.querySelector(".prod-select");
+        // Bind Row Elements
+        const searchInput = tr.querySelector(".prod-search-input");
+        const toggleBtn = tr.querySelector(".toggle-catalog-btn");
+        const dropdown = tr.querySelector(".prod-dropdown");
+        const idInput = tr.querySelector(".prod-id-input");
+        const catTag = tr.querySelector(".prod-category-tag");
         const unitSelect = tr.querySelector(".unit-select");
         const priceInput = tr.querySelector(".price-input");
         const qtyInput = tr.querySelector(".qty-input");
@@ -309,22 +432,93 @@
         const taxInput = tr.querySelector(".tax-pct");
         const removeBtn = tr.querySelector(".remove-row-btn");
 
-        function updateRow() {
-            const opt = prodSelect.options[prodSelect.selectedIndex];
-            if (opt && opt.value) {
-                const defaultPrice = parseFloat(opt.getAttribute("data-price") || 0);
-                const defaultUnit = opt.getAttribute("data-unit") || "KG";
-                const taxPct = parseFloat(opt.getAttribute("data-tax") || 0);
+        if (initialUnit) {
+            unitSelect.value = initialUnit;
+        }
 
-                if (!priceInput.dataset.modified) {
-                    priceInput.value = defaultPrice.toFixed(2);
-                }
-                if (!unitSelect.dataset.modified) {
-                    unitSelect.value = defaultUnit;
-                }
-                taxInput.value = taxPct;
+        // Render matching products in dropdown
+        function renderSuggestions(query = "") {
+            const activeCategory = getSelectedCategory();
+            const q = (query || "").trim().toLowerCase();
+
+            let matches = catalog;
+            if (activeCategory) {
+                matches = matches.filter(p => p.category === activeCategory);
+            }
+            if (q) {
+                matches = matches.filter(p => 
+                    p.name_english.toLowerCase().includes(q) ||
+                    p.name_tamil.toLowerCase().includes(q) ||
+                    p.sku.toLowerCase().includes(q) ||
+                    p.category.toLowerCase().includes(q)
+                );
             }
 
+            if (matches.length === 0) {
+                dropdown.innerHTML = `<div class="p-2 text-center text-muted small">No products match "${escapeHtml(q)}"${activeCategory ? ' in ' + escapeHtml(activeCategory) : ''}.</div>`;
+                dropdown.style.display = "block";
+                return;
+            }
+
+            let html = '';
+            matches.slice(0, 50).forEach(p => {
+                html += `
+                    <div class="prod-item p-2 border-bottom d-flex justify-content-between align-items-center"
+                         style="cursor: pointer; transition: background 0.15s;"
+                         data-id="${p.id}">
+                        <div>
+                            <div class="fw-bold text-dark">${escapeHtml(p.display_name)}</div>
+                            <div class="text-muted small">
+                                <span class="badge bg-secondary-subtle text-secondary me-1">${escapeHtml(p.category)}</span>
+                                ${p.sku ? `<span class="font-monospace me-1">SKU: ${escapeHtml(p.sku)}</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <span class="fw-bold text-primary">₹${p.price.toFixed(2)}</span>
+                            <span class="text-muted small"> / ${p.unit}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            if (matches.length > 50) {
+                html += `<div class="p-2 text-center text-muted small fst-italic">+ ${matches.length - 50} more products. Type letters to narrow search.</div>`;
+            }
+            dropdown.innerHTML = html;
+            dropdown.style.display = "block";
+
+            dropdown.querySelectorAll(".prod-item").forEach(itemEl => {
+                itemEl.addEventListener("click", function(e) {
+                    e.stopPropagation();
+                    const pid = parseInt(this.getAttribute("data-id"));
+                    chooseProduct(pid);
+                });
+            });
+        }
+
+        function chooseProduct(pid) {
+            const p = catalog.find(x => x.id === pid);
+            if (!p) return;
+
+            idInput.value = p.id;
+            searchInput.value = p.display_name;
+            dropdown.style.display = "none";
+            if (catTag) {
+                catTag.innerText = `Category: ${p.category}${p.sku ? ' • SKU: ' + p.sku : ''}`;
+            }
+
+            unitSelect.value = p.unit;
+            priceInput.value = p.price.toFixed(2);
+            taxInput.value = p.tax;
+
+            priceInput.dataset.modified = "";
+            unitSelect.dataset.modified = "";
+
+            updateRow();
+            qtyInput.focus();
+            qtyInput.select();
+        }
+
+        function updateRow() {
             const price = parseFloat(priceInput.value || 0);
             const qty = parseFloat(qtyInput.value || 0);
             const taxPct = parseFloat(taxInput.value || 0);
@@ -337,17 +531,28 @@
             recalculateGrandTotals();
         }
 
-        prodSelect.addEventListener("change", function() {
-            priceInput.dataset.modified = "";
-            unitSelect.dataset.modified = "";
-            updateRow();
+        searchInput.addEventListener("input", function() {
+            idInput.value = ""; // Clear selected ID until re-chosen
+            renderSuggestions(this.value);
+        });
+
+        searchInput.addEventListener("focus", function() {
+            renderSuggestions(this.value);
+        });
+
+        toggleBtn.addEventListener("click", function(e) {
+            e.stopPropagation();
+            if (dropdown.style.display === "block") {
+                dropdown.style.display = "none";
+            } else {
+                renderSuggestions(searchInput.value);
+            }
         });
 
         unitSelect.addEventListener("change", function() { unitSelect.dataset.modified = "true"; });
         priceInput.addEventListener("input", function() { priceInput.dataset.modified = "true"; updateRow(); });
         qtyInput.addEventListener("input", updateRow);
 
-        // Remove row event
         removeBtn.addEventListener("click", function() {
             if (itemsBody.children.length > 1) {
                 tr.remove();
@@ -357,9 +562,7 @@
             }
         });
 
-        if (selectedId) {
-            updateRow();
-        }
+        updateRow();
     }
 
     // Recalculate Grand Totals
@@ -428,20 +631,107 @@
     addRowBtn.addEventListener("click", () => addProductRow());
     addRowBtn2.addEventListener("click", () => addProductRow());
 
-    // Customer Selection Sync
-    const custSelect = document.getElementById("existingCustomerSelect");
-    const custName = document.getElementById("customerNameInput");
-    const custPhone = document.getElementById("customerPhoneInput");
+    // 3. Customer Selection with Instant Typing Filter
+    const custNameInput = document.getElementById("customerNameInput");
+    const custIdInput = document.getElementById("customerIdInput");
+    const custPhoneInput = document.getElementById("customerPhoneInput");
+    const custSuggestions = document.getElementById("customerSuggestions");
+    const existCustSelect = document.getElementById("existingCustomerSelect");
+    const clearCustBtn = document.getElementById("clearCustomerBtn");
 
-    custSelect.addEventListener("change", function() {
-        const opt = custSelect.options[custSelect.selectedIndex];
-        if (opt.value) {
-            custName.value = opt.getAttribute("data-name");
-            custPhone.value = opt.getAttribute("data-phone") || "";
-        } else {
-            custName.value = "";
-            custPhone.value = "";
+    function filterTerminalCustomers(query = "") {
+        if (!custSuggestions) return;
+        const q = (query || "").trim().toLowerCase();
+        if (!q) {
+            custSuggestions.style.display = "none";
+            return;
         }
+
+        const matches = terminalCustomers.filter(c =>
+            c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q))
+        );
+
+        if (matches.length === 0) {
+            custSuggestions.innerHTML = `<div class="p-2 text-muted text-center small"><i class="fa-solid fa-user-plus me-1"></i> New customer "${escapeHtml(q)}" (will be recorded)</div>`;
+            custSuggestions.style.display = "block";
+            return;
+        }
+
+        let html = '';
+        matches.slice(0, 10).forEach(c => {
+            html += `
+                <div class="cust-suggest-item p-2 border-bottom d-flex justify-content-between align-items-center"
+                     style="cursor: pointer; transition: background 0.15s;"
+                     data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-phone="${escapeHtml(c.phone)}">
+                    <strong class="text-dark">${escapeHtml(c.name)}</strong>
+                    <span class="text-muted small font-monospace">${escapeHtml(c.phone || 'No phone')}</span>
+                </div>
+            `;
+        });
+        custSuggestions.innerHTML = html;
+        custSuggestions.style.display = "block";
+
+        custSuggestions.querySelectorAll(".cust-suggest-item").forEach(item => {
+            item.addEventListener("click", function(e) {
+                e.stopPropagation();
+                const id = this.getAttribute("data-id");
+                const name = this.getAttribute("data-name");
+                const phone = this.getAttribute("data-phone");
+                if (custNameInput) custNameInput.value = name;
+                if (custPhoneInput) custPhoneInput.value = phone || "";
+                if (custIdInput) custIdInput.value = id;
+                if (existCustSelect) existCustSelect.value = id;
+                custSuggestions.style.display = "none";
+            });
+        });
+    }
+
+    if (custNameInput) {
+        custNameInput.addEventListener("input", function() {
+            custIdInput.value = ""; // clear ID if cashier types custom name
+            filterTerminalCustomers(this.value);
+        });
+        custNameInput.addEventListener("focus", function() {
+            filterTerminalCustomers(this.value);
+        });
+    }
+
+    if (clearCustBtn) {
+        clearCustBtn.addEventListener("click", function() {
+            if (custNameInput) custNameInput.value = "";
+            if (custPhoneInput) custPhoneInput.value = "";
+            if (custIdInput) custIdInput.value = "";
+            if (existCustSelect) existCustSelect.value = "";
+            if (custSuggestions) custSuggestions.style.display = "none";
+        });
+    }
+
+    if (existCustSelect) {
+        existCustSelect.addEventListener("change", function() {
+            const opt = this.options[this.selectedIndex];
+            if (opt && opt.value) {
+                if (custNameInput) custNameInput.value = opt.getAttribute("data-name");
+                if (custPhoneInput) custPhoneInput.value = opt.getAttribute("data-phone") || "";
+                if (custIdInput) custIdInput.value = opt.value;
+            } else {
+                if (custNameInput) custNameInput.value = "";
+                if (custPhoneInput) custPhoneInput.value = "";
+                if (custIdInput) custIdInput.value = "";
+            }
+        });
+    }
+
+    // Hide dropdowns when clicking outside
+    document.addEventListener("click", function(e) {
+        if (custSuggestions && !custSuggestions.contains(e.target) && e.target !== custNameInput) {
+            custSuggestions.style.display = "none";
+        }
+        document.querySelectorAll(".prod-dropdown").forEach(dd => {
+            const container = dd.closest(".prod-search-container");
+            if (container && !container.contains(e.target)) {
+                dd.style.display = "none";
+            }
+        });
     });
 
     // Initialize with first row

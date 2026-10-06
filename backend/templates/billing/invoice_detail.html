@@ -156,6 +156,9 @@
                             <span>Phone : {{ active_shop_phone }}</span>
                         </div>
                     {% endif %}
+                    {% if active_shop_gst %}
+                        <div class="mt-1"><strong>GSTIN / GST No :</strong> <span class="font-monospace fw-bold text-dark">{{ active_shop_gst }}</span></div>
+                    {% endif %}
                 </div>
             </div>
             <div class="col-4 text-end">

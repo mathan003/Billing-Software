@@ -382,6 +382,7 @@ def dashboard(request):
     recent_invoices = client_invoices_all.select_related("customer", "branch").prefetch_related("items").order_by("-created_at")[:10]
     customers = Customer.objects.filter(c_filter).order_by("name")
     products = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
+    categories = list(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
     branches = Branch.objects.filter(b_filter).order_by("-is_default", "name")
     default_branch = Branch.get_default_branch()
 
@@ -399,6 +400,7 @@ def dashboard(request):
         "recent_invoices": recent_invoices,
         "customers": customers,
         "products": products,
+        "categories": categories,
         "branches": branches,
         "default_branch": default_branch,
     }
@@ -440,10 +442,10 @@ def billing_page(request):
         paid_amount_str = request.POST.get("paid_amount", "").strip()
         notes = request.POST.get("notes", "").strip()
 
-        product_ids = request.POST.getlist("product_id[]")
-        units = request.POST.getlist("unit[]")
-        unit_prices = request.POST.getlist("unit_price[]")
-        quantities = request.POST.getlist("quantity[]")
+        product_ids = request.POST.getlist("product_id[]") or request.POST.getlist("product_id")
+        units = request.POST.getlist("unit[]") or request.POST.getlist("unit")
+        unit_prices = request.POST.getlist("unit_price[]") or request.POST.getlist("unit_price")
+        quantities = request.POST.getlist("quantity[]") or request.POST.getlist("quantity")
 
         if not product_ids:
             messages.error(request, "Please add at least one product to the bill.")
@@ -617,11 +619,13 @@ def billing_page(request):
     c_filter = get_client_filter(request)
     b_filter = get_branch_filter(request)
     products = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
+    categories = list(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
     customers = Customer.objects.filter(c_filter).order_by("name")
     branches = Branch.objects.filter(b_filter).order_by("-is_default", "name")
     default_branch = Branch.get_default_branch()
     return render(request, "billing/billing_screen.html", {
         "products": products,
+        "categories": categories,
         "customers": customers,
         "branches": branches,
         "default_branch": default_branch,
@@ -3002,6 +3006,7 @@ def client_profile_view(request):
         bank_name = request.POST.get("bank_name", "").strip()
         account_number = request.POST.get("account_number", "").strip()
         ifsc_code = request.POST.get("ifsc_code", "").strip()
+        gst_number = request.POST.get("gst_number", "").strip().upper()
 
         profile.shop_name = shop_name
         profile.shop_address = shop_address
@@ -3009,6 +3014,13 @@ def client_profile_view(request):
         profile.bank_name = bank_name
         profile.account_number = account_number
         profile.ifsc_code = ifsc_code
+        profile.gst_number = gst_number
+
+        if request.user.is_superuser or profile.role == "admin":
+            comp = CompanySettings.get_settings()
+            if gst_number:
+                comp.gst_number = gst_number
+                comp.save(update_fields=["gst_number", "updated_at"])
 
         if email:
             request.user.email = email
@@ -3031,9 +3043,9 @@ def client_profile_view(request):
         log_activity(
             request,
             "PROFILE_UPDATE",
-            f"User '{request.user.username}' updated business profile (Shop: {shop_name or 'N/A'}, Phone: {phone or 'N/A'}, Bank: {bank_name or 'N/A'})"
+            f"User '{request.user.username}' updated business profile (Shop: {shop_name or 'N/A'}, Phone: {phone or 'N/A'}, GSTIN: {gst_number or 'N/A'}, Bank: {bank_name or 'N/A'})"
         )
-        messages.success(request, "Shop Profile & Bank Details updated successfully!")
+        messages.success(request, "Shop Profile & GST details updated successfully! All bills automatically reflect this GST number.")
         return redirect("billing:client_profile")
 
     # Fetch branches associated with this client or default branches

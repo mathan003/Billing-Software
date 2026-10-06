@@ -28,6 +28,7 @@ def session_security_context(request):
             "active_bank_name": company.bank_name,
             "active_account_number": company.account_number,
             "active_ifsc_code": company.ifsc_code,
+            "active_shop_gst": company.gst_number if company else "",
             "business_type": "grocery",
         }
 
@@ -58,6 +59,7 @@ def session_security_context(request):
     shop_phone = (profile.phone if (profile and profile.phone) else company.phone)
     shop_email = (request.user.email if request.user.email else company.email)
     shop_logo = (profile.shop_logo_url if (profile and profile.shop_logo_url) else company.logo_data_url)
+    shop_gst = (profile.gst_number if (profile and profile.gst_number) else (company.gst_number if company else ""))
     bank_name = (profile.bank_name if (profile and profile.bank_name) else company.bank_name)
     account_number = (profile.account_number if (profile and profile.account_number) else company.account_number)
     ifsc_code = (profile.ifsc_code if (profile and profile.ifsc_code) else company.ifsc_code)
@@ -88,6 +90,7 @@ def session_security_context(request):
         "active_shop_phone": shop_phone,
         "active_shop_email": shop_email,
         "active_shop_logo": shop_logo,
+        "active_shop_gst": shop_gst,
         "active_bank_name": bank_name,
         "active_account_number": account_number,
         "active_ifsc_code": ifsc_code,

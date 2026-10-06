@@ -22,13 +22,17 @@
 {% endblock %}
 
 {% block content %}
-<!-- Live Multi-Device Sync Indicator Bar -->
-<div class="d-flex justify-content-between align-items-center mb-3">
+<!-- Live Multi-Device Sync Indicator Bar & Quick Bill Access -->
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h4 class="fw-bold mb-0 text-dark">Live Store Dashboard</h4>
         <span class="text-muted small">Multi-device real-time sync with offline desktop POS & cloud</span>
     </div>
-    <div>
+    <div class="d-flex align-items-center gap-2">
+        <a href="{% url 'billing:billing_page' %}{{ sec_param }}" class="btn btn-warning fw-bold px-3 py-2 rounded-3 shadow-sm text-dark d-flex align-items-center gap-2">
+            <i class="fa-solid fa-bolt"></i>
+            <span>Quick Bill (துரித பில்லிங்)</span>
+        </a>
         <span id="liveSyncStatusBadge" class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill shadow-xs">
             <i class="fa-solid fa-cloud-arrow-down me-1"></i> Live Cloud Sync Active
         </span>
@@ -200,29 +204,58 @@
                     </select>
                 </div>
 
-                <!-- Customer Details (BLANK BY DEFAULT as requested) -->
+                <!-- Customer Details with Live Search (BLANK BY DEFAULT as requested) -->
                 <div class="row g-2 mb-3">
-                    <div class="col-7">
-                        <label class="form-label small fw-semibold text-secondary">Customer Name</label>
-                        <input type="text" name="customer_name" class="form-control" placeholder="Customer Name (e.g. Ramesh)" value="">
+                    <div class="col-7 position-relative">
+                        <label class="form-label small fw-semibold text-secondary">Customer Name (Type any letter to search)</label>
+                        <input type="text" name="customer_name" id="dashCustomerName" class="form-control" placeholder="Customer Name (e.g. Ramesh)" value="" autocomplete="off">
+                        <input type="hidden" name="customer_id" id="dashCustomerId" value="">
+                        <div id="dashCustDropdown" class="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-1 mt-1" style="max-height: 200px; overflow-y: auto; z-index: 1050; display: none;"></div>
                     </div>
                     <div class="col-5">
                         <label class="form-label small fw-semibold text-secondary">Mobile</label>
-                        <input type="tel" name="customer_phone" class="form-control" placeholder="10-digit Phone" value="">
+                        <input type="tel" name="customer_phone" id="dashCustomerPhone" class="form-control" placeholder="10-digit Phone" value="">
                     </div>
                 </div>
 
-                <!-- Product Selector -->
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold text-secondary">Select Product (பொருள் தேர்வு) *</label>
-                    <select name="product_id" class="form-select bg-light" id="dashProdSelect" required>
+                <!-- Category Filter -->
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold text-secondary"><i class="fa-solid fa-filter text-primary me-1"></i>Filter Category (வகை வாரியாக வடிகட்டு)</label>
+                    <select class="form-select form-select-sm bg-light" id="dashCategorySelect">
+                        <option value="">-- All Categories (அனைத்து வகைகள்) --</option>
+                        {% for cat in categories %}
+                            <option value="{{ cat }}">{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Product Selector with Instant Live Typing Filter (500+ Products) -->
+                <div class="mb-3 position-relative">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="form-label small fw-semibold text-secondary mb-0">Select Product (பொருள் தேர்வு - Type any letter) *</label>
+                        <span class="text-primary small fw-semibold" id="dashProductCountBadge">{{ products|length }} Products</span>
+                    </div>
+                    <div class="input-group mb-1">
+                        <span class="input-group-text bg-light text-muted border-end-0"><i class="fa-solid fa-magnifying-glass"></i></span>
+                        <input type="text" class="form-control bg-light border-start-0" id="dashProdSearchInput" placeholder="Type any letter to filter (e.g. rice, அரிசி, dal)..." autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button" id="dashClearProdSearch" title="Clear Search"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+
+                    <!-- Hidden select keeping Django POST compatibility -->
+                    <select name="product_id" class="form-select bg-light d-none" id="dashProdSelect" required>
                         <option value="">-- Choose Product --</option>
                         {% for p in products %}
-                            <option value="{{ p.id }}" data-price="{{ p.price }}" data-unit="{{ p.unit }}" data-tax="{{ p.tax_percent }}">
-                                {{ p.display_name }} - ₹{{ p.price }} / {{ p.unit }}
+                            <option value="{{ p.id }}" data-category="{{ p.category|default:'General' }}" data-price="{{ p.price }}" data-unit="{{ p.unit }}" data-tax="{{ p.tax_percent }}" data-sku="{{ p.sku }}" data-name="{{ p.name }}" data-tamil="{{ p.name_tamil }}" data-display="{{ p.display_name }}">
+                                {{ p.display_name }} ({{ p.category|default:'General' }}) - ₹{{ p.price }} / {{ p.unit }}
                             </option>
                         {% endfor %}
                     </select>
+
+                    <!-- Live dynamic suggestions dropdown for 500+ products -->
+                    <div id="dashProdDropdown" class="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-1 mt-1" style="max-height: 250px; overflow-y: auto; z-index: 1050; display: none;"></div>
+                    <div id="dashSelectedProdBadge" class="small text-success fw-bold mt-1 d-none">
+                        <i class="fa-solid fa-circle-check me-1"></i> Selected: <span id="dashSelectedProdName"></span>
+                    </div>
                 </div>
 
                 <div class="row g-2 mb-3">
@@ -703,29 +736,237 @@
 
 {% block extra_js %}
 <script>
-    // Live calculation for Embedded Dashboard Quick Bill
+    // In-memory serialized catalogs for sub-millisecond instant search across 500+ items
+    const dashProducts = [
+        {% for p in products %}
+        {
+            id: {{ p.id }},
+            name: "{{ p.name|escapejs }}",
+            name_tamil: "{{ p.name_tamil|escapejs }}",
+            display_name: "{{ p.display_name|escapejs }}",
+            category: "{{ p.category|default:'General'|escapejs }}",
+            price: {{ p.price }},
+            tax: {{ p.tax_percent }},
+            unit: "{{ p.unit }}",
+            sku: "{{ p.sku|escapejs }}",
+            stock: {{ p.stock_quantity }}
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    const dashCustomers = [
+        {% for c in customers %}
+        {
+            id: {{ c.id }},
+            name: "{{ c.name|escapejs }}",
+            phone: "{{ c.phone|default:''|escapejs }}"
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
     const dashProd = document.getElementById("dashProdSelect");
+    const dashProdSearch = document.getElementById("dashProdSearchInput");
+    const dashProdDropdown = document.getElementById("dashProdDropdown");
+    const dashCategory = document.getElementById("dashCategorySelect");
+    const dashCountBadge = document.getElementById("dashProductCountBadge");
+    const dashClearSearchBtn = document.getElementById("dashClearProdSearch");
+    const dashSelectedBadge = document.getElementById("dashSelectedProdBadge");
+    const dashSelectedName = document.getElementById("dashSelectedProdName");
+
+    const dashCustName = document.getElementById("dashCustomerName");
+    const dashCustPhone = document.getElementById("dashCustomerPhone");
+    const dashCustId = document.getElementById("dashCustomerId");
+    const dashCustDropdown = document.getElementById("dashCustDropdown");
+
     const dashUnit = document.getElementById("dashUnitSelect");
     const dashQty = document.getElementById("dashQtyInput");
     const dashPaid = document.getElementById("dashPaidInput");
     const dashRateLabel = document.getElementById("dashUnitRate");
     const dashTaxLabel = document.getElementById("dashTaxAmount");
     const dashTotalLabel = document.getElementById("dashGrandTotal");
-
     const dashDiscount = document.getElementById("dashDiscountInput");
     const dashDiscountRow = document.getElementById("dashDiscountRow");
     const dashDiscountAmount = document.getElementById("dashDiscountAmount");
 
+    // 1. Live Instant Product Filter by typing any letter or selecting Category
+    function filterDashProducts() {
+        if (!dashProdDropdown) return;
+        const query = (dashProdSearch?.value || "").trim().toLowerCase();
+        const selectedCat = (dashCategory?.value || "").trim().toLowerCase();
+
+        const filtered = dashProducts.filter(p => {
+            const matchesCat = !selectedCat || (p.category && p.category.toLowerCase() === selectedCat);
+            if (!matchesCat) return false;
+            if (!query) return true;
+            return (
+                p.display_name.toLowerCase().includes(query) ||
+                (p.name_tamil && p.name_tamil.toLowerCase().includes(query)) ||
+                (p.name && p.name.toLowerCase().includes(query)) ||
+                (p.sku && p.sku.toLowerCase().includes(query)) ||
+                (p.category && p.category.toLowerCase().includes(query))
+            );
+        });
+
+        if (dashCountBadge) {
+            dashCountBadge.innerText = `${filtered.length} / ${dashProducts.length} Items`;
+        }
+
+        if (filtered.length === 0) {
+            dashProdDropdown.innerHTML = `<div class="p-3 text-muted text-center small"><i class="fa-solid fa-box-open me-1"></i> No matching products found for "${query}"</div>`;
+            dashProdDropdown.style.display = "block";
+            return;
+        }
+
+        let html = '';
+        filtered.slice(0, 100).forEach(p => {
+            html += `
+                <div class="dash-prod-item p-2 border-bottom rounded-2 d-flex justify-content-between align-items-center" 
+                     style="cursor: pointer; transition: background 0.15s;" 
+                     data-id="${p.id}"
+                     onmouseover="this.style.background='#f1f5f9'"
+                     onmouseout="this.style.background='transparent'"
+                     onclick="selectDashProduct(${p.id})">
+                    <div>
+                        <strong class="text-dark d-block">${p.display_name}</strong>
+                        <div class="small text-muted">
+                            <span class="badge bg-secondary-subtle text-secondary me-1">${p.category}</span>
+                            ${p.sku ? '<span class="font-monospace me-1">[' + p.sku + ']</span>' : ''}
+                            Stock: ${p.stock} ${p.unit}
+                        </div>
+                    </div>
+                    <div class="text-end ps-2">
+                        <span class="fw-bold text-primary fs-6">₹${p.price.toFixed(2)}</span>
+                        <div class="small text-muted">${p.unit}</div>
+                    </div>
+                </div>
+            `;
+        });
+
+        if (filtered.length > 100) {
+            html += `<div class="p-2 text-center text-muted small fst-italic">+ ${filtered.length - 100} more products. Type specific letters to narrow search.</div>`;
+        }
+
+        dashProdDropdown.innerHTML = html;
+        dashProdDropdown.style.display = "block";
+    }
+
+    function selectDashProduct(productId) {
+        const prod = dashProducts.find(p => p.id === productId);
+        if (!prod) return;
+
+        if (dashProd) {
+            dashProd.value = prod.id;
+        }
+        if (dashProdSearch) {
+            dashProdSearch.value = prod.display_name;
+        }
+        if (dashSelectedBadge && dashSelectedName) {
+            dashSelectedName.innerText = `${prod.display_name} (₹${prod.price.toFixed(2)} / ${prod.unit})`;
+            dashSelectedBadge.classList.remove("d-none");
+        }
+        if (dashProdDropdown) {
+            dashProdDropdown.style.display = "none";
+        }
+        if (dashUnit) {
+            dashUnit.value = prod.unit;
+        }
+
+        updateDashCalc();
+    }
+
+    if (dashProdSearch) {
+        dashProdSearch.addEventListener("input", filterDashProducts);
+        dashProdSearch.addEventListener("focus", filterDashProducts);
+    }
+    if (dashCategory) {
+        dashCategory.addEventListener("change", () => {
+            filterDashProducts();
+        });
+    }
+    if (dashClearSearchBtn) {
+        dashClearSearchBtn.addEventListener("click", () => {
+            if (dashProdSearch) dashProdSearch.value = "";
+            if (dashProd) dashProd.value = "";
+            if (dashSelectedBadge) dashSelectedBadge.classList.add("d-none");
+            filterDashProducts();
+        });
+    }
+
+    // 2. Live Instant Customer Filter by typing any letter
+    function filterDashCustomers() {
+        if (!dashCustDropdown) return;
+        const query = (dashCustName?.value || "").trim().toLowerCase();
+        if (!query) {
+            dashCustDropdown.style.display = "none";
+            return;
+        }
+
+        const matches = dashCustomers.filter(c => 
+            c.name.toLowerCase().includes(query) || (c.phone && c.phone.includes(query))
+        );
+
+        if (matches.length === 0) {
+            dashCustDropdown.innerHTML = `<div class="p-2 text-muted text-center small"><i class="fa-solid fa-user-plus me-1"></i> New customer "${query}" (will be created automatically)</div>`;
+            dashCustDropdown.style.display = "block";
+            return;
+        }
+
+        let html = '';
+        matches.slice(0, 10).forEach(c => {
+            html += `
+                <div class="p-2 border-bottom d-flex justify-content-between align-items-center"
+                     style="cursor: pointer; transition: background 0.15s;"
+                     onmouseover="this.style.background='#f1f5f9'"
+                     onmouseout="this.style.background='transparent'"
+                     onclick="selectDashCustomer(${c.id}, '${escapeJsQuotes(c.name)}', '${escapeJsQuotes(c.phone)}')">
+                    <strong class="text-dark">${c.name}</strong>
+                    <span class="text-muted small font-monospace">${c.phone || 'No phone'}</span>
+                </div>
+            `;
+        });
+        dashCustDropdown.innerHTML = html;
+        dashCustDropdown.style.display = "block";
+    }
+
+    function escapeJsQuotes(s) {
+        return (s || "").replace(/'/g, "\\'");
+    }
+
+    function selectDashCustomer(id, name, phone) {
+        if (dashCustName) dashCustName.value = name;
+        if (dashCustPhone) dashCustPhone.value = phone || "";
+        if (dashCustId) dashCustId.value = id;
+        if (dashCustDropdown) dashCustDropdown.style.display = "none";
+    }
+
+    if (dashCustName) {
+        dashCustName.addEventListener("input", filterDashCustomers);
+        dashCustName.addEventListener("focus", filterDashCustomers);
+    }
+
+    // Hide dropdowns when clicking outside
+    document.addEventListener("click", (e) => {
+        if (dashProdDropdown && !dashProdDropdown.contains(e.target) && e.target !== dashProdSearch) {
+            dashProdDropdown.style.display = "none";
+        }
+        if (dashCustDropdown && !dashCustDropdown.contains(e.target) && e.target !== dashCustName) {
+            dashCustDropdown.style.display = "none";
+        }
+    });
+
+    // 3. Calculation Logic
     function updateDashCalc() {
-        if (!dashProd || !dashProd.selectedIndex) return;
-        const opt = dashProd.options[dashProd.selectedIndex];
-        const price = parseFloat(opt.getAttribute("data-price") || 0);
-        const unit = opt.getAttribute("data-unit");
-        const taxPct = parseFloat(opt.getAttribute("data-tax") || 0);
-        const qty = parseFloat(dashQty.value || 0);
+        if (!dashProd || !dashProd.value) return;
+        const prod = dashProducts.find(p => p.id == dashProd.value);
+        if (!prod) return;
+
+        const price = prod.price || 0;
+        const unit = prod.unit || "KG";
+        const taxPct = prod.tax || 0;
+        const qty = parseFloat(dashQty?.value || 0);
         const discount = parseFloat(dashDiscount?.value || 0);
 
-        if (unit && dashUnit) {
+        if (unit && dashUnit && !dashUnit.dataset.userChanged) {
             dashUnit.value = unit;
         }
 
@@ -740,19 +981,20 @@
             dashDiscountRow.style.setProperty("display", "none", "important");
         }
 
-        dashRateLabel.innerText = "₹" + price.toFixed(2);
-        dashTaxLabel.innerText = "₹" + tax.toFixed(2);
-        dashTotalLabel.innerText = "₹" + total.toFixed(2);
-        if (!dashPaid.value || dashPaid.dataset.autoFilled === "true") {
+        if (dashRateLabel) dashRateLabel.innerText = "₹" + price.toFixed(2);
+        if (dashTaxLabel) dashTaxLabel.innerText = "₹" + tax.toFixed(2);
+        if (dashTotalLabel) dashTotalLabel.innerText = "₹" + total.toFixed(2);
+
+        if (dashPaid && (!dashPaid.value || dashPaid.dataset.autoFilled === "true")) {
             dashPaid.value = total.toFixed(2);
             dashPaid.dataset.autoFilled = "true";
         }
     }
 
-    if (dashProd) dashProd.addEventListener("change", updateDashCalc);
     if (dashQty) dashQty.addEventListener("input", updateDashCalc);
     if (dashDiscount) dashDiscount.addEventListener("input", updateDashCalc);
     if (dashPaid) dashPaid.addEventListener("input", () => { dashPaid.dataset.autoFilled = "false"; });
+    if (dashUnit) dashUnit.addEventListener("change", () => { dashUnit.dataset.userChanged = "true"; });
 
     // Live Auto-Sync poller for real-time dashboard updates across offline apps and web
     let _lastLiveInvoicesCount = null;

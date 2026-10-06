@@ -421,11 +421,17 @@
                                                         <p class="small text-muted mb-3">Admin override: Client users cannot change credentials themselves. Set a new password for this client account.</p>
                                                         <div class="mb-3">
                                                             <label class="form-label small fw-semibold">New Password *</label>
-                                                            <input type="password" name="new_password" class="form-control" required placeholder="Enter new password">
+                                                            <div class="input-group">
+                                                                <input type="password" name="new_password" id="adminNewPass{{ u.id }}" class="form-control" required placeholder="Enter new password">
+                                                                <button class="btn btn-outline-secondary" type="button" onclick="togglePass('adminNewPass{{ u.id }}', this)" title="Show/Hide Password"><i class="fa-solid fa-eye"></i></button>
+                                                            </div>
                                                         </div>
                                                         <div class="mb-3">
                                                             <label class="form-label small fw-semibold">Confirm New Password *</label>
-                                                            <input type="password" name="new_password_confirm" class="form-control" required placeholder="Re-type new password">
+                                                            <div class="input-group">
+                                                                <input type="password" name="new_password_confirm" id="adminNewPassConf{{ u.id }}" class="form-control" required placeholder="Re-type new password">
+                                                                <button class="btn btn-outline-secondary" type="button" onclick="togglePass('adminNewPassConf{{ u.id }}', this)" title="Show/Hide Password"><i class="fa-solid fa-eye"></i></button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <div class="modal-footer border-0 pt-0">
@@ -1313,11 +1319,17 @@
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Password *</label>
-                            <input type="password" name="password" class="form-control" required placeholder="Enter password">
+                            <div class="input-group">
+                                <input type="password" name="password" id="newClientPass" class="form-control" required placeholder="Enter password">
+                                <button class="btn btn-outline-secondary" type="button" onclick="togglePass('newClientPass', this)" title="Show/Hide Password"><i class="fa-solid fa-eye"></i></button>
+                            </div>
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Confirm Password *</label>
-                            <input type="password" name="password_confirm" class="form-control" required placeholder="Re-enter password">
+                            <div class="input-group">
+                                <input type="password" name="password_confirm" id="newClientPassConf" class="form-control" required placeholder="Re-enter password">
+                                <button class="btn btn-outline-secondary" type="button" onclick="togglePass('newClientPassConf', this)" title="Show/Hide Password"><i class="fa-solid fa-eye"></i></button>
+                            </div>
                         </div>
                     </div>
 
@@ -1566,6 +1578,7 @@
             btn.innerHTML = '<i class="fa-solid fa-eye text-secondary"></i>';
         }
     }
+    var togglePass = togglePassVisibility;
 
     function previewNewClientImage(input) {
         if (input.files && input.files[0]) {

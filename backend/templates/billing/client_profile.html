@@ -72,6 +72,12 @@
                             <label class="form-label fw-semibold text-secondary small">Shop Address (முகவரி - printed on invoice)</label>
                             <textarea name="shop_address" rows="3" class="form-control rounded-3" placeholder="Enter full shop address (e.g. 12, Main Road, Tiruppur - 641604)">{{ profile.shop_address }}</textarea>
                         </div>
+
+                        <div class="col-12">
+                            <label class="form-label fw-semibold text-secondary small"><i class="fa-solid fa-receipt me-1 text-primary"></i> GST Number / GSTIN (சரக்கு மற்றும் சேவை வரி எண்)</label>
+                            <input type="text" name="gst_number" class="form-control rounded-3 text-uppercase font-monospace" placeholder="e.g. 33AAAAA0000A1Z5" value="{{ profile.gst_number|default:active_shop_gst }}">
+                            <div class="form-text small text-muted"><i class="fa-solid fa-circle-check text-success me-1"></i> Saving this GST number will automatically update and appear on all customer bills and invoices immediately.</div>
+                        </div>
                     </div>
 
                     <hr class="text-muted opacity-25 my-4">

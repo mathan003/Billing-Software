@@ -32,6 +32,7 @@ def build():
         "--noconsole",                # Suppress black console window
         "--onefile",                  # Pack into single standalone executable
         "--clean",                    # Clean cache before build
+        f"--icon={base_dir / 'logo.ico'}", # Set application icon from MathanHub logo
         # Bundle templates & static assets
         f"--add-data={backend_dir / 'templates'};templates",
         f"--add-data={backend_dir / 'staticfiles'};staticfiles",
@@ -58,6 +59,7 @@ def build():
         "--hidden-import=billing.migrations.0007_softwareupdate_branch_client_and_more",
         "--hidden-import=billing.migrations.0008_customer_client_invoice_client_product_client_and_more",
         "--hidden-import=billing.migrations.0009_userprofile_access_mode_and_more",
+        "--hidden-import=billing.migrations.0010_userprofile_gst_number",
         # Hidden imports for Django dynamic loading
         "--hidden-import=billing",
         "--hidden-import=billing.models",
@@ -128,12 +130,13 @@ def build():
         shutil.make_archive(str(mathan_zip_output), "zip", root_dir=str(base_dir), base_dir="MathanHub.exe")
         
         # Copy to artifacts directory if exists
-        artifacts_dir = Path(r"C:\Users\Netcom\.gemini\antigravity\brain\d52feb94-acb7-4123-b76c-fd6b7e2235c8")
-        if artifacts_dir.exists():
-            shutil.copy2(f"{zip_output}.zip", artifacts_dir / "SmartBillingPOS_Windows.zip")
-            shutil.copy2(f"{mathan_zip_output}.zip", artifacts_dir / "MathanHub_Windows.zip")
-            print(f"[+] Artifact updated at: {artifacts_dir / 'SmartBillingPOS_Windows.zip'}")
-            print(f"[+] Artifact updated at: {artifacts_dir / 'MathanHub_Windows.zip'}")
+        for conv_id in ["13f8f699-258b-4440-abd3-3e754c3bb6b0", "d52feb94-acb7-4123-b76c-fd6b7e2235c8"]:
+            artifacts_dir = Path(r"C:\Users\Netcom\.gemini\antigravity\brain") / conv_id
+            if artifacts_dir.exists():
+                shutil.copy2(f"{zip_output}.zip", artifacts_dir / "SmartBillingPOS_Windows.zip")
+                shutil.copy2(f"{mathan_zip_output}.zip", artifacts_dir / "MathanHub_Windows.zip")
+                print(f"[+] Artifact updated at: {artifacts_dir / 'SmartBillingPOS_Windows.zip'}")
+                print(f"[+] Artifact updated at: {artifacts_dir / 'MathanHub_Windows.zip'}")
 
         print("\n" + "=" * 65)
         print("  STANDALONE WINDOWS EXE BUILD SUCCESSFUL!")

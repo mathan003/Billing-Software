@@ -87,6 +87,7 @@ def generate_invoice_pdf(invoice, client_profile=None):
     bank_name = company.bank_name or "State Bank of India"
     account_number = company.account_number or "N/A"
     ifsc_code = company.ifsc_code or "N/A"
+    shop_gst = getattr(company, "gst_number", "")
 
     if client_profile:
         if client_profile.shop_name:
@@ -101,6 +102,8 @@ def generate_invoice_pdf(invoice, client_profile=None):
             shop_logo_b64 = client_profile.shop_logo_base64
         elif client_profile.avatar_base64:
             shop_logo_b64 = client_profile.avatar_base64
+        if getattr(client_profile, "gst_number", ""):
+            shop_gst = client_profile.gst_number
         if client_profile.bank_name:
             bank_name = client_profile.bank_name
         if client_profile.account_number:
@@ -188,12 +191,23 @@ def generate_invoice_pdf(invoice, client_profile=None):
         )
         y += 13
 
-    # Email & Phone
+    # Email & Phone & GSTIN
     if shop_email:
         _safe_insert_textbox(
             page,
             pymupdf.Rect(20, y, text_right_bound, y + 14),
             f"Email  : {shop_email}",
+            fontsize=8.5,
+            fontname="helv",
+            color=color_dark
+        )
+        y += 13
+
+    if shop_gst:
+        _safe_insert_textbox(
+            page,
+            pymupdf.Rect(20, y, text_right_bound, y + 14),
+            f"GSTIN  : {shop_gst}",
             fontsize=8.5,
             fontname="helv",
             color=color_dark

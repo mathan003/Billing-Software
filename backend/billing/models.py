@@ -366,6 +366,7 @@ class UserProfile(models.Model):
     bank_name = models.CharField(max_length=150, blank=True, default="", help_text="Bank Name")
     account_number = models.CharField(max_length=60, blank=True, default="", help_text="Bank Account Number")
     ifsc_code = models.CharField(max_length=30, blank=True, default="", help_text="Bank IFSC Code")
+    gst_number = models.CharField(max_length=50, blank=True, default="", help_text="Client Business GSTIN Number")
     avatar_image = models.ImageField(upload_to="client_avatars/", blank=True, null=True)
     avatar_base64 = models.TextField(blank=True, default="", help_text="Base64 encoded client profile image")
     shop_logo_image = models.ImageField(upload_to="client_logos/", blank=True, null=True)

@@ -1420,10 +1420,16 @@ def admin_panel(request):
     action_types = ActivityLog.objects.values_list("action_type", flat=True).distinct()
     branches = Branch.objects.order_by("-is_default", "name")
 
+    all_customers = Customer.objects.select_related("client").order_by("-created_at")
+    for cust in all_customers:
+        cust.bill_count = Invoice.objects.filter(customer=cust).count()
+        cust.total_spend = Invoice.objects.filter(customer=cust).aggregate(Sum("grand_total"))["grand_total__sum"] or Decimal("0.00")
+
     context = {
         "admin_users": admin_users,
         "clients": clients,
         "branches": branches,
+        "all_customers": all_customers,
         "active_device_sessions": active_device_sessions,
         "registered_devices": registered_devices,
         "activity_logs": log_qs[:200],
@@ -3204,3 +3210,139 @@ def client_apply_software_update(request):
 
     messages.success(request, f"Software updated to {version} successfully.")
     return redirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@admin_required
+def admin_download_all_data(request):
+    """
+    Exports and downloads all database records (Customers, Products, Invoices, Items, Branches, Settings)
+    as a complete, structured JSON backup file.
+    """
+    import json
+
+    customers = []
+    for c in Customer.objects.all():
+        customers.append({
+            "id": c.id,
+            "name": c.name,
+            "phone": c.phone,
+            "email": c.email,
+            "address": c.address,
+            "gst_number": c.gst_number,
+            "notes": c.notes,
+            "total_billed": str(c.total_billed),
+            "total_pending": str(c.total_pending),
+            "created_at": str(c.created_at),
+        })
+
+    products = list(Product.objects.values(
+        "id", "sku", "name", "name_tamil", "category", "unit", "price", "cost_price",
+        "stock_quantity", "tax_percent", "is_active", "created_at"
+    ))
+    invoices = []
+    for inv in Invoice.objects.prefetch_related("items", "payments").all().order_by("created_at"):
+        items = list(inv.items.values(
+            "product_sku", "product_name", "unit_price", "quantity", "tax_percent", "tax_amount", "discount_percent", "total_price"
+        ))
+        payments = list(inv.payments.values(
+            "amount", "payment_method", "notes", "created_at"
+        ))
+        invoices.append({
+            "id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "invoice_uuid": inv.invoice_uuid,
+            "customer_name": inv.customer_name,
+            "customer_phone": inv.customer_phone,
+            "subtotal": str(inv.subtotal),
+            "discount_amount": str(inv.discount_amount),
+            "grand_total": str(inv.grand_total),
+            "paid_amount": str(inv.paid_amount),
+            "balance_amount": str(inv.balance_amount),
+            "payment_status": inv.payment_status,
+            "source": inv.source,
+            "created_at": str(inv.created_at),
+            "items": items,
+            "payments": payments,
+        })
+    branches = list(Branch.objects.values("id", "name", "branch_code", "address", "phone", "is_default", "is_active"))
+    comp = CompanySettings.get_settings()
+    company_data = {
+        "company_name": comp.company_name,
+        "phone": comp.phone,
+        "email": comp.email,
+        "address": comp.address,
+        "gst_number": comp.gst_number,
+        "bank_name": comp.bank_name,
+        "account_number": comp.account_number,
+        "ifsc_code": comp.ifsc_code,
+    }
+
+    backup_payload = {
+        "export_timestamp": timezone.now().isoformat(),
+        "exported_by": request.user.username,
+        "system": "MathanHub Cloud & POS",
+        "company": company_data,
+        "branches": branches,
+        "products": products,
+        "customers": customers,
+        "invoices": invoices,
+        "stats": {
+            "total_products": len(products),
+            "total_customers": len(customers),
+            "total_invoices": len(invoices),
+        }
+    }
+
+    filename = f"mathanhub_full_backup_{timezone.now().strftime('%Y%m%d_%H%M%S')}.json"
+    response = HttpResponse(
+        json.dumps(backup_payload, indent=2, default=str),
+        content_type="application/json"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    log_activity(request, "DATA_BACKUP", f"Admin '{request.user.username}' downloaded full database backup ({filename}).")
+    return response
+
+
+@admin_required
+def admin_delete_customer_or_data(request, customer_id):
+    """
+    Admin deletes a customer or deletes all bills for that customer.
+    Supports:
+    - 'bills_only': clears all invoices for customer, restores inventory, sets balance to 0
+    - 'full': permanently deletes customer and all associated bills
+    """
+    customer = get_object_or_404(Customer, pk=customer_id)
+    cust_name = customer.name
+    action_type = request.POST.get("action_type", "full")
+
+    if request.method == "POST":
+        invoices = Invoice.objects.filter(customer=customer)
+        inv_count = invoices.count()
+
+        # Restore stock for invoice items
+        for inv in invoices.prefetch_related("items"):
+            for item in inv.items.all():
+                if item.product:
+                    Product.objects.filter(pk=item.product.id).update(
+                        stock_quantity=F("stock_quantity") + item.quantity
+                    )
+            inv.items.all().delete()
+        invoices.delete()
+
+        if action_type == "full":
+            customer.delete()
+            log_activity(
+                request,
+                "CUSTOMER_DELETE",
+                f"Admin '{request.user.username}' permanently deleted customer '{cust_name}' and {inv_count} bills."
+            )
+            messages.success(request, f"Customer '{cust_name}' and all {inv_count} bills deleted permanently.")
+        else:
+            log_activity(
+                request,
+                "DATA_CLEANUP",
+                f"Admin '{request.user.username}' cleared all {inv_count} bills for customer '{cust_name}'."
+            )
+            messages.success(request, f"All {inv_count} bills for customer '{cust_name}' cleared successfully (Profile retained).")
+
+    return redirect("billing:admin_panel")

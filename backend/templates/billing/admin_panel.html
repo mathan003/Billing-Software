@@ -14,6 +14,10 @@
         <p class="text-muted small mb-0 mt-1">Manage client accounts, photos, device limits, active sessions, and cloud activity logs</p>
     </div>
     <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'billing:admin_download_all_data' %}" class="btn btn-outline-success d-flex align-items-center gap-2 shadow-sm" title="Download complete database backup (JSON)">
+            <i class="fa-solid fa-cloud-arrow-down text-success"></i>
+            <span>Download All Data (முழு தரவு)</span>
+        </a>
         <a href="{% url 'billing:admin_export_activity_log_txt' %}" class="btn btn-outline-dark d-flex align-items-center gap-2 shadow-sm">
             <i class="fa-solid fa-file-arrow-down text-primary"></i>
             <span>Export Logs (TXT)</span>
@@ -38,6 +42,11 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link active px-4 py-2 fw-semibold rounded-3" id="clients-tab" data-bs-toggle="pill" data-bs-target="#clients-pane" type="button" role="tab">
             <i class="fa-solid fa-users me-2 text-primary"></i> Clients & Multi-Device ({{ clients|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link px-4 py-2 fw-semibold rounded-3" id="customers-tab" data-bs-toggle="pill" data-bs-target="#customers-pane" type="button" role="tab">
+            <i class="fa-solid fa-address-book me-2 text-primary"></i> Customers ({{ all_customers|length }})
         </button>
     </li>
     <li class="nav-item" role="presentation">
@@ -441,6 +450,176 @@
                     <button type="button" class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#createClientModal">
                         <i class="fa-solid fa-user-plus me-1"></i> Add Client Account
                     </button>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB: CUSTOMERS DATA & MANAGEMENT (NEW)     -->
+    <!-- ========================================== -->
+    <div class="tab-pane fade" id="customers-pane" role="tabpanel">
+        <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark"><i class="fa-solid fa-address-book text-primary me-2"></i>Customers Directory & Data (வாடிக்கையாளர்கள்)</h5>
+                    <p class="text-muted small mb-0">
+                        Download individual customer data (PDF/CSV), purge customer billing transactions, or permanently delete customer profiles.
+                    </p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{% url 'billing:customers_export_all_csv' %}" class="btn btn-outline-success d-flex align-items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-file-csv"></i>
+                        <span>Export All Customers (CSV)</span>
+                    </a>
+                    <a href="{% url 'billing:customer_add' %}" class="btn btn-primary-custom d-flex align-items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-user-plus"></i>
+                        <span>Add Customer</span>
+                    </a>
+                </div>
+            </div>
+
+            {% if all_customers %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Customer Details</th>
+                                <th>Contact / Phone</th>
+                                <th>Store Client</th>
+                                <th class="text-center">Total Bills</th>
+                                <th class="text-end">Total Spend</th>
+                                <th class="text-end">Balance</th>
+                                <th class="text-center">Download Data</th>
+                                <th class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for cust in all_customers %}
+                                <tr>
+                                    <td class="ps-3">
+                                        <div class="fw-bold text-dark">{{ cust.name }}</div>
+                                        {% if cust.address %}<div class="text-muted small text-truncate" style="max-width: 180px;">{{ cust.address }}</div>{% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border">{{ cust.phone|default:"No phone" }}</span>
+                                        {% if cust.email %}<div class="text-muted small">{{ cust.email }}</div>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if cust.client %}
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ cust.client.username }}</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary-subtle text-secondary border">Global Shop</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1">{{ cust.bill_count }} Bills</span>
+                                    </td>
+                                    <td class="text-end fw-semibold text-dark">
+                                        ₹{{ cust.total_spend|floatformat:2 }}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if cust.total_pending > 0 %}
+                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold">₹{{ cust.total_pending|floatformat:2 }}</span>
+                                        {% else %}
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle">₹0.00</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <a href="{% url 'billing:customer_export_csv' cust.id %}" class="btn btn-outline-success" title="Download CSV statement">
+                                                <i class="fa-solid fa-file-csv me-1"></i> CSV
+                                            </a>
+                                            <a href="{% url 'billing:customer_statement_pdf' cust.id %}" target="_blank" class="btn btn-outline-primary" title="Download PDF statement">
+                                                <i class="fa-solid fa-file-pdf me-1"></i> PDF
+                                            </a>
+                                        </div>
+                                    </td>
+                                    <td class="text-end pe-3">
+                                        <div class="d-inline-flex gap-1">
+                                            <!-- Clear Bills Button -->
+                                            <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#clearCustDataModal{{ cust.id }}" title="Clear bills for this customer">
+                                                <i class="fa-solid fa-broom me-1"></i> Clear Bills
+                                            </button>
+                                            <!-- Delete Customer Button -->
+                                            <button type="button" class="btn btn-sm btn-danger fw-semibold" data-bs-toggle="modal" data-bs-target="#deleteCustDirectModal{{ cust.id }}" title="Permanently delete customer">
+                                                <i class="fa-solid fa-trash-can me-1"></i> Delete Customer
+                                            </button>
+                                        </div>
+
+                                        <!-- Modal: Clear Bills -->
+                                        <div class="modal fade text-start" id="clearCustDataModal{{ cust.id }}" tabindex="-1" aria-hidden="true">
+                                            <div class="modal-dialog modal-dialog-centered">
+                                                <div class="modal-content rounded-4 border-0 shadow">
+                                                    <div class="modal-header border-bottom-0 pb-0">
+                                                        <h6 class="modal-title fw-bold text-dark"><i class="fa-solid fa-broom text-warning me-2"></i>Clear Bills for {{ cust.name }}</h6>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body py-3">
+                                                        <p class="text-muted small mb-2">
+                                                            This will delete all <strong>{{ cust.bill_count }} invoice records</strong> and line items for <strong>{{ cust.name }}</strong> and reset outstanding balance to ₹0.00.
+                                                        </p>
+                                                        <div class="alert alert-warning py-2 px-3 small border-0 mb-0">
+                                                            <i class="fa-solid fa-triangle-exclamation me-1"></i> Customer contact profile will remain saved. Inventory stock quantities will be restored.
+                                                        </div>
+                                                    </div>
+                                                    <div class="modal-footer border-top-0 pt-0">
+                                                        <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                                        <form method="post" action="{% url 'billing:admin_delete_customer_or_data' cust.id %}">
+                                                            {% csrf_token %}
+                                                            <input type="hidden" name="action_type" value="bills_only">
+                                                            <button type="submit" class="btn btn-warning btn-sm fw-semibold">
+                                                                <i class="fa-solid fa-broom me-1"></i> Confirm Clear Bills
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Modal: Delete Customer Permanently -->
+                                        <div class="modal fade text-start" id="deleteCustDirectModal{{ cust.id }}" tabindex="-1" aria-hidden="true">
+                                            <div class="modal-dialog modal-dialog-centered">
+                                                <div class="modal-content rounded-4 border-0 shadow">
+                                                    <div class="modal-header border-bottom-0 pb-0">
+                                                        <h6 class="modal-title fw-bold text-danger"><i class="fa-solid fa-trash-can me-2"></i>Delete Customer: {{ cust.name }}</h6>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body py-3">
+                                                        <p class="text-muted small mb-2">
+                                                            Are you sure you want to permanently delete customer <strong>{{ cust.name }}</strong> (Phone: {{ cust.phone|default:'N/A' }})?
+                                                        </p>
+                                                        <div class="alert alert-danger py-2 px-3 small border-0 mb-0">
+                                                            <i class="fa-solid fa-circle-exclamation me-1"></i> This action deletes the customer profile permanently along with all {{ cust.bill_count }} associated invoice history records.
+                                                        </div>
+                                                    </div>
+                                                    <div class="modal-footer border-top-0 pt-0">
+                                                        <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                                        <form method="post" action="{% url 'billing:admin_delete_customer_or_data' cust.id %}">
+                                                            {% csrf_token %}
+                                                            <input type="hidden" name="action_type" value="full">
+                                                            <button type="submit" class="btn btn-danger btn-sm fw-semibold">
+                                                                <i class="fa-solid fa-trash-can me-1"></i> Delete Customer Permanently
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="fa-solid fa-address-book fa-3x mb-3 text-secondary opacity-50"></i>
+                    <h6 class="fw-bold">No Customers Found</h6>
+                    <p class="small mb-3">Add customers or create invoices to see them here.</p>
+                    <a href="{% url 'billing:customer_add' %}" class="btn btn-primary-custom">
+                        <i class="fa-solid fa-user-plus me-1"></i> Add New Customer
+                    </a>
                 </div>
             {% endif %}
         </div>

@@ -92,7 +92,7 @@ class SessionSecurityMiddleware:
         if request.method == "GET" and not request.headers.get("x-requested-with") == "XMLHttpRequest":
             is_download_or_asset = (
                 any(path.endswith(ext) for ext in [".pdf", ".txt", ".json", ".ico", ".png", ".jpg", ".svg", ".css", ".js", ".csv"])
-                or "/download/" in path
+                or "download" in path
                 or "/pdf/" in path
                 or "/export-txt/" in path
                 or "/export-csv/" in path

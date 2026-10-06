@@ -177,11 +177,13 @@ def test_customer_footfall_reports():
     c3, _ = Customer.objects.get_or_create(name="Footfall Customer 3", phone="9333333333")
 
     # Clear old test invoices
-    Invoice.objects.filter(customer_name__startswith="Footfall").delete()
+    Invoice.objects.filter(customer_name__in=["Walk-in Cash Customer", "Footfall Customer 1", "Footfall Customer 2", "Footfall Customer 3"]).delete()
+    Invoice.objects.filter(invoice_number__startswith="POS-TEST-FF").delete()
+    Invoice.objects.filter(invoice_number__startswith="WEB-TEST-FF").delete()
 
     # Create bills for today
     inv_t1 = Invoice.objects.create(
-        invoice_number=f"POS-{today.strftime('%Y%m%d')}-0091",
+        invoice_number=f"POS-TEST-FF-{uuid.uuid4().hex[:6]}",
         customer=c1,
         customer_name=c1.name,
         customer_phone=c1.phone,
@@ -191,7 +193,7 @@ def test_customer_footfall_reports():
         created_at=timezone.now(),
     )
     inv_t2 = Invoice.objects.create(
-        invoice_number=f"WEB-{today.strftime('%Y%m%d')}-0092",
+        invoice_number=f"WEB-TEST-FF-{uuid.uuid4().hex[:6]}",
         customer=c2,
         customer_name=c2.name,
         customer_phone=c2.phone,
@@ -202,7 +204,7 @@ def test_customer_footfall_reports():
     )
     # Cash walk-in customer today without registered customer object
     inv_t3 = Invoice.objects.create(
-        invoice_number=f"POS-{today.strftime('%Y%m%d')}-0093",
+        invoice_number=f"POS-TEST-FF-{uuid.uuid4().hex[:6]}",
         customer=None,
         customer_name="Walk-in Cash Customer",
         customer_phone="9444444444",

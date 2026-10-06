@@ -149,6 +149,7 @@
                     <i class="fa-solid fa-right-to-bracket me-2"></i> {% if is_desktop_app %}Register Device & Sign In{% else %}Sign In to Store{% endif %}
                 </button>
             {% endif %}
+            <input type="hidden" name="device_id" id="loginDeviceId" value="{{ device_id }}">
         </form>
 
         <div class="mt-4 pt-3 border-top text-center">
@@ -163,5 +164,18 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/script.bundle.min.js"></script>
+<script>
+    (function() {
+        try {
+            var devInput = document.getElementById('loginDeviceId');
+            var savedDev = localStorage.getItem('billing_device_id');
+            if (savedDev && devInput) {
+                devInput.value = savedDev;
+            } else if (devInput && devInput.value) {
+                localStorage.setItem('billing_device_id', devInput.value);
+            }
+        } catch (e) {}
+    })();
+</script>
 </body>
 </html>

@@ -50,6 +50,10 @@ custom_csrf = os.getenv("CSRF_TRUSTED_ORIGINS")
 if custom_csrf:
     CSRF_TRUSTED_ORIGINS.extend([origin.strip() for origin in custom_csrf.split(",")])
 
+# Honor 'X-Forwarded-Proto' header for request.is_secure() behind Railway/Render reverse proxies
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+
 # Application definition
 INSTALLED_APPS = [
     "django.contrib.admin",

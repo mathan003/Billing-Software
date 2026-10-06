@@ -162,7 +162,7 @@
                         <span class="text-muted">Subtotal:</span>
                         <span class="fw-bold text-dark" id="dispSubtotal">₹{{ invoice.subtotal|floatformat:2 }}</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-2">
+                    <div class="d-flex justify-content-between mb-2" id="dispTaxRow" {% if not active_shop_gst and invoice.tax_amount == 0 %}style="display:none !important;"{% endif %}>
                         <span class="text-muted">Tax Amount:</span>
                         <span class="fw-bold text-dark" id="dispTax">₹{{ invoice.tax_amount|floatformat:2 }}</span>
                     </div>
@@ -268,7 +268,8 @@
             const price = parseFloat(priceInput.value) || 0;
             const qty = parseFloat(qtyInput.value) || 0;
             const selectedOpt = select.options[select.selectedIndex];
-            const taxPercent = selectedOpt ? parseFloat(selectedOpt.dataset.tax || 0) : 0;
+            const hasShopGst = {% if active_shop_gst %}true{% else %}false{% endif %};
+            const taxPercent = (hasShopGst && selectedOpt) ? parseFloat(selectedOpt.dataset.tax || 0) : 0;
 
             const rowSub = price * qty;
             const rowTax = (rowSub * taxPercent) / 100;
@@ -283,7 +284,16 @@
         const balance = Math.max(0, grandTotal - paidAmount);
 
         document.getElementById('dispSubtotal').textContent = '₹' + subtotal.toFixed(2);
-        document.getElementById('dispTax').textContent = '₹' + totalTax.toFixed(2);
+        const dispTaxRow = document.getElementById('dispTaxRow');
+        const hasShopGst = {% if active_shop_gst %}true{% else %}false{% endif %};
+        if (dispTaxRow) {
+            if (hasShopGst && totalTax > 0) {
+                dispTaxRow.style.setProperty("display", "flex", "important");
+                document.getElementById('dispTax').textContent = '₹' + totalTax.toFixed(2);
+            } else {
+                dispTaxRow.style.setProperty("display", "none", "important");
+            }
+        }
         document.getElementById('dispGrandTotal').textContent = '₹' + grandTotal.toFixed(2);
         document.getElementById('dispBalance').textContent = '₹' + balance.toFixed(2);
     }

@@ -46,6 +46,19 @@ class Product(models.Model):
         return f"{self.display_name} ({self.unit}) - ₹{self.price}"
 
 
+class ProductCategory(models.Model):
+    """Product Categories created by shop admin / client"""
+    name = models.CharField(max_length=100)
+    client = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="product_categories")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Customer(models.Model):
     name = models.CharField(max_length=150)
     client = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="customers")
@@ -523,7 +536,7 @@ class CompanySettings(models.Model):
     address = models.TextField(blank=True, default="Main Market Road, Commercial Complex")
     phone = models.CharField(max_length=50, blank=True, default="+91 98765 43210")
     email = models.CharField(max_length=100, blank=True, default="contact@smartbilling.local")
-    gst_number = models.CharField(max_length=50, blank=True, default="27AABCS1429B1Z")
+    gst_number = models.CharField(max_length=50, blank=True, default="")
     bank_name = models.CharField(max_length=150, blank=True, default="State Bank of India", help_text="Bank Name")
     account_number = models.CharField(max_length=60, blank=True, default="30294819283", help_text="Bank Account Number")
     ifsc_code = models.CharField(max_length=30, blank=True, default="SBIN0001234", help_text="Bank IFSC Code")

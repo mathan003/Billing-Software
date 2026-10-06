@@ -60,6 +60,7 @@ def build():
         "--hidden-import=billing.migrations.0008_customer_client_invoice_client_product_client_and_more",
         "--hidden-import=billing.migrations.0009_userprofile_access_mode_and_more",
         "--hidden-import=billing.migrations.0010_userprofile_gst_number",
+        "--hidden-import=billing.migrations.0011_alter_companysettings_gst_number_productcategory",
         # Hidden imports for Django dynamic loading
         "--hidden-import=billing",
         "--hidden-import=billing.models",
@@ -99,9 +100,10 @@ def build():
     proc = subprocess.run(cmd, cwd=str(base_dir))
 
     if proc.returncode == 0:
-        # Terminate any running SmartBillingPOS instances before copying
+        # Terminate any running SmartBillingPOS or MathanHub instances before copying
         try:
             subprocess.run(["taskkill", "/f", "/im", "SmartBillingPOS.exe"], capture_output=True)
+            subprocess.run(["taskkill", "/f", "/im", "MathanHub.exe"], capture_output=True)
             import time
             time.sleep(1)
         except Exception:

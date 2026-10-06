@@ -87,9 +87,11 @@ def generate_invoice_pdf(invoice, client_profile=None):
     bank_name = company.bank_name or "State Bank of India"
     account_number = company.account_number or "N/A"
     ifsc_code = company.ifsc_code or "N/A"
-    shop_gst = getattr(company, "gst_number", "")
+    shop_gst = getattr(company, "gst_number", "").strip()
 
     if client_profile:
+        # If client has not provided GST, GST is empty and not mandatory
+        shop_gst = getattr(client_profile, "gst_number", "").strip()
         if client_profile.shop_name:
             shop_name = client_profile.shop_name
         if client_profile.shop_address:
@@ -102,8 +104,6 @@ def generate_invoice_pdf(invoice, client_profile=None):
             shop_logo_b64 = client_profile.shop_logo_base64
         elif client_profile.avatar_base64:
             shop_logo_b64 = client_profile.avatar_base64
-        if getattr(client_profile, "gst_number", ""):
-            shop_gst = client_profile.gst_number
         if client_profile.bank_name:
             bank_name = client_profile.bank_name
         if client_profile.account_number:
@@ -321,8 +321,8 @@ def generate_invoice_pdf(invoice, client_profile=None):
     _safe_insert_textbox(page, pymupdf.Rect(290, y, box_total_right, y + 14), f"Rs. {invoice.subtotal:.2f}", fontsize=8.5, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
     y += 15
 
-    # Tax (if any)
-    if invoice.tax_amount > Decimal("0.00"):
+    # Tax (if any and only if shop has registered GST)
+    if invoice.tax_amount > Decimal("0.00") and shop_gst:
         _safe_insert_text(page, pymupdf.Point(box_total_left, y + 10), "Tax / GST:", fontsize=8.5, fontname="helv", color=color_muted)
         _safe_insert_textbox(page, pymupdf.Rect(290, y, box_total_right, y + 14), f"Rs. {invoice.tax_amount:.2f}", fontsize=8.5, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
         y += 15
@@ -374,10 +374,11 @@ def generate_invoice_pdf(invoice, client_profile=None):
         align=pymupdf.TEXT_ALIGN_CENTER
     )
     y += 12
+    inv_label = "Tax Invoice" if (invoice.tax_amount > Decimal("0.00") and shop_gst) else "Invoice"
     _safe_insert_textbox(
         page,
         pymupdf.Rect(0, y, page_width, y + 12),
-        f"Computer Generated Tax Invoice - {shop_name}",
+        f"Computer Generated {inv_label} - {shop_name}",
         fontsize=7.5,
         fontname="helv",
         color=color_border,

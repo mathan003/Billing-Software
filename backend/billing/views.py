@@ -13,7 +13,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.http import HttpResponse, JsonResponse
 from .models import (
-    Product, Customer, Invoice, InvoiceItem, Purchase,
+    Product, ProductCategory, Customer, Invoice, InvoiceItem, Purchase,
     PaymentRecord, ActiveUserSession, RegisteredDevice, UserProfile, ActivityLog,
     CompanySettings, Branch, StockLog, SoftwareUpdate, purge_old_customer_data, log_activity
 )
@@ -77,6 +77,38 @@ def get_branch_filter(request):
     if is_admin_user(request.user):
         return Q(is_active=True)
     return Q(is_active=True) & (Q(client=request.user) | Q(client__isnull=True))
+
+
+def check_user_has_gst(user):
+    """
+    Returns True only if the specified user or shop has an active, non-empty GST number.
+    GST is strictly optional and not mandatory for clients. If not configured, tax calculation is skipped.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if hasattr(user, "profile") and user.profile.gst_number and user.profile.gst_number.strip():
+        return True
+    if is_admin_user(user):
+        from .models import CompanySettings
+        c_set = CompanySettings.objects.first()
+        if c_set and c_set.gst_number and c_set.gst_number.strip():
+            return True
+    return False
+
+
+def get_available_categories(request):
+    """
+    Returns a sorted distinct list of categories combining ProductCategory records,
+    distinct Product categories, and default retail departments.
+    """
+    c_filter = get_client_filter(request)
+    default_cats = {"General", "Grocery", "Fruits", "Vegetables", "Snacks", "Beverages", "Dairy", "Spices", "Stationery", "Electronics", "Mobile & Computer"}
+    prod_cats = set(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True))
+    saved_cats = set(ProductCategory.objects.filter(c_filter).exclude(name="").values_list("name", flat=True))
+    all_cats = default_cats | prod_cats | saved_cats
+    return sorted([c.strip() for c in all_cats if c and c.strip()])
+
+
 
 
 
@@ -382,7 +414,7 @@ def dashboard(request):
     recent_invoices = client_invoices_all.select_related("customer", "branch").prefetch_related("items").order_by("-created_at")[:10]
     customers = Customer.objects.filter(c_filter).order_by("name")
     products = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
-    categories = list(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
+    categories = get_available_categories(request)
     branches = Branch.objects.filter(b_filter).order_by("-is_default", "name")
     default_branch = Branch.get_default_branch()
 
@@ -492,6 +524,7 @@ def billing_page(request):
         line_items = []
         subtotal = Decimal("0.00")
         total_tax = Decimal("0.00")
+        has_shop_gst = check_user_has_gst(client_user)
 
         for i in range(len(product_ids)):
             pid = product_ids[i]
@@ -510,7 +543,12 @@ def billing_page(request):
                 continue
 
             item_subtotal = price * qty
-            item_tax = (item_subtotal * product.tax_percent) / Decimal("100.00")
+            if has_shop_gst:
+                item_tax = (item_subtotal * product.tax_percent) / Decimal("100.00")
+                item_tax_pct = product.tax_percent
+            else:
+                item_tax = Decimal("0.00")
+                item_tax_pct = Decimal("0.00")
             item_total = item_subtotal + item_tax
 
             subtotal += item_subtotal
@@ -523,7 +561,7 @@ def billing_page(request):
                 "unit": unit,
                 "unit_price": price,
                 "quantity": qty,
-                "tax_percent": product.tax_percent,
+                "tax_percent": item_tax_pct,
                 "tax_amount": item_tax,
                 "total_price": item_total,
             })
@@ -619,7 +657,7 @@ def billing_page(request):
     c_filter = get_client_filter(request)
     b_filter = get_branch_filter(request)
     products = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
-    categories = list(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
+    categories = get_available_categories(request)
     customers = Customer.objects.filter(c_filter).order_by("name")
     branches = Branch.objects.filter(b_filter).order_by("-is_default", "name")
     default_branch = Branch.get_default_branch()
@@ -662,7 +700,14 @@ def quick_bill_create(request):
             product = get_object_or_404(Product.objects.filter(c_filter, is_active=True), pk=product_id)
             unit_price = product.price
             subtotal = unit_price * qty
-            tax_amount = (subtotal * product.tax_percent) / Decimal("100.00")
+            has_shop_gst = check_user_has_gst(client_user)
+            if has_shop_gst:
+                tax_amount = (subtotal * product.tax_percent) / Decimal("100.00")
+                item_tax_pct = product.tax_percent
+            else:
+                tax_amount = Decimal("0.00")
+                item_tax_pct = Decimal("0.00")
+
             discount_amount = parse_decimal(request.POST.get("discount_amount", "0"), "0.00")
             max_discount = subtotal + tax_amount
             if discount_amount > max_discount:
@@ -740,7 +785,7 @@ def quick_bill_create(request):
                 unit=unit_type,
                 unit_price=unit_price,
                 quantity=qty,
-                tax_percent=product.tax_percent,
+                tax_percent=item_tax_pct,
                 tax_amount=tax_amount,
                 discount_percent=Decimal("0.00"),
                 total_price=grand_total,
@@ -976,6 +1021,8 @@ def invoice_edit(request, invoice_id):
         # 4. Process updated line items
         subtotal = Decimal("0.00")
         total_tax = Decimal("0.00")
+        target_client = invoice.client or request.user
+        has_shop_gst = check_user_has_gst(target_client)
 
         for i in range(len(product_ids)):
             pid = product_ids[i]
@@ -995,7 +1042,12 @@ def invoice_edit(request, invoice_id):
             unit_price = parse_decimal(unit_prices[i] if i < len(unit_prices) else str(prod.price), str(prod.price))
 
             line_sub = unit_price * qty
-            line_tax = (line_sub * prod.tax_percent) / Decimal("100.00")
+            if has_shop_gst:
+                line_tax = (line_sub * prod.tax_percent) / Decimal("100.00")
+                line_tax_pct = prod.tax_percent
+            else:
+                line_tax = Decimal("0.00")
+                line_tax_pct = Decimal("0.00")
             line_total = line_sub + line_tax
 
             subtotal += line_sub
@@ -1009,7 +1061,7 @@ def invoice_edit(request, invoice_id):
                 unit=unit,
                 unit_price=unit_price,
                 quantity=qty,
-                tax_percent=prod.tax_percent,
+                tax_percent=line_tax_pct,
                 tax_amount=line_tax,
                 discount_percent=Decimal("0.00"),
                 total_price=line_total,
@@ -1205,7 +1257,7 @@ def product_list(request):
     if category:
         products = products.filter(category=category)
 
-    categories = Product.objects.filter(c_filter, is_active=True).values_list("category", flat=True).distinct()
+    categories = get_available_categories(request)
 
     return render(request, "billing/products.html", {
         "products": products,
@@ -1214,6 +1266,34 @@ def product_list(request):
         "selected_category": category,
         "unit_choices": Product.UNIT_CHOICES,
     })
+
+
+def category_add(request):
+    """Add a new product category"""
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        if not name:
+            messages.error(request, "Please enter a valid category name.")
+        else:
+            client_user = get_client_user(request)
+            c_filter = get_client_filter(request)
+            exists = ProductCategory.objects.filter(c_filter, name__iexact=name).exists() or \
+                     Product.objects.filter(c_filter, category__iexact=name).exists()
+            if exists:
+                messages.info(request, f"Category '{name}' already exists.")
+            else:
+                ProductCategory.objects.create(name=name, client=client_user)
+                log_activity(
+                    request,
+                    "PRODUCT_ADD",
+                    f"Created new product category '{name}'"
+                )
+                messages.success(request, f"Category '{name}' added successfully! You can now select it when adding products.")
+
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or ""
+    if next_url and next_url.startswith("/"):
+        return redirect(next_url)
+    return redirect("billing:product_list")
 
 
 def product_add(request):

@@ -59,7 +59,7 @@ def session_security_context(request):
     shop_phone = (profile.phone if (profile and profile.phone) else company.phone)
     shop_email = (request.user.email if request.user.email else company.email)
     shop_logo = (profile.shop_logo_url if (profile and profile.shop_logo_url) else company.logo_data_url)
-    shop_gst = (profile.gst_number if (profile and profile.gst_number) else (company.gst_number if company else ""))
+    shop_gst = (profile.gst_number.strip() if (profile and profile.gst_number) else (company.gst_number.strip() if (is_admin and company and company.gst_number) else ""))
     bank_name = (profile.bank_name if (profile and profile.bank_name) else company.bank_name)
     account_number = (profile.account_number if (profile and profile.account_number) else company.account_number)
     ifsc_code = (profile.ifsc_code if (profile and profile.ifsc_code) else company.ifsc_code)

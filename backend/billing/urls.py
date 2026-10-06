@@ -51,9 +51,10 @@ urlpatterns = [
     path("admin-panel/customers/<int:customer_id>/delete/", views.admin_delete_customer_or_data, name="admin_delete_customer_or_data"),
     path("admin-panel/activity/export-txt/", views.admin_export_activity_log_txt, name="admin_export_activity_log_txt"),
 
-    # Products (Add, Edit, Update, Remove)
+    # Products (Add, Edit, Update, Remove, Add Category)
     path("products/", views.product_list, name="product_list"),
     path("products/add/", views.product_add, name="product_add"),
+    path("products/category/add/", views.category_add, name="category_add"),
     path("products/<int:product_id>/edit/", views.product_edit, name="product_edit"),
     path("products/<int:product_id>/delete/", views.product_delete, name="product_delete"),
 

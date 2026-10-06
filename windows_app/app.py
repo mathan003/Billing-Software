@@ -73,13 +73,13 @@ def init_database():
         # Verify all billing tables exist; if any is missing, run syncdb and schema_editor
         from billing.models import (
             UserProfile, CompanySettings, ActivityLog, ActiveUserSession,
-            RegisteredDevice, Product, Customer, Invoice, InvoiceItem,
+            RegisteredDevice, Product, ProductCategory, Customer, Invoice, InvoiceItem,
             PaymentRecord, Purchase, Branch, StockLog, SoftwareUpdate, purge_old_customer_data
         )
 
         all_models = [
             UserProfile, CompanySettings, ActivityLog, ActiveUserSession,
-            RegisteredDevice, Product, Customer, Invoice, InvoiceItem,
+            RegisteredDevice, Product, ProductCategory, Customer, Invoice, InvoiceItem,
             PaymentRecord, Purchase, Branch, StockLog, SoftwareUpdate
         ]
 

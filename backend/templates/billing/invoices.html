@@ -237,10 +237,12 @@
                                                     <span class="text-muted">Subtotal (Items):</span>
                                                     <span class="fw-bold">₹{{ inv.subtotal|floatformat:2 }}</span>
                                                 </div>
+                                                {% if inv.tax_amount > 0 %}
                                                 <div class="d-flex justify-content-between mb-1 small">
                                                     <span class="text-muted">Tax:</span>
                                                     <span class="fw-bold">₹{{ inv.tax_amount|floatformat:2 }}</span>
                                                 </div>
+                                                {% endif %}
                                                 <div class="d-flex justify-content-between mb-1 small text-warning-emphasis">
                                                     <span>Current Discount Applied:</span>
                                                     <span class="fw-bold">₹{{ inv.discount_amount|floatformat:2 }}</span>

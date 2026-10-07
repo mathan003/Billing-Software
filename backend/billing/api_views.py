@@ -74,21 +74,77 @@ class ClientAuthVerifyView(views.APIView):
 
         if not is_admin and profile and device_id:
             dev_limit = profile.device_limit or 5
-            current_active_devices = RegisteredDevice.objects.filter(user=user, is_active=True).count()
-            existing_dev = RegisteredDevice.objects.filter(user=user, device_id=device_id, is_active=True).first()
-            if not existing_dev and current_active_devices >= dev_limit:
-                return Response({
-                    "status": "error",
-                    "message": f"Device Limit Exceeded ({current_active_devices}/{dev_limit}). Admin has configured maximum {dev_limit} devices."
-                }, status=status.HTTP_403_FORBIDDEN)
+            admin_otp = str(request.data.get("admin_otp", "")).strip()
+            ip_addr = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR", "127.0.0.1")
+
+            existing_dev = RegisteredDevice.objects.filter(
+                user=user,
+                device_id=device_id,
+                is_active=True,
+                is_verified=True
+            ).first()
+
             if not existing_dev:
-                RegisteredDevice.objects.create(
+                # New system connecting for this client!
+                current_active_devices = RegisteredDevice.objects.filter(user=user, is_active=True, is_verified=True).count()
+                if current_active_devices >= dev_limit:
+                    return Response({
+                        "status": "error",
+                        "message": f"Device Limit Exceeded ({current_active_devices}/{dev_limit}). Admin has configured maximum {dev_limit} devices."
+                    }, status=status.HTTP_403_FORBIDDEN)
+
+                pending_dev, _ = RegisteredDevice.objects.get_or_create(
                     user=user,
                     device_id=device_id,
-                    device_name=device_name,
-                    device_type="desktop_exe",
-                    is_active=True,
+                    defaults={
+                        "device_name": device_name,
+                        "device_type": "desktop_exe",
+                        "ip_address": ip_addr,
+                        "is_active": True,
+                        "is_verified": False,
+                    }
                 )
+
+                if admin_otp:
+                    if pending_dev.verify_otp(admin_otp):
+                        from .models import log_activity
+                        log_activity(
+                            user,
+                            "DEVICE_VERIFY",
+                            f"Admin OTP verified successfully for device '{device_name}' ({device_id[:12]}). Client '{username}' authorized.",
+                            ip_address=ip_addr
+                        )
+                    else:
+                        return Response({
+                            "status": "invalid_otp",
+                            "message": "Invalid or expired 6-Digit Admin Verification OTP. Please check the code in the Website Admin Panel.",
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    # Generate 6-digit OTP and send to Website Admin Panel
+                    otp_code = pending_dev.generate_otp()
+                    pending_dev.ip_address = ip_addr
+                    pending_dev.device_name = device_name
+                    pending_dev.save(update_fields=["ip_address", "device_name"])
+
+                    from .models import log_activity
+                    log_activity(
+                        user,
+                        "DEVICE_OTP",
+                        f"New system activation request for client '{username}' on '{device_name}' (IP: {ip_addr}). Admin 6-Digit Verification OTP: {otp_code}",
+                        ip_address=ip_addr
+                    )
+
+                    return Response({
+                        "status": "otp_required",
+                        "message": "New system detected. A 6-digit authorization OTP has been generated in the Website Admin Panel. Please obtain the OTP from your Administrator to authorize this computer.",
+                        "device_id": device_id,
+                        "device_name": device_name,
+                        "username": username,
+                    }, status=status.HTTP_200_OK)
+            else:
+                existing_dev.ip_address = ip_addr
+                existing_dev.device_name = device_name
+                existing_dev.save(update_fields=["ip_address", "device_name", "last_login"])
 
         profile_data = {}
         if profile:

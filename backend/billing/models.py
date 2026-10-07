@@ -321,6 +321,9 @@ class RegisteredDevice(models.Model):
     device_type = models.CharField(max_length=50, choices=DEVICE_TYPES, default="desktop_exe")
     ip_address = models.CharField(max_length=50, default="127.0.0.1")
     is_active = models.BooleanField(default=True)
+    is_verified = models.BooleanField(default=True, help_text="True if admin verified or approved via OTP")
+    otp_code = models.CharField(max_length=10, blank=True, default="", help_text="6-digit activation code sent to admin panel")
+    otp_created_at = models.DateTimeField(null=True, blank=True)
     last_login = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -330,6 +333,27 @@ class RegisteredDevice(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.device_name} ({self.device_id[:12]})"
+
+    def generate_otp(self):
+        import random
+        self.otp_code = f"{random.randint(100000, 999999)}"
+        self.otp_created_at = timezone.now()
+        self.is_verified = False
+        self.save()
+        return self.otp_code
+
+    def verify_otp(self, code):
+        if not self.otp_code or not code:
+            return False
+        if self.otp_created_at and timezone.now() - self.otp_created_at > timedelta(minutes=30):
+            return False
+        if str(code).strip() == str(self.otp_code).strip():
+            self.is_verified = True
+            self.is_active = True
+            self.otp_code = ""
+            self.save()
+            return True
+        return False
 
 
 class SyncLog(models.Model):
@@ -466,6 +490,8 @@ class ActivityLog(models.Model):
         ("DEVICE_REGISTER", "Device Registered / Activated"),
         ("DEVICE_REVOKE", "Device Access Revoked"),
         ("DEVICE_LIMIT_BLOCKED", "Device Quota Exceeded Blocked"),
+        ("DEVICE_OTP", "New Device Verification OTP"),
+        ("DEVICE_VERIFY", "Device OTP Verified & Approved"),
     )
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="activity_logs")

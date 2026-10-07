@@ -174,6 +174,11 @@ def login_view(request):
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
         password = request.POST.get("password", "")
+        admin_otp = request.POST.get("admin_otp", "").strip()
+
+        device_type = "desktop_exe" if is_desktop else "web_browser"
+        device_name = "Windows POS Terminal" if is_desktop else (request.META.get("HTTP_USER_AGENT", "Web Browser")[:100])
+        ip_addr = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR", "127.0.0.1")
 
         # For desktop app in password-only mode, fallback to remembered username if not submitted
         if not username and is_desktop and remembered_username:
@@ -189,7 +194,7 @@ def login_view(request):
             })
 
         # 1. Desktop App First-Time Login: Mandatory Internet Verification
-        if is_first_time_desktop:
+        if is_first_time_desktop and not RegisteredDevice.objects.filter(device_id=device_id, is_verified=True).exists():
             has_internet, net_msg = check_internet_connection()
             if not has_internet:
                 messages.error(
@@ -230,19 +235,33 @@ def login_view(request):
                 candidate_url = candidate_url.rstrip("/")
                 try:
                     import requests
+                    auth_payload = {
+                        "username": username,
+                        "password": password,
+                        "device_id": device_id,
+                        "device_name": device_name,
+                    }
+                    if admin_otp:
+                        auth_payload["admin_otp"] = admin_otp
+
                     auth_resp = requests.post(
                         f"{candidate_url}/api/sync/auth/",
-                        json={
-                            "username": username,
-                            "password": password,
-                            "device_id": device_id,
-                            "device_name": device_name,
-                        },
+                        json=auth_payload,
                         timeout=5.0
                     )
                     if auth_resp.status_code == 200:
                         auth_data = auth_resp.json()
-                        if auth_data.get("status") == "success":
+                        if auth_data.get("status") == "otp_required":
+                            messages.info(request, "New system detected. A 6-digit activation code has been generated in the Website Admin Panel. Please ask your administrator for the code.")
+                            return render(request, "billing/login.html", {
+                                "is_desktop_app": is_desktop,
+                                "remembered_username": "",
+                                "device_id": device_id,
+                                "otp_required": True,
+                                "username": username,
+                                "password": password,
+                            })
+                        elif auth_data.get("status") == "success":
                             u_data = auth_data.get("user", {})
                             p_data = auth_data.get("profile", {})
                             # Provision or update client user in local SQLite DB
@@ -271,7 +290,7 @@ def login_view(request):
                             loc_p.shop_logo_base64 = p_data.get("shop_logo_base64", loc_p.shop_logo_base64)
                             loc_p.save()
 
-                            # Register this device locally
+                            # Register this device locally as verified
                             RegisteredDevice.objects.update_or_create(
                                 user=loc_u,
                                 device_id=device_id,
@@ -280,12 +299,24 @@ def login_view(request):
                                     "device_type": device_type,
                                     "ip_address": ip_addr,
                                     "is_active": True,
+                                    "is_verified": True,
+                                    "otp_code": "",
                                 }
                             )
 
                             user = authenticate(request, username=username, password=password)
                             if user:
                                 break
+                    elif auth_resp.status_code == 400 and auth_resp.json().get("status") == "invalid_otp":
+                        messages.error(request, "Invalid or expired 6-Digit Admin Verification OTP. Please check the code in the Website Admin Panel.")
+                        return render(request, "billing/login.html", {
+                            "is_desktop_app": is_desktop,
+                            "remembered_username": "",
+                            "device_id": device_id,
+                            "otp_required": True,
+                            "username": username,
+                            "password": password,
+                        })
                     elif auth_resp.status_code == 403:
                         # Device quota strictly exceeded on cloud server!
                         cloud_err_msg = auth_resp.json().get("message", "Device Limit Exceeded on Cloud Server.")
@@ -407,15 +438,16 @@ def login_view(request):
             # Client: Admin specifies allowed devices (e.g. 5 devices). 6th device is STRICTLY BLOCKED!
             dev_limit = profile.device_limit if (profile and profile.device_limit) else 5
 
-            # Check if this physical device/token is already registered
+            # Check if this physical device/token is already verified
             existing_device = RegisteredDevice.objects.filter(
                 user=user,
                 device_id=device_id,
-                is_active=True
+                is_active=True,
+                is_verified=True
             ).first()
 
             if not existing_device:
-                current_active_devices = RegisteredDevice.objects.filter(user=user, is_active=True).count()
+                current_active_devices = RegisteredDevice.objects.filter(user=user, is_active=True, is_verified=True).count()
                 if current_active_devices >= dev_limit:
                     # STRICTLY BLOCK 6th DEVICE!
                     log_activity(
@@ -436,24 +468,59 @@ def login_view(request):
                         "device_id": device_id,
                     })
 
-                # Register new approved device within allowed quota
-                RegisteredDevice.objects.create(
+                pending_device, _ = RegisteredDevice.objects.get_or_create(
                     user=user,
                     device_id=device_id,
-                    device_name=device_name,
-                    device_type=device_type,
-                    ip_address=ip_addr,
-                    is_active=True,
+                    defaults={
+                        "device_name": device_name,
+                        "device_type": device_type,
+                        "ip_address": ip_addr,
+                        "is_active": True,
+                        "is_verified": False,
+                    }
                 )
-                log_activity(
-                    request,
-                    "DEVICE_REGISTER",
-                    f"Registered new device '{device_name}' ({device_id[:12]}) for client '{user.username}' ({current_active_devices + 1}/{dev_limit})."
-                )
+
+                if admin_otp:
+                    if pending_device.verify_otp(admin_otp):
+                        log_activity(
+                            request,
+                            "DEVICE_VERIFY",
+                            f"Admin OTP verified successfully for device '{device_name}' ({device_id[:12]}). Client '{user.username}' authorized.",
+                            ip_address=ip_addr
+                        )
+                    else:
+                        messages.error(request, "Invalid or expired 6-Digit Admin Verification OTP. Please check the code in the Website Admin Panel.")
+                        return render(request, "billing/login.html", {
+                            "is_desktop_app": is_desktop,
+                            "device_id": device_id,
+                            "otp_required": True,
+                            "username": username,
+                            "password": password,
+                        })
+                else:
+                    otp_code = pending_device.generate_otp()
+                    pending_device.ip_address = ip_addr
+                    pending_device.device_name = device_name
+                    pending_device.save(update_fields=["ip_address", "device_name"])
+
+                    log_activity(
+                        request,
+                        "DEVICE_OTP",
+                        f"New system activation request for client '{user.username}' on '{device_name}' (IP: {ip_addr}). Admin 6-Digit Verification OTP: {otp_code}",
+                        ip_address=ip_addr
+                    )
+                    messages.info(request, "New system detected. A 6-digit activation code has been generated in the Website Admin Panel. Please ask your administrator for the code.")
+                    return render(request, "billing/login.html", {
+                        "is_desktop_app": is_desktop,
+                        "device_id": device_id,
+                        "otp_required": True,
+                        "username": username,
+                        "password": password,
+                    })
             else:
                 existing_device.ip_address = ip_addr
                 existing_device.device_name = device_name
-                existing_device.save()
+                existing_device.save(update_fields=["ip_address", "device_name", "last_login"])
 
         # 4. Save persistent local configuration & Erase previous client data if switching client
         if is_desktop:
@@ -1768,6 +1835,7 @@ def admin_panel(request):
 
     active_device_sessions = ActiveUserSession.objects.select_related("user", "user__profile").order_by("-last_activity")
     registered_devices = RegisteredDevice.objects.select_related("user", "user__profile").order_by("-last_login")
+    pending_device_otps = RegisteredDevice.objects.filter(is_verified=False).exclude(otp_code="").select_related("user", "user__profile").order_by("-otp_created_at")
 
     log_qs = ActivityLog.objects.select_related("user").order_by("-created_at")
     action_filter = request.GET.get("action", "").strip()
@@ -1800,6 +1868,7 @@ def admin_panel(request):
         "all_customers": all_customers,
         "active_device_sessions": active_device_sessions,
         "registered_devices": registered_devices,
+        "pending_device_otps": pending_device_otps,
         "activity_logs": log_qs[:200],
         "total_log_count": ActivityLog.objects.count(),
         "action_types": action_types,
@@ -2066,6 +2135,30 @@ def admin_revoke_registered_device(request, device_id):
             f"Admin revoked approved device '{d_name}' ({d_id[:12]}) for client '{u_name}'."
         )
         messages.success(request, f"Approved device '{d_name}' removed successfully. Slot is now free for a new device.")
+
+    return redirect("billing:admin_panel")
+
+
+@admin_required
+def admin_approve_device_otp(request, device_id):
+    """
+    Admin one-click approval of a pending device OTP from the Admin Panel.
+    Marks the device as verified, clears the OTP, and logs the action.
+    """
+    if request.method == "POST":
+        device = get_object_or_404(RegisteredDevice, pk=device_id)
+        device.is_verified = True
+        device.is_active = True
+        otp_used = device.otp_code
+        device.otp_code = ""
+        device.save(update_fields=["is_verified", "is_active", "otp_code"])
+
+        log_activity(
+            request,
+            "DEVICE_VERIFY",
+            f"Admin approved new device '{device.device_name}' ({device.device_id[:12]}) for client '{device.user.username}' (OTP: {otp_used})."
+        )
+        messages.success(request, f"Device '{device.device_name}' for client '{device.user.username}' has been approved and activated!")
 
     return redirect("billing:admin_panel")
 

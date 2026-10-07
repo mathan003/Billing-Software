@@ -62,6 +62,9 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link px-4 py-2 fw-semibold rounded-3" id="devices-tab" data-bs-toggle="pill" data-bs-target="#devices-pane" type="button" role="tab">
             <i class="fa-solid fa-laptop me-2 text-success"></i> Active Devices ({{ active_device_sessions.count }})
+            {% if pending_device_otps %}
+                <span class="badge bg-warning text-dark ms-1 shadow-sm"><i class="fa-solid fa-key me-1"></i>{{ pending_device_otps|length }} OTP</span>
+            {% endif %}
         </button>
     </li>
     <li class="nav-item" role="presentation">
@@ -799,6 +802,92 @@
     <!-- TAB 3: ACTIVE DEVICE SESSIONS & HARDWARE REGISTRY -->
     <!-- ========================================== -->
     <div class="tab-pane fade" id="devices-pane" role="tabpanel">
+        <!-- 0. PENDING NEW SYSTEM ACTIVATION OTPS -->
+        {% if pending_device_otps %}
+        <div class="card border-0 shadow-sm rounded-4 bg-warning-subtle border border-warning p-3 p-lg-4 mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark">
+                        <i class="fa-solid fa-key text-warning me-2"></i> New System Activation Requests (புதிய கணினி OTP கோரிக்கைகள்)
+                    </h5>
+                    <p class="text-secondary small mb-0">
+                        Clients connecting from a new computer or newly copied EXE require this 6-digit verification code. Provide the code to the client or click Approve Device to authorize them.
+                    </p>
+                </div>
+                <span class="badge bg-warning text-dark border px-3 py-2 fw-bold fs-6">
+                    {{ pending_device_otps|length }} Pending Approval
+                </span>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 bg-white rounded-3 shadow-sm">
+                    <thead class="table-warning small">
+                        <tr>
+                            <th>Client / User</th>
+                            <th>6-Digit Verification OTP</th>
+                            <th>Hardware Device ID</th>
+                            <th>Platform / PC Name</th>
+                            <th>IP Address</th>
+                            <th>Requested At</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in pending_device_otps %}
+                        <tr>
+                            <td>
+                                <div class="fw-bold text-dark">{{ d.user.username }}</div>
+                                <div class="text-muted small">{{ d.user.profile.shop_name|default:"Client Store" }}</div>
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="font-monospace fs-5 fw-bold text-primary bg-primary-subtle px-3 py-1 rounded border border-primary-subtle" style="letter-spacing: 3px;" id="otpText{{ d.id }}">
+                                        {{ d.otp_code }}
+                                    </span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText('{{ d.otp_code }}'); this.innerHTML='<i class=\'fa-solid fa-check\'></i> Copied!'; setTimeout(() => this.innerHTML='<i class=\'fa-regular fa-copy\'></i>', 2000);" title="Copy 6-digit OTP">
+                                        <i class="fa-regular fa-copy"></i>
+                                    </button>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="font-monospace small text-secondary bg-light px-2 py-1 rounded border">
+                                    <i class="fa-solid fa-fingerprint me-1"></i>{{ d.device_id|truncatechars:20 }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if d.device_type == 'desktop_exe' %}
+                                    <span class="badge bg-primary-subtle text-primary px-2 py-1 me-1"><i class="fa-brands fa-windows me-1"></i>Desktop POS (EXE)</span>
+                                {% else %}
+                                    <span class="badge bg-info-subtle text-info px-2 py-1 me-1"><i class="fa-solid fa-globe me-1"></i>Web Browser</span>
+                                {% endif %}
+                                <span class="small text-muted">{{ d.device_name|truncatechars:30 }}</span>
+                            </td>
+                            <td class="small font-monospace text-secondary">{{ d.ip_address }}</td>
+                            <td class="small text-muted">{{ d.otp_created_at|timesince }} ago</td>
+                            <td class="text-end">
+                                <div class="d-flex justify-content-end gap-2">
+                                    <form method="post" action="{% url 'billing:admin_approve_device_otp' d.id %}">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-success fw-semibold">
+                                            <i class="fa-solid fa-check me-1"></i> Approve Device
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'billing:admin_revoke_registered_device' d.id %}" onsubmit="return confirm('Reject and cancel activation request for this device?');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fa-solid fa-xmark me-1"></i> Reject
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- 1. Registered Approved Devices (Quota slots) -->
         <div class="card border-0 shadow-sm rounded-4 bg-white p-3 p-lg-4 mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3">

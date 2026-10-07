@@ -101,7 +101,49 @@
         <form method="post" action="{% url 'billing:login' %}">
             {% csrf_token %}
 
-            {% if is_desktop_app and remembered_username %}
+            {% if otp_required %}
+                <!-- 6-DIGIT ADMIN VERIFICATION OTP REQUIRED FOR NEW SYSTEM -->
+                <div class="text-center mb-4 p-3 bg-warning-subtle rounded-4 border border-warning">
+                    <div class="badge bg-warning text-dark border px-3 py-1 mb-2 fw-bold">
+                        <i class="fa-solid fa-shield-halved me-1"></i> New System Verification
+                    </div>
+                    <div class="d-flex align-items-center justify-content-center gap-2">
+                        <div class="rounded-circle bg-warning text-dark d-flex align-items-center justify-content-center fw-bold shadow-sm" style="width: 44px; height: 44px; font-size: 1.2rem;">
+                            <i class="fa-solid fa-key"></i>
+                        </div>
+                        <div class="text-start">
+                            <h6 class="fw-bold mb-0 text-dark">{{ username }}</h6>
+                            <small class="text-secondary">Enter Admin 6-Digit OTP</small>
+                        </div>
+                    </div>
+                </div>
+
+                <input type="hidden" name="username" value="{{ username }}">
+                <input type="hidden" name="password" value="{{ password }}">
+
+                <div class="mb-4">
+                    <label class="form-label small fw-semibold text-secondary text-center d-block">Admin 6-Digit OTP (நிர்வாகி OTP குறியீடு)</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-key text-warning"></i></span>
+                        <input type="text" name="admin_otp" id="loginAdminOtp" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" class="form-control text-center fw-bold fs-4 bg-light border-start-0" required autofocus style="letter-spacing: 6px;">
+                    </div>
+                    <div class="alert alert-warning border-0 rounded-3 py-2 px-3 mt-3 mb-0 small text-dark">
+                        <i class="fa-solid fa-circle-info me-1"></i>
+                        A 6-digit OTP code has been sent to the <strong>Website Admin Panel</strong> under <strong>Active Devices &gt; New System Activation Requests</strong>. Ask your Admin for the code.
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-warning text-dark fw-bold w-100 py-2 shadow-sm">
+                    <i class="fa-solid fa-circle-check me-2"></i> Verify & Activate Device
+                </button>
+
+                <div class="text-center mt-3">
+                    <a href="{% url 'billing:login' %}" class="text-muted small text-decoration-none">
+                        <i class="fa-solid fa-arrow-left me-1"></i> Back to Login
+                    </a>
+                </div>
+
+            {% elif is_desktop_app and remembered_username %}
                 <!-- DESKTOP APP: REMEMBERED USER (PASSWORD ONLY ENTRY) -->
                 <div class="text-center mb-4 p-3 bg-light rounded-4 border">
                     <div class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1 mb-2">

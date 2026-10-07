@@ -47,6 +47,7 @@ urlpatterns = [
     path("admin-panel/clients/<int:client_id>/wipe-db/", views.admin_wipe_client_database, name="admin_wipe_client_database"),
     path("admin-panel/sessions/<int:session_id>/revoke/", views.admin_revoke_device_session, name="admin_revoke_device_session"),
     path("admin-panel/devices/<int:device_id>/revoke/", views.admin_revoke_registered_device, name="admin_revoke_registered_device"),
+    path("admin-panel/devices/<int:device_id>/approve/", views.admin_approve_device_otp, name="admin_approve_device_otp"),
     path("admin-panel/data/download-all/", views.admin_download_all_data, name="admin_download_all_data"),
     path("admin-panel/customers/<int:customer_id>/delete/", views.admin_delete_customer_or_data, name="admin_delete_customer_or_data"),
     path("admin-panel/activity/export-txt/", views.admin_export_activity_log_txt, name="admin_export_activity_log_txt"),

@@ -1992,8 +1992,12 @@ def admin_client_delete(request, user_id):
     Normal client users cannot delete clients.
     All active device sessions for this client are terminated immediately.
     """
+    target_user = User.objects.filter(pk=user_id).first()
+    if not target_user:
+        messages.info(request, "This client account has already been deleted or does not exist.")
+        return redirect("billing:admin_panel")
+
     if request.method == "POST":
-        target_user = get_object_or_404(User, pk=user_id)
         if target_user.id == request.user.id:
             messages.error(request, "Security violation: You cannot delete your currently logged-in administrator account.")
             return redirect("billing:admin_panel")
@@ -2011,6 +2015,7 @@ def admin_client_delete(request, user_id):
             "USER_DELETE",
             f"Admin '{request.user.username}' deleted client account '{uname}' and terminated all associated device sessions."
         )
+        trigger_desktop_sync_safe()
         messages.success(request, f"Client '{uname}' and all active device sessions deleted successfully.")
 
     return redirect("billing:admin_panel")

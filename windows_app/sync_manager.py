@@ -224,7 +224,35 @@ class SyncManager:
                     "gst_number": c.gst_number or "",
                 })
 
-            if not invoices_payload and not customers_payload and not products_payload:
+            # Clients created or altered locally by Admin
+            from django.contrib.auth.models import User
+            clients_payload = []
+            for u in User.objects.exclude(username__in=["admin", "Mathan003"]):
+                p = getattr(u, "profile", None)
+                clients_payload.append({
+                    "username": u.username,
+                    "first_name": u.first_name,
+                    "last_name": u.last_name,
+                    "email": u.email,
+                    "role": p.role if p else "client",
+                    "shop_name": p.shop_name if p else "",
+                    "shop_address": p.shop_address if p else "",
+                    "business_type": p.business_type if p else "grocery",
+                    "access_mode": p.access_mode if p else "online_offline",
+                    "device_limit": p.device_limit if p else 5,
+                    "phone": p.phone if p else "",
+                    "gst_number": p.gst_number if p else "",
+                    "bank_name": p.bank_name if p else "",
+                    "account_number": p.account_number if p else "",
+                    "ifsc_code": p.ifsc_code if p else "",
+                    "avatar_base64": p.avatar_base64 if p else "",
+                    "shop_logo_base64": p.shop_logo_base64 if p else "",
+                    "password_hash": u.password,
+                    "initial_password": getattr(p, "initial_password", ""),
+                    "is_active": u.is_active,
+                })
+
+            if not invoices_payload and not customers_payload and not products_payload and not clients_payload:
                 return
 
             push_data = {
@@ -234,6 +262,7 @@ class SyncManager:
                 "products": products_payload,
                 "customers": customers_payload,
                 "categories": categories_payload,
+                "clients": clients_payload,
             }
 
             resp = requests.post(
@@ -331,6 +360,43 @@ class SyncManager:
                             prof.save()
                     except Exception as pe:
                         logger.debug(f"Error updating local client profile: {pe}")
+
+                # 2.5. Synchronize all client accounts so web-created clients can log in immediately
+                cloud_clients = data.get("clients", [])
+                for cl in cloud_clients:
+                    c_uname = cl.get("username", "").strip()
+                    if not c_uname or c_uname in ("admin", "Mathan003"):
+                        continue
+                    try:
+                        c_user, _ = User.objects.get_or_create(username=c_uname)
+                        c_user.first_name = cl.get("first_name", c_user.first_name)
+                        c_user.last_name = cl.get("last_name", c_user.last_name)
+                        c_user.email = cl.get("email", c_user.email)
+                        c_user.is_active = cl.get("is_active", True)
+                        if cl.get("password_hash"):
+                            c_user.password = cl["password_hash"]
+                        c_user.save()
+
+                        from billing.models import UserProfile
+                        c_prof, _ = UserProfile.objects.get_or_create(user=c_user)
+                        c_prof.role = cl.get("role", "client")
+                        c_prof.shop_name = cl.get("shop_name", c_prof.shop_name)
+                        c_prof.shop_address = cl.get("shop_address", c_prof.shop_address)
+                        c_prof.business_type = cl.get("business_type", c_prof.business_type)
+                        c_prof.access_mode = cl.get("access_mode", c_prof.access_mode)
+                        c_prof.device_limit = cl.get("device_limit", c_prof.device_limit)
+                        c_prof.phone = cl.get("phone", c_prof.phone)
+                        c_prof.gst_number = cl.get("gst_number", c_prof.gst_number)
+                        c_prof.bank_name = cl.get("bank_name", c_prof.bank_name)
+                        c_prof.account_number = cl.get("account_number", c_prof.account_number)
+                        c_prof.ifsc_code = cl.get("ifsc_code", c_prof.ifsc_code)
+                        c_prof.avatar_base64 = cl.get("avatar_base64", c_prof.avatar_base64)
+                        c_prof.shop_logo_base64 = cl.get("shop_logo_base64", c_prof.shop_logo_base64)
+                        if cl.get("initial_password"):
+                            c_prof.initial_password = cl["initial_password"]
+                        c_prof.save()
+                    except Exception as cl_err:
+                        logger.debug(f"Error syncing client {c_uname}: {cl_err}")
 
                 # 3. Synchronize Branches
                 for br_d in branches_data:
@@ -496,6 +562,12 @@ class SyncManager:
                         if p.sku not in active_skus:
                             p.is_active = False
                             p.save(update_fields=["is_active"])
+
+                if "active_client_usernames" in data:
+                    active_clients = set(data.get("active_client_usernames", []))
+                    for u in User.objects.exclude(username__in=["admin", "Mathan003"]):
+                        if u.username not in active_clients:
+                            u.delete()
 
         except Exception as e:
             logger.debug(f"Error during pull: {e}")

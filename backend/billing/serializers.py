@@ -141,6 +141,29 @@ class SyncPaymentPayloadSerializer(serializers.Serializer):
     notes = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
 
 
+class SyncClientPayloadSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    email = serializers.EmailField(required=False, allow_blank=True, default="")
+    role = serializers.CharField(max_length=20, default="client")
+    shop_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    shop_address = serializers.CharField(required=False, allow_blank=True, default="")
+    business_type = serializers.CharField(max_length=50, default="grocery")
+    access_mode = serializers.CharField(max_length=30, default="online_offline")
+    device_limit = serializers.IntegerField(default=5)
+    phone = serializers.CharField(max_length=30, required=False, allow_blank=True, default="")
+    gst_number = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+    bank_name = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    account_number = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+    ifsc_code = serializers.CharField(max_length=30, required=False, allow_blank=True, default="")
+    avatar_base64 = serializers.CharField(required=False, allow_blank=True, default="")
+    shop_logo_base64 = serializers.CharField(required=False, allow_blank=True, default="")
+    password_hash = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    initial_password = serializers.CharField(max_length=128, required=False, allow_blank=True, default="")
+    is_active = serializers.BooleanField(default=True)
+
+
 class SyncPushRequestSerializer(serializers.Serializer):
     device_id = serializers.CharField(max_length=100)
     client_username = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
@@ -149,3 +172,4 @@ class SyncPushRequestSerializer(serializers.Serializer):
     customers = SyncCustomerPayloadSerializer(many=True, required=False, default=list)
     payments = SyncPaymentPayloadSerializer(many=True, required=False, default=list)
     categories = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    clients = SyncClientPayloadSerializer(many=True, required=False, default=list)

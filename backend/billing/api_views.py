@@ -373,14 +373,49 @@ class SyncPushView(views.APIView):
                         inv.save()
                         synced_payments.append(inv_num)
 
+                # 5. Sync Clients created or updated offline (Admin action in Desktop App)
+                clients_data = data.get("clients", [])
+                synced_clients = []
+                for cl_d in clients_data:
+                    c_uname = cl_d.get("username", "").strip()
+                    if not c_uname or c_uname in ("admin", "Mathan003"):
+                        continue
+                    u_obj, u_created = User.objects.get_or_create(username=c_uname)
+                    u_obj.first_name = cl_d.get("first_name", u_obj.first_name)
+                    u_obj.last_name = cl_d.get("last_name", u_obj.last_name)
+                    u_obj.email = cl_d.get("email", u_obj.email)
+                    u_obj.is_active = cl_d.get("is_active", True)
+                    if cl_d.get("password_hash") and (u_created or not u_obj.has_usable_password()):
+                        u_obj.password = cl_d["password_hash"]
+                    elif cl_d.get("initial_password") and (u_created or not u_obj.has_usable_password()):
+                        u_obj.set_password(cl_d["initial_password"])
+                    u_obj.save()
+
+                    u_prof, _ = UserProfile.objects.get_or_create(user=u_obj)
+                    u_prof.role = cl_d.get("role", "client")
+                    u_prof.shop_name = cl_d.get("shop_name", u_prof.shop_name)
+                    u_prof.shop_address = cl_d.get("shop_address", u_prof.shop_address)
+                    u_prof.business_type = cl_d.get("business_type", u_prof.business_type)
+                    u_prof.access_mode = cl_d.get("access_mode", u_prof.access_mode)
+                    u_prof.device_limit = cl_d.get("device_limit", u_prof.device_limit)
+                    u_prof.phone = cl_d.get("phone", u_prof.phone)
+                    u_prof.gst_number = cl_d.get("gst_number", u_prof.gst_number)
+                    u_prof.bank_name = cl_d.get("bank_name", u_prof.bank_name)
+                    u_prof.account_number = cl_d.get("account_number", u_prof.account_number)
+                    u_prof.ifsc_code = cl_d.get("ifsc_code", u_prof.ifsc_code)
+                    u_prof.avatar_base64 = cl_d.get("avatar_base64", u_prof.avatar_base64)
+                    u_prof.shop_logo_base64 = cl_d.get("shop_logo_base64", u_prof.shop_logo_base64)
+                    u_prof.save()
+                    synced_clients.append(c_uname)
+
                 # Log sync operation
-                total_synced = len(synced_uuids) + len(synced_products) + len(synced_customers) + len(synced_payments)
+                total_synced = len(synced_uuids) + len(synced_products) + len(synced_customers) + len(synced_payments) + len(synced_clients)
                 SyncLog.objects.create(
                     device_id=device_id,
                     sync_type="push",
                     records_count=total_synced,
                     status="success",
-                    details=f"Synced {len(synced_uuids)} invoices, {len(synced_products)} products, {len(synced_customers)} customers, {len(synced_payments)} payments.",
+                    details=f"Synced {len(synced_uuids)} invoices, {len(synced_products)} products, {len(synced_customers)} customers, {len(synced_payments)} payments, {len(synced_clients)} clients.",
                 )
 
             return Response({
@@ -391,6 +426,7 @@ class SyncPushView(views.APIView):
                 "synced_products": synced_products,
                 "synced_customers": synced_customers,
                 "synced_payments": synced_payments,
+                "synced_clients": synced_clients,
                 "server_time": timezone.now().isoformat(),
             })
 
@@ -538,6 +574,35 @@ class SyncPullView(views.APIView):
                 "items": items_list,
             })
 
+        # Active clients catalog for seamless synchronization across web and desktop apps
+        clients_data = []
+        for u in User.objects.filter(is_active=True).exclude(username="admin"):
+            prof = getattr(u, "profile", None)
+            clients_data.append({
+                "id": u.id,
+                "username": u.username,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "email": u.email,
+                "role": prof.role if prof else "client",
+                "shop_name": prof.shop_name if prof else "",
+                "shop_address": prof.shop_address if prof else "",
+                "business_type": prof.business_type if prof else "grocery",
+                "access_mode": prof.access_mode if prof else "online_offline",
+                "device_limit": prof.device_limit if prof else 5,
+                "phone": prof.phone if prof else "",
+                "gst_number": prof.gst_number if prof else "",
+                "bank_name": prof.bank_name if prof else "",
+                "account_number": prof.account_number if prof else "",
+                "ifsc_code": prof.ifsc_code if prof else "",
+                "avatar_base64": prof.avatar_base64 if prof else "",
+                "shop_logo_base64": prof.shop_logo_base64 if prof else "",
+                "password_hash": u.password,
+                "initial_password": getattr(prof, "initial_password", ""),
+                "is_active": u.is_active,
+            })
+        active_client_usernames = list(User.objects.filter(is_active=True).values_list("username", flat=True))
+
         return Response({
             "status": "success",
             "server_time": timezone.now().isoformat(),
@@ -548,12 +613,14 @@ class SyncPullView(views.APIView):
             "customers": customers_data,
             "invoices_count": len(invoices_data),
             "invoices": invoices_data,
+            "clients": clients_data,
             "company_settings": company_data,
             "client_profile": client_profile_data,
             "branches": branches_data,
             "active_invoice_uuids": active_uuids,
             "active_customer_phones": active_customer_phones,
             "active_product_skus": active_product_skus,
+            "active_client_usernames": active_client_usernames,
         })
 
 

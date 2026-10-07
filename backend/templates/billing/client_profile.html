@@ -55,27 +55,27 @@
                     <div class="row g-3 mb-4">
                         <div class="col-12">
                             <label class="form-label fw-semibold text-secondary small">Shop / Business Name (கடை பெயர்) *</label>
-                            <input type="text" name="shop_name" class="form-control rounded-3" placeholder="Enter shop or company name (e.g. Goutham Computers)" value="{{ profile.shop_name }}" required>
+                            <input type="text" name="shop_name" class="form-control rounded-3" value="{{ profile.shop_name }}" required>
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label fw-semibold text-secondary small">Contact Phone Number (தொலைபேசி எண்)</label>
-                            <input type="tel" name="phone" class="form-control rounded-3" placeholder="Enter phone number (e.g. 9876543210)" value="{{ profile.phone }}">
+                            <input type="tel" name="phone" class="form-control rounded-3" value="{{ profile.phone }}">
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label fw-semibold text-secondary small">Email Address (மின்னஞ்சல்)</label>
-                            <input type="email" name="email" class="form-control rounded-3" placeholder="Enter business email" value="{{ user.email }}">
+                            <input type="email" name="email" class="form-control rounded-3" value="{{ user.email }}">
                         </div>
 
                         <div class="col-12">
                             <label class="form-label fw-semibold text-secondary small">Shop Address (முகவரி - printed on invoice)</label>
-                            <textarea name="shop_address" rows="3" class="form-control rounded-3" placeholder="Enter full shop address (e.g. 12, Main Road, Tiruppur - 641604)">{{ profile.shop_address }}</textarea>
+                            <textarea name="shop_address" rows="3" class="form-control rounded-3">{{ profile.shop_address }}</textarea>
                         </div>
 
                         <div class="col-12">
                             <label class="form-label fw-semibold text-secondary small"><i class="fa-solid fa-receipt me-1 text-primary"></i> GST Number / GSTIN (சரக்கு மற்றும் சேவை வரி எண்)</label>
-                            <input type="text" name="gst_number" class="form-control rounded-3 text-uppercase font-monospace" placeholder="e.g. 33AAAAA0000A1Z5" value="{{ profile.gst_number|default:active_shop_gst }}">
+                            <input type="text" name="gst_number" class="form-control rounded-3 text-uppercase font-monospace" value="{{ profile.gst_number|default:active_shop_gst }}">
                             <div class="form-text small text-muted"><i class="fa-solid fa-circle-check text-success me-1"></i> Saving this GST number will automatically update and appear on all customer bills and invoices immediately.</div>
                         </div>
                     </div>
@@ -93,17 +93,17 @@
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold text-secondary small">Bank Name (வங்கி பெயர்)</label>
-                            <input type="text" name="bank_name" class="form-control rounded-3" placeholder="e.g. State Bank of India, HDFC Bank" value="{{ profile.bank_name }}">
+                            <input type="text" name="bank_name" class="form-control rounded-3" value="{{ profile.bank_name }}">
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label fw-semibold text-secondary small">Bank Account Number (வங்கி கணக்கு எண்)</label>
-                            <input type="text" name="account_number" class="form-control rounded-3 font-monospace" placeholder="Enter bank account number" value="{{ profile.account_number }}">
+                            <input type="text" name="account_number" class="form-control rounded-3 font-monospace" value="{{ profile.account_number }}">
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label fw-semibold text-secondary small">IFSC Code (IFSC குறியீடு)</label>
-                            <input type="text" name="ifsc_code" class="form-control rounded-3 text-uppercase font-monospace" placeholder="e.g. SBIN0001234" value="{{ profile.ifsc_code }}">
+                            <input type="text" name="ifsc_code" class="form-control rounded-3 text-uppercase font-monospace" value="{{ profile.ifsc_code }}">
                         </div>
 
                         <div class="col-md-6">
@@ -260,23 +260,23 @@
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-secondary">Branch Name *</label>
-                        <input type="text" name="name" class="form-control rounded-3" placeholder="e.g. Branch 2 - Tiruppur North" required>
+                        <input type="text" name="name" class="form-control rounded-3" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-secondary">Branch Code</label>
-                        <input type="text" name="branch_code" class="form-control rounded-3 font-monospace" placeholder="e.g. BR-NORTH (optional, auto-generated if empty)">
+                        <input type="text" name="branch_code" class="form-control rounded-3 font-monospace">
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-secondary">Phone Number</label>
-                        <input type="tel" name="phone" class="form-control rounded-3" placeholder="e.g. 9876543210">
+                        <input type="tel" name="phone" class="form-control rounded-3">
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-secondary">Manager / Contact Person</label>
-                        <input type="text" name="manager_name" class="form-control rounded-3" placeholder="Branch manager name">
+                        <input type="text" name="manager_name" class="form-control rounded-3">
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-secondary">Branch Address</label>
-                        <textarea name="address" rows="2" class="form-control rounded-3" placeholder="Branch street address, city, pincode"></textarea>
+                        <textarea name="address" rows="2" class="form-control rounded-3"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer bg-light rounded-bottom-4">

@@ -73,7 +73,7 @@
         <div class="col-12 col-md-6">
             <div class="input-group">
                 <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
-                <input type="text" name="search" class="form-control border-start-0 bg-light" placeholder="Search customer name, phone, email, address, GST..." value="{{ search }}">
+                <input type="text" name="search" class="form-control border-start-0 bg-light" value="{{ search }}">
             </div>
         </div>
 
@@ -296,30 +296,30 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-secondary">Customer Name *</label>
-                        <input type="text" name="name" class="form-control" placeholder="Full Name / Store Name" required>
+                        <input type="text" name="name" class="form-control" required>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold text-secondary">Phone Number</label>
-                            <input type="tel" name="phone" class="form-control" placeholder="10-digit Mobile">
+                            <input type="tel" name="phone" class="form-control">
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold text-secondary">Email Address</label>
-                            <input type="email" name="email" class="form-control" placeholder="optional@email.com">
+                            <input type="email" name="email" class="form-control">
                         </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-secondary">Address / Location</label>
-                        <textarea name="address" class="form-control" rows="2" placeholder="Street, City, Pin"></textarea>
+                        <textarea name="address" class="form-control" rows="2"></textarea>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold text-secondary">GST Number (Optional)</label>
-                            <input type="text" name="gst_number" class="form-control" placeholder="GSTIN">
+                            <input type="text" name="gst_number" class="form-control">
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold text-secondary">Notes</label>
-                            <input type="text" name="notes" class="form-control" placeholder="Remarks / Credit terms">
+                            <input type="text" name="notes" class="form-control">
                         </div>
                     </div>
                 </div>

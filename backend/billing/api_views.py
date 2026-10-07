@@ -462,6 +462,7 @@ class SyncPullView(views.APIView):
         if is_client_only:
             products_qs = Product.objects.filter(Q(client=client_user) | Q(client__isnull=True))
             customers_qs = Customer.objects.filter(Q(client=client_user) | Q(client__isnull=True))
+            categories_qs = ProductCategory.objects.filter(Q(client=client_user) | Q(client__isnull=True))
             invoices_qs = Invoice.objects.filter(client=client_user).prefetch_related("items").order_by("-created_at")[:100]
             branches_qs = Branch.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_active=True)
             active_uuids = [str(u) for u in Invoice.objects.filter(client=client_user).values_list("invoice_uuid", flat=True)]
@@ -470,6 +471,7 @@ class SyncPullView(views.APIView):
         else:
             products_qs = Product.objects.all()
             customers_qs = Customer.objects.all()
+            categories_qs = ProductCategory.objects.all()
             invoices_qs = Invoice.objects.prefetch_related("items").order_by("-created_at")[:100]
             branches_qs = Branch.objects.filter(is_active=True)
             active_uuids = [str(u) for u in Invoice.objects.values_list("invoice_uuid", flat=True)]
@@ -608,7 +610,7 @@ class SyncPullView(views.APIView):
             "server_time": timezone.now().isoformat(),
             "products_count": len(products_data),
             "products": products_data,
-            "categories": list(ProductCategory.objects.values_list("name", flat=True).distinct()),
+            "categories": list(categories_qs.values_list("name", flat=True).distinct()),
             "customers_count": len(customers_data),
             "customers": customers_data,
             "invoices_count": len(invoices_data),

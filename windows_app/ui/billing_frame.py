@@ -106,11 +106,11 @@ class BillingFrame(ctk.CTkFrame):
         self.cust_phone_var = tk.StringVar()
 
         ctk.CTkLabel(cust_box, text="Name:").grid(row=1, column=0, sticky="w", padx=(10, 4), pady=(0, 8))
-        self.cust_name_entry = ctk.CTkEntry(cust_box, textvariable=self.cust_name_var, width=180, placeholder_text="Customer Name")
+        self.cust_name_entry = ctk.CTkEntry(cust_box, textvariable=self.cust_name_var, width=180)
         self.cust_name_entry.grid(row=1, column=1, sticky="w", padx=(0, 15), pady=(0, 8))
 
         ctk.CTkLabel(cust_box, text="Mobile:").grid(row=1, column=2, sticky="w", padx=(0, 4), pady=(0, 8))
-        self.cust_phone_entry = ctk.CTkEntry(cust_box, textvariable=self.cust_phone_var, width=160, placeholder_text="10-digit phone")
+        self.cust_phone_entry = ctk.CTkEntry(cust_box, textvariable=self.cust_phone_var, width=160)
         self.cust_phone_entry.grid(row=1, column=3, sticky="w", padx=(0, 10), pady=(0, 8))
 
         # 2. Add Item Section

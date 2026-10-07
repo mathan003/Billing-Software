@@ -26,6 +26,7 @@ class SessionSecurityMiddleware:
         "/static/",
         "/media/",
         "/api/",  # REST API for background sync
+        "/favicon.ico",
     ]
 
     def __init__(self, get_response):

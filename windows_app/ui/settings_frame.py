@@ -39,8 +39,7 @@ class SettingsFrame(ctk.CTkFrame):
         self.server_url_var = tk.StringVar()
         self.server_url_entry = ctk.CTkEntry(
             left_card,
-            textvariable=self.server_url_var,
-            placeholder_text="http://127.0.0.1:8000 or https://billing-software-production-d0f2.up.railway.app"
+            textvariable=self.server_url_var
         )
         self.server_url_entry.pack(fill="x", padx=16, pady=(0, 6))
 
@@ -54,7 +53,7 @@ class SettingsFrame(ctk.CTkFrame):
         # Device ID
         ctk.CTkLabel(left_card, text="Device ID / Register Name:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=16, pady=(4, 2))
         self.device_id_var = tk.StringVar()
-        self.device_id_entry = ctk.CTkEntry(left_card, textvariable=self.device_id_var, placeholder_text="WIN-POS-01")
+        self.device_id_entry = ctk.CTkEntry(left_card, textvariable=self.device_id_var)
         self.device_id_entry.pack(fill="x", padx=16, pady=(0, 16))
 
         # Action Buttons

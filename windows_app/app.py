@@ -195,7 +195,7 @@ def main():
 
     # 3. Start Background Auto-Sync & Auto-Updater Workers
     cloud_url = os.getenv("CLOUD_SERVER_URL", "https://billing-software-production-d0f2.up.railway.app")
-    sync_worker = get_sync_manager(server_url=cloud_url, interval_seconds=10)
+    sync_worker = get_sync_manager(server_url=cloud_url, interval_seconds=5)
     sync_worker.start()
 
     updater_worker = get_auto_updater(server_url=cloud_url)

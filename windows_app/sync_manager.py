@@ -530,13 +530,21 @@ class SyncManager:
                                 discount_percent=Decimal(str(it_d.get("discount_percent", "0.00"))),
                                 total_price=Decimal(str(it_d.get("total_price", "0.00"))),
                             )
-                    else:
                         updated_paid = Decimal(str(inv_data.get("paid_amount", local_inv.paid_amount)))
-                        if updated_paid != local_inv.paid_amount or inv_data.get("payment_status") != local_inv.payment_status:
+                        updated_grand = Decimal(str(inv_data.get("grand_total", local_inv.grand_total)))
+                        if (
+                            updated_paid != local_inv.paid_amount
+                            or updated_grand != local_inv.grand_total
+                            or inv_data.get("payment_status") != local_inv.payment_status
+                        ):
+                            local_inv.subtotal = Decimal(str(inv_data.get("subtotal", local_inv.subtotal)))
+                            local_inv.discount_amount = Decimal(str(inv_data.get("discount_amount", local_inv.discount_amount)))
+                            local_inv.tax_amount = Decimal(str(inv_data.get("tax_amount", local_inv.tax_amount)))
+                            local_inv.grand_total = updated_grand
                             local_inv.paid_amount = updated_paid
-                            local_inv.balance_amount = Decimal(str(inv_data.get("balance_amount", "0.00")))
+                            local_inv.balance_amount = Decimal(str(inv_data.get("balance_amount", local_inv.balance_amount)))
                             local_inv.payment_status = inv_data.get("payment_status", local_inv.payment_status)
-                            local_inv.save(update_fields=["paid_amount", "balance_amount", "payment_status"])
+                            local_inv.save(update_fields=["subtotal", "discount_amount", "tax_amount", "grand_total", "paid_amount", "balance_amount", "payment_status"])
 
                 # 7. Synchronize Web Deletions to Desktop App
                 if "active_invoice_uuids" in data:
@@ -560,8 +568,11 @@ class SyncManager:
                     active_skus = set(data.get("active_product_skus", []))
                     for p in Product.objects.filter(is_active=True):
                         if p.sku not in active_skus:
-                            p.is_active = False
-                            p.save(update_fields=["is_active"])
+                            if not p.invoice_items.exists():
+                                p.delete()
+                            else:
+                                p.is_active = False
+                                p.save(update_fields=["is_active"])
 
                 if "active_client_usernames" in data:
                     active_clients = set(data.get("active_client_usernames", []))
@@ -576,7 +587,7 @@ class SyncManager:
 _sync_manager_instance = None
 
 
-def get_sync_manager(server_url=None, interval_seconds=10):
+def get_sync_manager(server_url=None, interval_seconds=5):
     global _sync_manager_instance
     if _sync_manager_instance is None:
         _sync_manager_instance = SyncManager(server_url=server_url, interval_seconds=interval_seconds)

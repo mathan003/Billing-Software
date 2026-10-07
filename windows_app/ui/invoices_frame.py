@@ -46,7 +46,7 @@ class InvoicesFrame(ctk.CTkFrame):
 
         # Search box
         self.search_var = tk.StringVar()
-        self.search_entry = ctk.CTkEntry(filter_bar, textvariable=self.search_var, placeholder_text="Search invoice #, customer name...", width=260)
+        self.search_entry = ctk.CTkEntry(filter_bar, textvariable=self.search_var, width=260)
         self.search_entry.pack(side="left", padx=(0, 8))
         self.search_entry.bind("<KeyRelease>", lambda e: self.load_invoices())
 

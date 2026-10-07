@@ -39,7 +39,7 @@ class ProductsFrame(ctk.CTkFrame):
         filter_bar.grid(row=1, column=0, sticky="ew", padx=0, pady=(0, 6))
 
         self.search_var = tk.StringVar()
-        self.search_entry = ctk.CTkEntry(filter_bar, textvariable=self.search_var, placeholder_text="Search product name, SKU, or category...", width=320)
+        self.search_entry = ctk.CTkEntry(filter_bar, textvariable=self.search_var, width=320)
         self.search_entry.pack(side="left", padx=(0, 8))
         self.search_entry.bind("<KeyRelease>", lambda e: self.load_products())
 

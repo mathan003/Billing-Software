@@ -333,16 +333,16 @@
                                                         </div>
                                                         <div class="mb-3">
                                                             <label class="form-label small fw-semibold">Business / Shop Name</label>
-                                                            <input type="text" name="shop_name" class="form-control" value="{{ u.profile.shop_name }}" placeholder="e.g. Branch 1 Store">
+                                                            <input type="text" name="shop_name" class="form-control" value="{{ u.profile.shop_name }}">
                                                         </div>
                                                         <div class="row g-2 mb-3">
                                                             <div class="col-6">
                                                                 <label class="form-label small fw-semibold">Phone Number</label>
-                                                                <input type="tel" name="phone" class="form-control" value="{{ u.profile.phone }}" placeholder="10-digit mobile">
+                                                                <input type="tel" name="phone" class="form-control" value="{{ u.profile.phone }}">
                                                             </div>
                                                             <div class="col-6">
                                                                 <label class="form-label small fw-semibold">Email Address</label>
-                                                                <input type="email" name="email" class="form-control" value="{{ u.email }}" placeholder="client@store.com">
+                                                                <input type="email" name="email" class="form-control" value="{{ u.email }}">
                                                             </div>
                                                         </div>
                                                         <div class="row g-2 mb-3">
@@ -380,13 +380,13 @@
                                                             <div class="small fw-bold text-dark mb-1">Bank Payment Info for Receipts</div>
                                                             <div class="row g-2">
                                                                 <div class="col-12">
-                                                                    <input type="text" name="bank_name" class="form-control form-control-sm" placeholder="Bank Name" value="{{ u.profile.bank_name }}">
+                                                                    <input type="text" name="bank_name" class="form-control form-control-sm" value="{{ u.profile.bank_name }}">
                                                                 </div>
                                                                 <div class="col-6">
-                                                                    <input type="text" name="account_number" class="form-control form-control-sm font-monospace" placeholder="Account Number" value="{{ u.profile.account_number }}">
+                                                                    <input type="text" name="account_number" class="form-control form-control-sm font-monospace" value="{{ u.profile.account_number }}">
                                                                 </div>
                                                                 <div class="col-6">
-                                                                    <input type="text" name="ifsc_code" class="form-control form-control-sm text-uppercase font-monospace" placeholder="IFSC Code" value="{{ u.profile.ifsc_code }}">
+                                                                    <input type="text" name="ifsc_code" class="form-control form-control-sm text-uppercase font-monospace" value="{{ u.profile.ifsc_code }}">
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -422,14 +422,14 @@
                                                         <div class="mb-3">
                                                             <label class="form-label small fw-semibold">New Password *</label>
                                                             <div class="input-group">
-                                                                <input type="password" name="new_password" id="adminNewPass{{ u.id }}" class="form-control" required placeholder="Enter new password">
+                                                                <input type="password" name="new_password" id="adminNewPass{{ u.id }}" class="form-control" required>
                                                                 <button class="btn btn-outline-secondary" type="button" onclick="togglePass('adminNewPass{{ u.id }}', this)" title="Show/Hide Password"><i class="fa-solid fa-eye"></i></button>
                                                             </div>
                                                         </div>
                                                         <div class="mb-3">
                                                             <label class="form-label small fw-semibold">Confirm New Password *</label>
                                                             <div class="input-group">
-                                                                <input type="password" name="new_password_confirm" id="adminNewPassConf{{ u.id }}" class="form-control" required placeholder="Re-type new password">
+                                                                <input type="password" name="new_password_confirm" id="adminNewPassConf{{ u.id }}" class="form-control" required>
                                                                 <button class="btn btn-outline-secondary" type="button" onclick="togglePass('adminNewPassConf{{ u.id }}', this)" title="Show/Hide Password"><i class="fa-solid fa-eye"></i></button>
                                                             </div>
                                                         </div>
@@ -956,7 +956,7 @@
                 <div class="col-12 col-md-4">
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
-                        <input type="text" name="search_log" class="form-control bg-light border-start-0" placeholder="Search description, bill #, etc..." value="{{ search_log }}">
+                        <input type="text" name="search_log" class="form-control bg-light border-start-0" value="{{ search_log }}">
                     </div>
                 </div>
                 <div class="col-6 col-md-3">
@@ -968,7 +968,7 @@
                     </select>
                 </div>
                 <div class="col-6 col-md-3">
-                    <input type="text" name="log_user" class="form-control bg-light" placeholder="Filter by username..." value="{{ user_filter }}">
+                    <input type="text" name="log_user" class="form-control bg-light" value="{{ user_filter }}">
                 </div>
                 <div class="col-12 col-md-2 d-flex gap-1">
                     <button type="submit" class="btn btn-primary-custom flex-grow-1">Filter</button>
@@ -1185,15 +1185,15 @@
                     </p>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Version Number *</label>
-                        <input type="text" name="version" class="form-control rounded-3 font-monospace" placeholder="e.g. v2.5.0, v2.5.1" required>
+                        <input type="text" name="version" class="form-control rounded-3 font-monospace" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Update Title / Summary *</label>
-                        <input type="text" name="title" class="form-control rounded-3" placeholder="e.g. Enhanced Offline Billing & Receipts" required>
+                        <input type="text" name="title" class="form-control rounded-3" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Release Notes / Changelog</label>
-                        <textarea name="release_notes" rows="4" class="form-control rounded-3" placeholder="- Added discount input to billing terminal&#10;- Enhanced receipt layout with bank details&#10;- Added Statements & Reports section"></textarea>
+                        <textarea name="release_notes" rows="4" class="form-control rounded-3"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer bg-light rounded-bottom-4">
@@ -1241,11 +1241,11 @@
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Login Username *</label>
-                            <input type="text" name="username" class="form-control" required placeholder="e.g. client_branch1, cashier01">
+                            <input type="text" name="username" class="form-control" required>
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Business / Shop Name</label>
-                            <input type="text" name="shop_name" class="form-control" placeholder="e.g. Goutham Computers">
+                            <input type="text" name="shop_name" class="form-control">
                         </div>
                     </div>
 
@@ -1282,22 +1282,22 @@
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Operator Name</label>
-                            <input type="text" name="first_name" class="form-control" placeholder="Operator first name">
+                            <input type="text" name="first_name" class="form-control">
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Phone Number</label>
-                            <input type="tel" name="phone" class="form-control" placeholder="10-digit mobile number">
+                            <input type="tel" name="phone" class="form-control">
                         </div>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Email Address (Optional)</label>
-                        <input type="email" name="email" class="form-control" placeholder="client@store.com">
+                        <input type="email" name="email" class="form-control">
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Shop Address (முகவரி)</label>
-                        <textarea name="shop_address" rows="2" class="form-control" placeholder="Shop street address, city, pincode"></textarea>
+                        <textarea name="shop_address" rows="2" class="form-control"></textarea>
                     </div>
 
                     <!-- Bank Payment Details -->
@@ -1305,13 +1305,13 @@
                         <div class="small fw-bold text-dark mb-2"><i class="fa-solid fa-building-columns text-primary me-1"></i> Bank Details for Customer Receipts</div>
                         <div class="row g-2">
                             <div class="col-12">
-                                <input type="text" name="bank_name" class="form-control form-control-sm" placeholder="Bank Name (e.g. State Bank of India)">
+                                <input type="text" name="bank_name" class="form-control form-control-sm">
                             </div>
                             <div class="col-6">
-                                <input type="text" name="account_number" class="form-control form-control-sm font-monospace" placeholder="Bank Account Number">
+                                <input type="text" name="account_number" class="form-control form-control-sm font-monospace">
                             </div>
                             <div class="col-6">
-                                <input type="text" name="ifsc_code" class="form-control form-control-sm text-uppercase font-monospace" placeholder="IFSC Code (e.g. SBIN0001234)">
+                                <input type="text" name="ifsc_code" class="form-control form-control-sm text-uppercase font-monospace">
                             </div>
                         </div>
                     </div>
@@ -1320,14 +1320,14 @@
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Password *</label>
                             <div class="input-group">
-                                <input type="password" name="password" id="newClientPass" class="form-control" required placeholder="Enter password">
+                                <input type="password" name="password" id="newClientPass" class="form-control" required>
                                 <button class="btn btn-outline-secondary" type="button" onclick="togglePass('newClientPass', this)" title="Show/Hide Password"><i class="fa-solid fa-eye"></i></button>
                             </div>
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Confirm Password *</label>
                             <div class="input-group">
-                                <input type="password" name="password_confirm" id="newClientPassConf" class="form-control" required placeholder="Re-enter password">
+                                <input type="password" name="password_confirm" id="newClientPassConf" class="form-control" required>
                                 <button class="btn btn-outline-secondary" type="button" onclick="togglePass('newClientPassConf', this)" title="Show/Hide Password"><i class="fa-solid fa-eye"></i></button>
                             </div>
                         </div>
@@ -1365,30 +1365,30 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Administrator Username *</label>
-                        <input type="text" name="username" class="form-control" required placeholder="e.g. admin_branch">
+                        <input type="text" name="username" class="form-control" required>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">First Name</label>
-                            <input type="text" name="first_name" class="form-control" placeholder="Admin name">
+                            <input type="text" name="first_name" class="form-control">
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Phone Number</label>
-                            <input type="tel" name="phone" class="form-control" placeholder="Mobile #">
+                            <input type="tel" name="phone" class="form-control">
                         </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Email Address</label>
-                        <input type="email" name="email" class="form-control" placeholder="admin@store.com">
+                        <input type="email" name="email" class="form-control">
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Password *</label>
-                            <input type="password" name="password" class="form-control" required placeholder="Password">
+                            <input type="password" name="password" class="form-control" required>
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Confirm Password *</label>
-                            <input type="password" name="password_confirm" class="form-control" required placeholder="Re-enter">
+                            <input type="password" name="password_confirm" class="form-control" required>
                         </div>
                     </div>
                     <div class="alert alert-warning border-0 small py-2 mb-0 rounded-3">
@@ -1420,31 +1420,31 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-secondary">Branch Name *</label>
-                        <input type="text" name="name" class="form-control" required placeholder="e.g. North City Branch / Main Complex">
+                        <input type="text" name="name" class="form-control" required>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold text-secondary">Branch Code</label>
-                            <input type="text" name="branch_code" class="form-control font-monospace" placeholder="e.g. BR-02">
+                            <input type="text" name="branch_code" class="form-control font-monospace">
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold text-secondary">Manager Name</label>
-                            <input type="text" name="manager_name" class="form-control" placeholder="In-charge name">
+                            <input type="text" name="manager_name" class="form-control">
                         </div>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold text-secondary">Phone Number</label>
-                            <input type="tel" name="phone" class="form-control" placeholder="Contact number">
+                            <input type="tel" name="phone" class="form-control">
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold text-secondary">Email</label>
-                            <input type="email" name="email" class="form-control" placeholder="branch@store.com">
+                            <input type="email" name="email" class="form-control">
                         </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold text-secondary">Branch Address</label>
-                        <textarea name="address" class="form-control" rows="2" placeholder="Street, Building, Pin"></textarea>
+                        <textarea name="address" class="form-control" rows="2"></textarea>
                     </div>
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="is_default" value="1" id="newBranchDefault">

@@ -101,9 +101,11 @@ class SessionSecurityMiddleware:
             )
             if not is_download_or_asset:
                 current_query_sec = request.GET.get("sec")
-                if current_query_sec != sec_token:
+                if not current_query_sec:
                     params = request.GET.copy()
                     params["sec"] = sec_token
                     return redirect(f"{path}?{params.urlencode()}")
+                else:
+                    request.session["sec_token"] = current_query_sec
 
         return self.get_response(request)

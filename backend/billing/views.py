@@ -2100,6 +2100,11 @@ def admin_revoke_device_session(request, session_id):
         u_name = dev_session.user.username
         d_info = dev_session.device_info
         ip_addr = dev_session.ip_address
+        s_key = dev_session.session_key
+
+        if s_key.startswith("EXE-"):
+            d_id = s_key[4:]
+            RegisteredDevice.objects.filter(device_id=d_id).update(is_active=False)
 
         dev_session.delete()
 

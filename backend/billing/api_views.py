@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from .models import (
     Product, Customer, Invoice, InvoiceItem, SyncLog,
     CompanySettings, SoftwareUpdate, Purchase, PaymentRecord,
-    Branch, UserProfile, RegisteredDevice, ProductCategory
+    Branch, UserProfile, RegisteredDevice, ProductCategory, ActiveUserSession
 )
 from .serializers import (
     ProductSerializer,
@@ -145,6 +145,17 @@ class ClientAuthVerifyView(views.APIView):
                 existing_dev.ip_address = ip_addr
                 existing_dev.device_name = device_name
                 existing_dev.save(update_fields=["ip_address", "device_name", "last_login"])
+
+            # Create or update active session in cloud DB so Admin can monitor and disconnect
+            ActiveUserSession.objects.update_or_create(
+                session_key=f"EXE-{device_id}",
+                defaults={
+                    "user": user,
+                    "device_info": f"Desktop POS (EXE): {device_name} ({device_id[:12]})",
+                    "ip_address": ip_addr,
+                    "last_activity": timezone.now(),
+                }
+            )
 
         profile_data = {}
         if profile:
@@ -512,8 +523,35 @@ class SyncPullView(views.APIView):
     def get(self, request):
         since_str = request.query_params.get("since")
         client_username = request.query_params.get("client_username", "").strip()
+        device_id = request.query_params.get("device_id", "").strip()
         client_user = User.objects.filter(username=client_username).first() if client_username else None
         is_client_only = client_user and not (client_user.is_superuser or (hasattr(client_user, "profile") and client_user.profile.role == "admin"))
+
+        ip_addr = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR", "127.0.0.1")
+        session_revoked = False
+
+        if client_user and device_id:
+            session_key = f"EXE-{device_id}"
+            reg_dev = RegisteredDevice.objects.filter(user=client_user, device_id=device_id).first()
+            if reg_dev and not reg_dev.is_active:
+                session_revoked = True
+                ActiveUserSession.objects.filter(session_key=session_key).delete()
+            else:
+                active_sess = ActiveUserSession.objects.filter(session_key=session_key).first()
+                if active_sess:
+                    active_sess.last_activity = timezone.now()
+                    active_sess.ip_address = ip_addr
+                    active_sess.save(update_fields=["last_activity", "ip_address"])
+                elif reg_dev and reg_dev.is_verified and reg_dev.is_active:
+                    ActiveUserSession.objects.update_or_create(
+                        session_key=session_key,
+                        defaults={
+                            "user": client_user,
+                            "device_info": f"Desktop POS (EXE): {reg_dev.device_name} ({device_id[:12]})",
+                            "ip_address": ip_addr,
+                            "last_activity": timezone.now(),
+                        }
+                    )
 
         if is_client_only:
             products_qs = Product.objects.filter(Q(client=client_user) | Q(client__isnull=True))
@@ -679,6 +717,7 @@ class SyncPullView(views.APIView):
             "active_customer_phones": active_customer_phones,
             "active_product_skus": active_product_skus,
             "active_client_usernames": active_client_usernames,
+            "session_revoked": session_revoked,
         })
 
 
@@ -815,7 +854,7 @@ class UpdateDownloadView(views.APIView):
 
         target_file = self._get_target_file()
         if not target_file:
-            raise Http404("Executable update binary is not available on this server.")
+            return HttpResponseRedirect("https://github.com/mathan003/Billing-Software/raw/main/MathanHub.exe")
 
         response = FileResponse(
             open(target_file, "rb"),

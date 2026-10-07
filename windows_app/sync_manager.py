@@ -292,17 +292,28 @@ class SyncManager:
             from django.db.models import Q
 
             pos_cfg = get_desktop_pos_config()
-            client_username = pos_cfg.get("last_logged_in_client") or pos_cfg.get("remembered_username") or ""
-
+            dev_id = pos_cfg.get("device_id") or os.environ.get("DEVICE_ID", "")
             params = {}
             if client_username:
                 params["client_username"] = client_username
+            if dev_id:
+                params["device_id"] = dev_id
 
             resp = requests.get(f"{self.server_url}/api/sync/pull/", params=params, timeout=10.0)
             if resp.status_code != 200:
                 return
 
             data = resp.json()
+            if data.get("session_revoked"):
+                logger.warning("Session has been remotely disconnected by Administrator.")
+                try:
+                    from django.contrib.sessions.models import Session
+                    from billing.models import ActiveUserSession
+                    Session.objects.all().delete()
+                    ActiveUserSession.objects.all().delete()
+                except Exception:
+                    pass
+
             products = data.get("products", [])
             customers = data.get("customers", [])
             company_data = data.get("company_settings")
@@ -530,6 +541,7 @@ class SyncManager:
                                 discount_percent=Decimal(str(it_d.get("discount_percent", "0.00"))),
                                 total_price=Decimal(str(it_d.get("total_price", "0.00"))),
                             )
+                    else:
                         updated_paid = Decimal(str(inv_data.get("paid_amount", local_inv.paid_amount)))
                         updated_grand = Decimal(str(inv_data.get("grand_total", local_inv.grand_total)))
                         if (

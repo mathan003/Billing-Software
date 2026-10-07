@@ -578,6 +578,16 @@
         });
 
         document.addEventListener("DOMContentLoaded", function() {
+            // Dynamic link rotation on every page load/refresh (Login page remains fixed at /login/)
+            try {
+                if (window.location.pathname !== '/login/' && !window.location.pathname.startsWith('/api/')) {
+                    const currentUrl = new URL(window.location.href);
+                    const randSec = Math.random().toString(36).substring(2, 8) + Math.random().toString(36).substring(2, 8);
+                    currentUrl.searchParams.set('sec', randSec);
+                    window.history.replaceState({ sec: randSec }, '', currentUrl.toString());
+                }
+            } catch(e) {}
+
             checkSyncStatus();
             setInterval(checkSyncStatus, 10000);
         });

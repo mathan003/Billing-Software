@@ -1,6 +1,6 @@
 # Nixpacks configuration for Railway / Railpack
 [phases.setup]
-nixPkgs = ["python312"]
+nixPkgs = ["python312", "gcc", "pkg-config", "zlib", "libjpeg", "libpng"]
 
 [phases.install]
 cmds = [

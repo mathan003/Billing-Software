@@ -35,7 +35,7 @@ def auto_seed_default_users(sender, **kwargs):
         # 4. Ensure 'Mathan003' Admin exists
         mathan_user, m_created = User.objects.get_or_create(username="Mathan003")
         if m_created or not mathan_user.has_usable_password():
-            mathan_user.set_password("admin123")
+            mathan_user.set_password(os.getenv("MATHAN_PASSWORD", "M@th@n93612003"))
             mathan_user.is_superuser = True
             mathan_user.is_staff = True
             mathan_user.email = "mathan003m@gmail.com"
@@ -60,7 +60,21 @@ def auto_seed_default_users(sender, **kwargs):
         prof_op.access_mode = "online_offline"
         prof_op.save()
 
-        # 6. Auto-publish Current Code Version to SoftwareUpdate table
+        # 6. Ensure 'Goutham' Client exists
+        goutham_user, g_created = User.objects.get_or_create(username="Goutham")
+        if g_created or not goutham_user.has_usable_password():
+            goutham_user.set_password("Goutham@2026")
+            goutham_user.is_staff = False
+            goutham_user.save()
+
+        prof_g, _ = UserProfile.objects.get_or_create(user=goutham_user)
+        prof_g.role = "client"
+        prof_g.shop_name = "Goutham Supermarket"
+        prof_g.device_limit = 2
+        prof_g.access_mode = "online_offline"
+        prof_g.save()
+
+        # 7. Auto-publish Current Code Version to SoftwareUpdate table
         from .version import APP_VERSION, APP_TITLE, APP_RELEASE_NOTES
         SoftwareUpdate.objects.update_or_create(
             version=APP_VERSION,

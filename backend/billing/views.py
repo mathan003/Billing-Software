@@ -206,7 +206,7 @@ def login_view(request):
 
         user = authenticate(request, username=username, password=password)
         if user is None:
-            # Check if credentials verify against remote Web server (e.g. client created on Web Admin)
+            # Check if credentials verify against remote Web server (Railway cloud)
             candidate_urls = []
             try:
                 from sync_manager import get_sync_manager
@@ -219,9 +219,9 @@ def login_view(request):
                     u for u in [
                         cfg_url,
                         os.getenv("CLOUD_SERVER_URL", "").strip(),
+                        "https://billing-software-production-d0f2.up.railway.app",
                         "http://127.0.0.1:8000",
                         "http://localhost:8000",
-                        "https://billing-software-render.onrender.com"
                     ] if u
                 ]
 
@@ -232,8 +232,13 @@ def login_view(request):
                     import requests
                     auth_resp = requests.post(
                         f"{candidate_url}/api/sync/auth/",
-                        json={"username": username, "password": password, "device_id": device_id},
-                        timeout=3.5
+                        json={
+                            "username": username,
+                            "password": password,
+                            "device_id": device_id,
+                            "device_name": device_name,
+                        },
+                        timeout=5.0
                     )
                     if auth_resp.status_code == 200:
                         auth_data = auth_resp.json()
@@ -266,11 +271,79 @@ def login_view(request):
                             loc_p.shop_logo_base64 = p_data.get("shop_logo_base64", loc_p.shop_logo_base64)
                             loc_p.save()
 
+                            # Register this device locally
+                            RegisteredDevice.objects.update_or_create(
+                                user=loc_u,
+                                device_id=device_id,
+                                defaults={
+                                    "device_name": device_name,
+                                    "device_type": device_type,
+                                    "ip_address": ip_addr,
+                                    "is_active": True,
+                                }
+                            )
+
                             user = authenticate(request, username=username, password=password)
                             if user:
                                 break
-                    elif auth_resp.status_code in (401, 403):
-                        cloud_err_msg = auth_resp.json().get("message", "")
+                    elif auth_resp.status_code == 403:
+                        # Device quota strictly exceeded on cloud server!
+                        cloud_err_msg = auth_resp.json().get("message", "Device Limit Exceeded on Cloud Server.")
+                        break
+                    elif auth_resp.status_code == 401:
+                        cloud_err_msg = auth_resp.json().get("message", "Invalid username or password.")
+                        break
+                    elif auth_resp.status_code == 404:
+                        # Fallback for earlier server deployments: verify via Railway /login/
+                        try:
+                            s = requests.Session()
+                            lr = s.get(f"{candidate_url}/login/", timeout=4.0)
+                            csrf = s.cookies.get("csrftoken")
+                            post_d = {
+                                "csrfmiddlewaretoken": csrf,
+                                "username": username,
+                                "password": password,
+                                "device_id": device_id,
+                            }
+                            pr = s.post(
+                                f"{candidate_url}/login/",
+                                data=post_d,
+                                headers={"Referer": f"{candidate_url}/login/"},
+                                allow_redirects=False,
+                                timeout=5.0
+                            )
+                            if pr.status_code == 302:
+                                # Authentication successful on Railway cloud!
+                                loc_u, _ = User.objects.get_or_create(username=username)
+                                loc_u.set_password(password)
+                                loc_u.save()
+
+                                loc_p, _ = UserProfile.objects.get_or_create(user=loc_u)
+                                loc_p.role = "client"
+                                loc_p.shop_name = "MathanHub Store"
+                                loc_p.device_limit = 5
+                                loc_p.access_mode = "online_offline"
+                                loc_p.save()
+
+                                RegisteredDevice.objects.update_or_create(
+                                    user=loc_u,
+                                    device_id=device_id,
+                                    defaults={
+                                        "device_name": device_name,
+                                        "device_type": device_type,
+                                        "ip_address": ip_addr,
+                                        "is_active": True,
+                                    }
+                                )
+
+                                user = authenticate(request, username=username, password=password)
+                                if user:
+                                    break
+                            elif "Device Limit Exceeded" in pr.text:
+                                cloud_err_msg = "Device Limit Exceeded! Admin has configured maximum allowed devices for this account."
+                                break
+                        except Exception:
+                            pass
                 except Exception:
                     continue
 

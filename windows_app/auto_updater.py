@@ -38,7 +38,7 @@ class AutoUpdater:
     _instance = None
 
     def __init__(self, server_url=None, check_interval=60):
-        self.server_url = (server_url or os.getenv("CLOUD_SERVER_URL", "https://billing-software-render.onrender.com")).rstrip("/")
+        self.server_url = (server_url or os.getenv("CLOUD_SERVER_URL", "https://billing-software-production-d0f2.up.railway.app")).rstrip("/")
         self.check_interval = check_interval
         self.running = False
         self.thread = None

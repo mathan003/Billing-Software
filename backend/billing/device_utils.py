@@ -119,7 +119,7 @@ def check_internet_connection(server_url=None, timeout=3.5):
     """
     import requests
     # 1. Try pinging cloud server
-    url = (server_url or os.getenv("CLOUD_SERVER_URL", "https://billing-software-render.onrender.com")).rstrip("/")
+    url = (server_url or os.getenv("CLOUD_SERVER_URL", "https://billing-software-production-d0f2.up.railway.app")).rstrip("/")
     try:
         resp = requests.get(f"{url}/api/health/", timeout=timeout)
         if resp.status_code == 200:

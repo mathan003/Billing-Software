@@ -40,13 +40,13 @@ class SettingsFrame(ctk.CTkFrame):
         self.server_url_entry = ctk.CTkEntry(
             left_card,
             textvariable=self.server_url_var,
-            placeholder_text="http://127.0.0.1:8000 or https://your-app.onrender.com"
+            placeholder_text="http://127.0.0.1:8000 or https://billing-software-production-d0f2.up.railway.app"
         )
         self.server_url_entry.pack(fill="x", padx=16, pady=(0, 6))
 
         ctk.CTkLabel(
             left_card,
-            text="Tip: For Render cloud deployment, paste: https://your-service.onrender.com",
+            text="Tip: For Railway cloud deployment, paste: https://billing-software-production-d0f2.up.railway.app",
             font=ctk.CTkFont(size=11),
             text_color="gray60"
         ).pack(anchor="w", padx=16, pady=(0, 12))

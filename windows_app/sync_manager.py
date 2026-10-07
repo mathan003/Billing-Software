@@ -17,7 +17,7 @@ class SyncManager:
     Completely seamless and transparent - no invasive sync UI.
     """
     def __init__(self, server_url=None, interval_seconds=10):
-        self.server_url = (server_url or os.getenv("CLOUD_SERVER_URL", "https://billing-software-render.onrender.com")).rstrip("/")
+        self.server_url = (server_url or os.getenv("CLOUD_SERVER_URL", "https://billing-software-production-d0f2.up.railway.app")).rstrip("/")
         self.interval = interval_seconds
         self.running = False
         self.thread = None
@@ -45,7 +45,7 @@ class SyncManager:
         self._manual_trigger.set()
 
     def get_candidate_urls(self):
-        """Returns ordered list of candidate servers to connect to (local dev, user configured, cloud)"""
+        """Returns ordered list of candidate servers to connect to (Railway cloud, user configured, local dev)"""
         urls = []
         try:
             from billing.device_utils import get_desktop_pos_config
@@ -57,21 +57,21 @@ class SyncManager:
             pass
 
         env_url = os.getenv("CLOUD_SERVER_URL", "").strip()
-        if env_url:
+        if env_url and env_url not in urls:
             urls.append(env_url.rstrip("/"))
 
         if self.server_url and self.server_url not in urls:
             urls.append(self.server_url.rstrip("/"))
 
-        # Default local Django dev server
+        # Strict Railway Production Server
+        railway_url = "https://billing-software-production-d0f2.up.railway.app"
+        if railway_url not in urls:
+            urls.append(railway_url)
+
+        # Local development server fallback
         for local_url in ["http://127.0.0.1:8000", "http://localhost:8000"]:
             if local_url not in urls:
                 urls.append(local_url)
-
-        # Fallback Render deployment
-        render_url = "https://billing-software-render.onrender.com"
-        if render_url not in urls:
-            urls.append(render_url)
 
         return urls
 

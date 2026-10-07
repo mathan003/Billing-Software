@@ -194,7 +194,7 @@ def main():
     app_url = f"http://127.0.0.1:{port}/login/"
 
     # 3. Start Background Auto-Sync & Auto-Updater Workers
-    cloud_url = os.getenv("CLOUD_SERVER_URL", "https://billing-software-render.onrender.com")
+    cloud_url = os.getenv("CLOUD_SERVER_URL", "https://billing-software-production-d0f2.up.railway.app")
     sync_worker = get_sync_manager(server_url=cloud_url, interval_seconds=10)
     sync_worker.start()
 

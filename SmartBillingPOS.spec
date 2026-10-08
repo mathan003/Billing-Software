@@ -52,5 +52,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='D:/billing software/windows_app/version_info.txt',
     icon=['D:/billing software/logo.ico'],
 )

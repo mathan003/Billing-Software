@@ -2152,8 +2152,8 @@ def admin_revoke_registered_device(request, device_id):
 @admin_required
 def admin_approve_device_otp(request, device_id):
     """
-    Admin one-click approval of a pending device OTP from the Admin Panel.
-    Marks the device as verified, clears the OTP, and logs the action.
+    Admin one-click approval / acceptance of a pending client EXE device from the Admin Panel.
+    Marks the device as verified, clears the OTP, activates it, and logs the action.
     """
     if request.method == "POST":
         device = get_object_or_404(RegisteredDevice, pk=device_id)
@@ -2163,12 +2163,100 @@ def admin_approve_device_otp(request, device_id):
         device.otp_code = ""
         device.save(update_fields=["is_verified", "is_active", "otp_code"])
 
+        # Create or update active session in cloud DB so Admin can monitor and disconnect
+        ActiveUserSession.objects.update_or_create(
+            session_key=f"EXE-{device.device_id}"[:40],
+            defaults={
+                "user": device.user,
+                "device_info": f"Desktop POS (EXE): {device.device_name} ({device.device_id[:12]})",
+                "ip_address": device.ip_address,
+                "last_activity": timezone.now(),
+            }
+        )
+
         log_activity(
             request,
             "DEVICE_VERIFY",
-            f"Admin approved new device '{device.device_name}' ({device.device_id[:12]}) for client '{device.user.username}' (OTP: {otp_used})."
+            f"Admin accepted and approved new device '{device.device_name}' ({device.device_id[:12]}) for client '{device.user.username}' (OTP: {otp_used})."
         )
-        messages.success(request, f"Device '{device.device_name}' for client '{device.user.username}' has been approved and activated!")
+        trigger_desktop_sync_safe()
+        messages.success(request, f"Device '{device.device_name}' for client '{device.user.username}' has been accepted and activated!")
+
+    return redirect("billing:admin_panel")
+
+
+@admin_required
+def admin_reject_device_otp(request, device_id):
+    """
+    Admin rejects and cancels a pending client EXE device activation request from the Admin Panel.
+    Removes the device registration request and logs the rejection.
+    """
+    if request.method == "POST":
+        device = get_object_or_404(RegisteredDevice, pk=device_id)
+        u_name = device.user.username
+        d_name = device.device_name
+        d_id = device.device_id
+        otp_val = device.otp_code
+
+        # Remove any lingering active session
+        ActiveUserSession.objects.filter(session_key=f"EXE-{d_id}"[:40]).delete()
+        device.delete()
+
+        log_activity(
+            request,
+            "DEVICE_REJECT",
+            f"Admin rejected device activation request for '{d_name}' ({d_id[:12]}) of client '{u_name}' (Cancelled OTP: {otp_val})."
+        )
+        trigger_desktop_sync_safe()
+        messages.warning(request, f"Device activation request for '{d_name}' (Client: {u_name}) has been rejected.")
+
+    return redirect("billing:admin_panel")
+
+
+@admin_required
+def admin_update_device_limit(request, user_id):
+    """
+    Admin quickly increases, decreases, or sets the allowed device quota for a client.
+    Instantly updates UserProfile.device_limit and synchronizes to client desktop terminals.
+    """
+    user = get_object_or_404(User, pk=user_id)
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+
+    if request.method == "POST":
+        action = request.POST.get("action", "").strip()
+        custom_limit = request.POST.get("device_limit", "").strip()
+        current_limit = profile.device_limit or 5
+
+        if action == "increase":
+            new_limit = min(50, current_limit + 1)
+        elif action == "decrease":
+            new_limit = max(1, current_limit - 1)
+        elif custom_limit:
+            try:
+                new_limit = max(1, min(50, int(custom_limit)))
+            except Exception:
+                new_limit = current_limit
+        else:
+            new_limit = current_limit
+
+        profile.device_limit = new_limit
+        profile.save(update_fields=["device_limit"])
+
+        log_activity(
+            request,
+            "DEVICE_LIMIT_UPDATE",
+            f"Admin '{request.user.username}' updated device limit for client '{user.username}' from {current_limit} to {new_limit} devices."
+        )
+        trigger_desktop_sync_safe()
+
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({
+                "status": "success",
+                "device_limit": new_limit,
+                "message": f"Device limit updated to {new_limit} devices for client '{user.username}'."
+            })
+
+        messages.success(request, f"Device limit for client '{user.username}' updated to {new_limit} devices!")
 
     return redirect("billing:admin_panel")
 

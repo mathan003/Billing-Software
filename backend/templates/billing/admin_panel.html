@@ -189,9 +189,33 @@
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column gap-1">
-                                        <span class="badge {% if u.registered_devices.count >= u.profile.device_limit %}bg-danger{% elif u.registered_devices.count > 0 %}bg-success{% else %}bg-secondary{% endif %} rounded-pill px-3 py-1">
-                                            <i class="fa-solid fa-laptop me-1"></i>{{ u.registered_devices.count }} / {{ u.profile.device_limit }} Devices Allowed
-                                        </span>
+                                        <div class="d-flex align-items-center gap-1">
+                                            <!-- Quick Decrease Button -->
+                                            <form method="post" action="{% url 'billing:admin_update_device_limit' u.id %}" class="d-inline mb-0">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="decrease">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger px-1 py-0 d-flex align-items-center justify-content-center rounded-circle" style="width: 24px; height: 24px;" title="Decrease Allowed Devices (-1)" {% if u.profile.device_limit <= 1 %}disabled{% endif %}>
+                                                    <i class="fa-solid fa-minus" style="font-size: 9px;"></i>
+                                                </button>
+                                            </form>
+
+                                            <!-- Limit Display Badge -->
+                                            <span class="badge {% if u.registered_devices.count >= u.profile.device_limit %}bg-danger{% elif u.registered_devices.count > 0 %}bg-success{% else %}bg-primary{% endif %} rounded-pill px-2 py-1 font-monospace fw-bold" style="font-size: 11px;">
+                                                <i class="fa-solid fa-laptop me-1"></i>{{ u.profile.device_limit }} Allowed
+                                            </span>
+
+                                            <!-- Quick Increase Button -->
+                                            <form method="post" action="{% url 'billing:admin_update_device_limit' u.id %}" class="d-inline mb-0">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="increase">
+                                                <button type="submit" class="btn btn-sm btn-outline-success px-1 py-0 d-flex align-items-center justify-content-center rounded-circle" style="width: 24px; height: 24px;" title="Increase Allowed Devices (+1)" {% if u.profile.device_limit >= 50 %}disabled{% endif %}>
+                                                    <i class="fa-solid fa-plus" style="font-size: 9px;"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                        <div class="small text-muted" style="font-size: 11px;">
+                                            <span class="fw-semibold text-secondary">{{ u.registered_devices.count }}</span> of <span class="fw-semibold text-secondary">{{ u.profile.device_limit }}</span> slots in use
+                                        </div>
                                         <span class="badge bg-light text-secondary border px-2 py-1 small" style="font-size: 11px;">
                                             <i class="fa-solid fa-shield-halved me-1 text-primary"></i>{{ u.profile.get_access_mode_display }}
                                         </span>
@@ -357,14 +381,12 @@
                                                                 </select>
                                                             </div>
                                                             <div class="col-6">
-                                                                <label class="form-label small fw-semibold">Allowed Devices</label>
-                                                                <select name="device_limit" class="form-select form-select-sm">
-                                                                    <option value="1" {% if u.profile.device_limit == 1 %}selected{% endif %}>1 Device</option>
-                                                                    <option value="2" {% if u.profile.device_limit == 2 %}selected{% endif %}>2 Devices</option>
-                                                                    <option value="3" {% if u.profile.device_limit == 3 %}selected{% endif %}>3 Devices</option>
-                                                                    <option value="5" {% if u.profile.device_limit == 5 %}selected{% endif %}>5 Devices</option>
-                                                                    <option value="10" {% if u.profile.device_limit == 10 %}selected{% endif %}>10 Devices</option>
-                                                                </select>
+                                                                <label class="form-label small fw-semibold">Allowed Devices (சாதன வரம்பு)</label>
+                                                                <div class="input-group input-group-sm">
+                                                                    <button class="btn btn-outline-secondary" type="button" onclick="var el=document.getElementById('editDevLimit{{ u.id }}'); el.value = Math.max(1, parseInt(el.value||1) - 1);"><i class="fa-solid fa-minus"></i></button>
+                                                                    <input type="number" name="device_limit" id="editDevLimit{{ u.id }}" min="1" max="50" class="form-control text-center fw-bold font-monospace" value="{{ u.profile.device_limit|default:5 }}" required>
+                                                                    <button class="btn btn-outline-secondary" type="button" onclick="var el=document.getElementById('editDevLimit{{ u.id }}'); el.value = Math.min(50, parseInt(el.value||1) + 1);"><i class="fa-solid fa-plus"></i></button>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <div class="mb-3">
@@ -866,16 +888,18 @@
                             <td class="small text-muted">{{ d.otp_created_at|timesince }} ago</td>
                             <td class="text-end">
                                 <div class="d-flex justify-content-end gap-2">
+                                    <!-- Accept Button (Approve Client EXE) -->
                                     <form method="post" action="{% url 'billing:admin_approve_device_otp' d.id %}">
                                         {% csrf_token %}
-                                        <button type="submit" class="btn btn-sm btn-success fw-semibold">
-                                            <i class="fa-solid fa-check me-1"></i> Approve Device
+                                        <button type="submit" class="btn btn-sm btn-success fw-bold px-3 shadow-sm d-inline-flex align-items-center gap-1" title="Accept and authorize client EXE system">
+                                            <i class="fa-solid fa-circle-check"></i> Accept
                                         </button>
                                     </form>
-                                    <form method="post" action="{% url 'billing:admin_revoke_registered_device' d.id %}" onsubmit="return confirm('Reject and cancel activation request for this device?');">
+                                    <!-- Reject Button (Deny Client EXE) -->
+                                    <form method="post" action="{% url 'billing:admin_reject_device_otp' d.id %}" onsubmit="return confirm('Reject and deny activation request for {{ d.device_name }} (Client: {{ d.user.username }})?');">
                                         {% csrf_token %}
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">
-                                            <i class="fa-solid fa-xmark me-1"></i> Reject
+                                        <button type="submit" class="btn btn-sm btn-danger fw-bold px-3 shadow-sm d-inline-flex align-items-center gap-1" title="Reject and deny client EXE system">
+                                            <i class="fa-solid fa-circle-xmark"></i> Reject
                                         </button>
                                     </form>
                                 </div>
@@ -950,10 +974,18 @@
                                     {% endif %}
                                 </td>
                                 <td class="text-end">
+                                    {% if not d.is_active %}
+                                        <form method="post" action="{% url 'billing:admin_approve_device_otp' d.id %}" class="d-inline me-1">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-sm btn-success fw-bold px-2 py-1" title="Accept and re-authorize device">
+                                                <i class="fa-solid fa-check me-1"></i> Accept
+                                            </button>
+                                        </form>
+                                    {% endif %}
                                     <form method="post" action="{% url 'billing:admin_revoke_registered_device' d.id %}" class="d-inline" onsubmit="return confirm('Remove approved device slot for {{ d.device_name }}? This will free up a device slot for a new device.');">
                                         {% csrf_token %}
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">
-                                            <i class="fa-solid fa-trash me-1"></i> Remove Device
+                                        <button type="submit" class="btn btn-sm btn-outline-danger px-2 py-1" title="Remove device slot">
+                                            <i class="fa-solid fa-trash me-1"></i> Remove
                                         </button>
                                     </form>
                                 </td>
@@ -1358,14 +1390,12 @@
                             </select>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small fw-semibold">Allowed Device Limit *</label>
-                            <select name="device_limit" class="form-select">
-                                <option value="1">1 Device</option>
-                                <option value="2">2 Devices</option>
-                                <option value="3">3 Devices</option>
-                                <option value="5" selected>5 Devices (Default)</option>
-                                <option value="10">10 Devices</option>
-                            </select>
+                            <label class="form-label small fw-semibold">Allowed Device Limit (சாதன வரம்பு) *</label>
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" type="button" onclick="var el=document.getElementById('newDevLimit'); el.value = Math.max(1, parseInt(el.value||1) - 1);"><i class="fa-solid fa-minus"></i></button>
+                                <input type="number" name="device_limit" id="newDevLimit" min="1" max="50" class="form-control text-center fw-bold font-monospace" value="5" required>
+                                <button class="btn btn-outline-secondary" type="button" onclick="var el=document.getElementById('newDevLimit'); el.value = Math.min(50, parseInt(el.value||1) + 1);"><i class="fa-solid fa-plus"></i></button>
+                            </div>
                         </div>
                     </div>
 

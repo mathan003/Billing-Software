@@ -207,16 +207,16 @@
                                 {% if is_admin_user %}
                                     <span class="badge bg-primary text-white rounded-pill px-2 py-0" style="font-size: 0.65rem;">Admin (1 Dev)</span>
                                 {% else %}
-                                    <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-0" style="font-size: 0.65rem;">Client ({{ active_devices_count }}/{{ max_allowed_devices }})</span>
+                                    <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-0" style="font-size: 0.65rem;" id="clientDeviceBadge">Client ({{ active_devices_count }}/{{ max_allowed_devices }})</span>
                                 {% endif %}
                             </button>
-                            <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-4 p-2 mt-2" style="min-width: 250px;">
+                            <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-4 p-2 mt-2" style="min-width: 260px;">
                                 <li class="px-3 py-2 bg-light rounded-3 mb-2">
                                     <div class="fw-bold small text-dark">{{ user.get_full_name|default:user.username }}</div>
                                     {% if user.profile.shop_name %}
                                         <div class="text-primary small fw-semibold"><i class="fa-solid fa-store me-1"></i>{{ user.profile.shop_name }}</div>
                                     {% endif %}
-                                    <div class="text-muted small mt-1">
+                                    <div class="text-muted small mt-1" id="clientDeviceDropdownText">
                                         {% if is_admin_user %}
                                             <i class="fa-solid fa-shield-halved text-primary me-1"></i><strong>Admin:</strong> 1 Device Allowed
                                         {% else %}
@@ -236,6 +236,12 @@
                                     <a class="dropdown-item small fw-semibold text-dark rounded-2 py-2" href="{% url 'billing:reports_dashboard' %}{{ sec_param }}">
                                         <i class="fa-solid fa-chart-line me-2 text-success"></i> Statements & Reports
                                     </a>
+                                </li>
+                                <li>
+                                    <button type="button" class="dropdown-item small fw-semibold text-dark rounded-2 py-2 d-flex align-items-center justify-content-between" data-bs-toggle="modal" data-bs-target="#clientSoftwareUpdateModal">
+                                        <span><i class="fa-solid fa-arrows-rotate me-2 text-primary"></i> Software Update (புதுப்பிப்பு)</span>
+                                        <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-0" style="font-size: 0.65rem;">{{ current_app_version|default:"v2.5.1" }}</span>
+                                    </button>
                                 </li>
                                 {% if is_admin_user %}
                                     <li><hr class="dropdown-divider my-1"></li>
@@ -362,13 +368,77 @@
         </div>
     </div>
 
+    <!-- Client Software Update Modal (Accessible from Profile Dropdown & Profile Page) -->
+    <div class="modal fade text-start" id="clientSoftwareUpdateModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow-lg">
+                <div class="modal-header bg-dark text-white rounded-top-4 py-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="rounded-circle bg-primary bg-opacity-25 p-2 d-flex align-items-center justify-content-center text-primary">
+                            <i class="fa-solid fa-arrows-rotate fs-5"></i>
+                        </div>
+                        <div>
+                            <h6 class="modal-title fw-bold mb-0 text-white">MathanHub Software Update (மென்பொருள் புதுப்பிப்பு)</h6>
+                            <small class="text-white-50">Cloud & POS Synchronized System Updates</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="d-flex align-items-center justify-content-between p-3 bg-light rounded-3 border mb-3">
+                        <div>
+                            <div class="small text-muted fw-semibold">Current Version:</div>
+                            <div class="fs-6 fw-bold text-dark font-monospace">{{ current_app_version|default:"v2.5.1" }}</div>
+                        </div>
+                        <div class="text-end">
+                            <div class="small text-muted fw-semibold">Cloud Release:</div>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 font-monospace fw-bold">{{ latest_update_version|default:"v2.5.1" }}</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <h6 class="fw-bold small text-dark mb-2">
+                            <i class="fa-solid fa-sparkles text-warning me-1"></i> What's New & Release Highlights:
+                        </h6>
+                        <div class="p-3 bg-white rounded-3 border small text-secondary" style="line-height: 1.6; max-height: 220px; overflow-y: auto;">
+                            {{ latest_release_notes|linebreaksbr }}
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info border-0 rounded-3 py-2 px-3 small d-flex align-items-center gap-2 mb-0">
+                        <i class="fa-solid fa-circle-info text-primary fs-5"></i>
+                        <span>You can choose to <strong>Update Now</strong> or <strong>Not Update (வேண்டாம்)</strong>. Active billing and terminal records are 100% preserved.</span>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light rounded-bottom-4 justify-content-between">
+                    <!-- Not Update (Reject) Button -->
+                    <button type="button" class="btn btn-danger btn-sm px-3 fw-semibold shadow-sm d-flex align-items-center gap-1" id="btnModalRejectUpdate" onclick="rejectSoftwareUpdateAjax()">
+                        <i class="fa-solid fa-xmark"></i>
+                        <span>Not Update (வேண்டாம்)</span>
+                    </button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Later (பிறகு)</button>
+                        <!-- Update Now Button -->
+                        <button type="button" class="btn btn-primary-custom btn-sm px-4 fw-bold shadow-sm d-flex align-items-center gap-1" id="btnModalApplyUpdate" onclick="applySoftwareUpdateAjax()">
+                            <i class="fa-solid fa-arrows-rotate"></i>
+                            <span>Update (புதுப்பிக்கவும்)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
     function rejectSoftwareUpdateAjax() {
-        const btn = document.getElementById('btnRejectUpdate');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Rejecting...';
-        }
+        const btn1 = document.getElementById('btnRejectUpdate');
+        const btn2 = document.getElementById('btnModalRejectUpdate');
+        [btn1, btn2].forEach(b => {
+            if (b) {
+                b.disabled = true;
+                b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Rejecting...';
+            }
+        });
         fetch('{% url "billing:client_reject_software_update" %}?format=json', {
             method: 'POST',
             headers: {
@@ -385,13 +455,15 @@
                 banner.style.transform = 'translateY(20px)';
                 setTimeout(() => banner.remove(), 400);
             }
-            const modalEl = document.getElementById('updateNotesModal');
-            if (modalEl) {
-                const notesModal = bootstrap.Modal.getInstance(modalEl);
-                if (notesModal) notesModal.hide();
-            }
+            ['updateNotesModal', 'clientSoftwareUpdateModal'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    const inst = bootstrap.Modal.getInstance(el);
+                    if (inst) inst.hide();
+                }
+            });
 
-            const msg = data.message || "Software update postponed. You can update anytime later.";
+            const msg = data.message || "Software update postponed. You can update later from Settings or Profile.";
             const toast = document.createElement('div');
             toast.className = 'position-fixed bottom-0 end-0 p-3';
             toast.style.zIndex = '1100';
@@ -406,6 +478,12 @@
                 </div>`;
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 4000);
+            [btn1, btn2].forEach(b => {
+                if (b) {
+                    b.disabled = false;
+                    b.innerHTML = '<i class="fa-solid fa-xmark me-1"></i> Not Update (வேண்டாம்)';
+                }
+            });
         })
         .catch(err => {
             console.error(err);
@@ -415,11 +493,14 @@
     }
 
     function applySoftwareUpdateAjax() {
-        const btn = document.getElementById('btnApplyUpdate');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Updating...';
-        }
+        const btn1 = document.getElementById('btnApplyUpdate');
+        const btn2 = document.getElementById('btnModalApplyUpdate');
+        [btn1, btn2].forEach(b => {
+            if (b) {
+                b.disabled = true;
+                b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Updating...';
+            }
+        });
         fetch('{% url "billing:client_apply_software_update" %}?format=json', {
             method: 'POST',
             headers: {
@@ -436,11 +517,13 @@
                 banner.style.transform = 'translateY(20px)';
                 setTimeout(() => banner.remove(), 400);
             }
-            const modalEl = document.getElementById('updateNotesModal');
-            if (modalEl) {
-                const notesModal = bootstrap.Modal.getInstance(modalEl);
-                if (notesModal) notesModal.hide();
-            }
+            ['updateNotesModal', 'clientSoftwareUpdateModal'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    const inst = bootstrap.Modal.getInstance(el);
+                    if (inst) inst.hide();
+                }
+            });
 
             const msg = data.message || "Software update applied successfully! Continuing billing uninterrupted.";
             const toast = document.createElement('div');
@@ -580,6 +663,22 @@
                     } else {
                         badge.classList.add("d-none");
                     }
+                }
+            }
+
+            // Real-Time Client Devices Quota & Concurrent Active Terminals Live Update
+            if (status.active_devices_count !== undefined && status.max_allowed_devices !== undefined) {
+                const devBadge = document.getElementById("clientDeviceBadge");
+                if (devBadge) {
+                    devBadge.innerText = `Client (${status.active_devices_count}/${status.max_allowed_devices})`;
+                }
+                const devDropdown = document.getElementById("clientDeviceDropdownText");
+                if (devDropdown) {
+                    devDropdown.innerHTML = `<i class="fa-solid fa-users text-success me-1"></i><strong>Client:</strong> ${status.active_devices_count}/${status.max_allowed_devices} Active Devices`;
+                }
+                const profileDevBadge = document.getElementById("clientProfileDevicesBadge");
+                if (profileDevBadge) {
+                    profileDevBadge.innerHTML = `<i class="fa-solid fa-mobile-screen me-1"></i> ${status.active_devices_count}/${status.max_allowed_devices} Devices Active`;
                 }
             }
         }

@@ -101,6 +101,8 @@ def is_desktop_environment(request=None):
     """
     if os.environ.get("IS_DESKTOP_APP") == "True":
         return True
+    if os.environ.get("USE_SQLITE") == "True":
+        return True
     if request:
         if request.COOKIES.get("is_desktop_pos") == "true":
             return True
@@ -109,6 +111,12 @@ def is_desktop_environment(request=None):
             return True
         if request.headers.get("X-Desktop-App") == "True":
             return True
+        try:
+            host = request.get_host().split(":")[0].lower()
+            if host in ("127.0.0.1", "localhost", "0.0.0.0"):
+                return True
+        except Exception:
+            pass
     return False
 
 

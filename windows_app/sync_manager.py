@@ -26,6 +26,8 @@ class SyncManager:
         self.is_syncing = False
         self.last_sync_time = None
         self.last_sync_status = "idle"
+        self.active_devices_count = None
+        self.max_allowed_devices = None
         self.device_id = os.getenv("DEVICE_ID", f"WIN-POS-{hex(hash(os.environ.get('COMPUTERNAME', 'WIN')))[2:8].upper()}")
 
     def start(self):
@@ -91,6 +93,8 @@ class SyncManager:
             "last_sync_status": self.last_sync_status,
             "pending_count": pending_count,
             "is_desktop": True,
+            "active_devices_count": getattr(self, "active_devices_count", None),
+            "max_allowed_devices": getattr(self, "max_allowed_devices", None),
         }
 
     def _run_loop(self):
@@ -152,9 +156,23 @@ class SyncManager:
             from billing.models import Invoice, InvoiceItem, Product, Customer, PaymentRecord
             from django.db import transaction
 
-            from billing.device_utils import get_desktop_pos_config
+            from billing.device_utils import get_desktop_pos_config, get_hardware_device_id
             pos_cfg = get_desktop_pos_config()
             client_username = pos_cfg.get("last_logged_in_client") or pos_cfg.get("remembered_username") or ""
+            if not client_username or client_username in ("admin", "Mathan003"):
+                try:
+                    from billing.models import ActiveUserSession, User
+                    sess = ActiveUserSession.objects.exclude(user__username__in=["admin", "Mathan003"]).order_by("-last_activity").first()
+                    if sess and sess.user:
+                        client_username = sess.user.username
+                    else:
+                        u = User.objects.filter(is_active=True).exclude(username__in=["admin", "Mathan003"]).order_by("-last_login").first()
+                        if u:
+                            client_username = u.username
+                except Exception:
+                    pass
+
+            push_device_id = pos_cfg.get("device_id") or get_hardware_device_id()
 
             # Find invoices that haven't been synced to cloud yet
             # In local SQLite, invoices created locally have source='windows_app'
@@ -256,7 +274,7 @@ class SyncManager:
                 return
 
             push_data = {
-                "device_id": self.device_id,
+                "device_id": push_device_id,
                 "client_username": client_username,
                 "invoices": invoices_payload,
                 "products": products_payload,
@@ -273,6 +291,11 @@ class SyncManager:
 
             if resp.status_code == 200:
                 result = resp.json()
+                if "active_devices_count" in result and result["active_devices_count"]:
+                    self.active_devices_count = int(result["active_devices_count"])
+                if "max_allowed_devices" in result and result["max_allowed_devices"]:
+                    self.max_allowed_devices = int(result["max_allowed_devices"])
+
                 synced_uuids = result.get("synced_invoices", []) or result.get("synced_uuids", [])
                 if synced_uuids:
                     for inv in unsynced_invoices:
@@ -287,13 +310,26 @@ class SyncManager:
         try:
             from billing.models import Product, Customer, CompanySettings, Invoice, Branch
             from django.contrib.auth.models import User
-            from billing.device_utils import get_desktop_pos_config, save_desktop_pos_config
+            from billing.device_utils import get_desktop_pos_config, save_desktop_pos_config, get_hardware_device_id
             from django.db import transaction
             from django.db.models import Q
 
             pos_cfg = get_desktop_pos_config()
             client_username = pos_cfg.get("last_logged_in_client") or pos_cfg.get("remembered_username") or ""
-            dev_id = pos_cfg.get("device_id") or os.environ.get("DEVICE_ID", "")
+            if not client_username or client_username in ("admin", "Mathan003"):
+                try:
+                    from billing.models import ActiveUserSession as AusModel
+                    sess = AusModel.objects.exclude(user__username__in=["admin", "Mathan003"]).order_by("-last_activity").first()
+                    if sess and sess.user:
+                        client_username = sess.user.username
+                    else:
+                        u = User.objects.filter(is_active=True).exclude(username__in=["admin", "Mathan003"]).order_by("-last_login").first()
+                        if u:
+                            client_username = u.username
+                except Exception:
+                    pass
+
+            dev_id = pos_cfg.get("device_id") or get_hardware_device_id()
             params = {}
             if client_username:
                 params["client_username"] = client_username
@@ -305,6 +341,10 @@ class SyncManager:
                 return
 
             data = resp.json()
+            if "active_devices_count" in data and data["active_devices_count"] is not None:
+                self.active_devices_count = int(data["active_devices_count"])
+            if "max_allowed_devices" in data and data["max_allowed_devices"] is not None:
+                self.max_allowed_devices = int(data["max_allowed_devices"])
             if data.get("session_revoked"):
                 logger.warning("Session has been remotely disconnected by Administrator.")
                 try:
@@ -412,6 +452,24 @@ class SyncManager:
                         c_prof.save()
                     except Exception as cl_err:
                         logger.debug(f"Error syncing client {c_uname}: {cl_err}")
+
+                # 2.8. Mirror multi-terminal active sessions locally so device counts match cloud
+                if self.active_devices_count and client_user:
+                    try:
+                        from billing.models import ActiveUserSession
+                        local_cnt = ActiveUserSession.objects.filter(user=client_user).count()
+                        if local_cnt < self.active_devices_count:
+                            for idx in range(local_cnt, self.active_devices_count):
+                                ActiveUserSession.objects.get_or_create(
+                                    session_key=f"CLOUD-DEV-{client_user.username}-{idx+1}"[:40],
+                                    defaults={
+                                        "user": client_user,
+                                        "device_info": f"Active Synced Terminal #{idx+1}",
+                                        "ip_address": "Cloud Synced",
+                                    }
+                                )
+                    except Exception:
+                        pass
 
                 # 3. Synchronize Branches
                 for br_d in branches_data:

@@ -1,5 +1,6 @@
 import uuid
-from .models import ActiveUserSession, SoftwareUpdate, CompanySettings
+from .models import ActiveUserSession, SoftwareUpdate, CompanySettings, RegisteredDevice
+from .version import APP_VERSION, APP_TITLE, APP_RELEASE_NOTES
 
 
 def session_security_context(request):
@@ -30,6 +31,10 @@ def session_security_context(request):
             "active_ifsc_code": company.ifsc_code,
             "active_shop_gst": company.gst_number if company else "",
             "business_type": "grocery",
+            "current_app_version": APP_VERSION,
+            "latest_update_version": latest_update.version if latest_update else APP_VERSION,
+            "latest_update_title": latest_update.title if latest_update else APP_TITLE,
+            "latest_release_notes": latest_update.release_notes if (latest_update and latest_update.release_notes) else APP_RELEASE_NOTES,
         }
 
     sec_token = request.session.get("sec_token")
@@ -41,11 +46,29 @@ def session_security_context(request):
     is_admin = request.user.is_superuser or (profile and profile.role == "admin")
 
     # Active devices count and limits
-    active_count = ActiveUserSession.objects.filter(user=request.user).count()
     if is_admin:
+        active_count = 1
         max_devices = 1
     else:
         max_devices = profile.device_limit if (profile and profile.device_limit) else 5
+        sess_cnt = ActiveUserSession.objects.filter(user=request.user).count()
+        reg_cnt = RegisteredDevice.objects.filter(user=request.user, is_active=True, is_verified=True).count()
+
+        sm_active = None
+        sm_limit = None
+        try:
+            from sync_manager import get_sync_manager
+            sm = get_sync_manager()
+            if sm:
+                sm_active = getattr(sm, "active_devices_count", None)
+                sm_limit = getattr(sm, "max_allowed_devices", None)
+        except Exception:
+            pass
+
+        if sm_limit:
+            max_devices = sm_limit
+        active_count = max(sess_cnt, reg_cnt, sm_active or 0, 1)
+        active_count = min(active_count, max_devices)
 
     # Check for software updates published by admin
     applied_ver = request.session.get("applied_update_version")
@@ -128,5 +151,9 @@ def session_security_context(request):
         "global_categories": global_categories,
         "global_category_list_data": global_category_list_data,
         "today_date_str": today_date_str,
+        "current_app_version": APP_VERSION,
+        "latest_update_version": latest_update.version if latest_update else APP_VERSION,
+        "latest_update_title": latest_update.title if latest_update else APP_TITLE,
+        "latest_release_notes": latest_update.release_notes if (latest_update and latest_update.release_notes) else APP_RELEASE_NOTES,
     }
 

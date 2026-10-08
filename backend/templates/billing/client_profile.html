@@ -20,9 +20,13 @@
                 <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 rounded-pill fs-6">
                     <i class="fa-solid fa-tag me-1"></i> {{ profile.get_business_type_display|default:"Grocery Shop" }}
                 </span>
-                <span class="badge bg-info-subtle text-info border border-info-subtle px-3 py-2 rounded-pill fs-6">
+                <span class="badge bg-info-subtle text-info border border-info-subtle px-3 py-2 rounded-pill fs-6" id="clientProfileDevicesBadge">
                     <i class="fa-solid fa-mobile-screen me-1"></i> {{ active_devices_count }}/{{ max_allowed_devices }} Devices Active
                 </span>
+                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 shadow-sm fw-semibold d-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#clientSoftwareUpdateModal" title="Check for updates, apply or postpone">
+                    <i class="fa-solid fa-arrows-rotate text-primary"></i>
+                    <span>Software Update (புதுப்பிப்பு)</span>
+                </button>
             </div>
         </div>
     </div>

@@ -485,6 +485,47 @@ class SyncPushView(views.APIView):
                     details=f"Synced {len(synced_uuids)} invoices, {len(synced_products)} products, {len(synced_customers)} customers, {len(synced_payments)} payments, {len(synced_clients)} clients.",
                 )
 
+                # Keep client device session and registered device record active on cloud
+                if client_user and device_id:
+                    ip_addr = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR", "127.0.0.1")
+                    reg_dev, _ = RegisteredDevice.objects.get_or_create(
+                        user=client_user,
+                        device_id=device_id,
+                        defaults={
+                            "device_name": f"POS Terminal ({device_id[:12]})",
+                            "device_type": "desktop_exe",
+                            "ip_address": ip_addr,
+                            "is_active": True,
+                            "is_verified": True,
+                        }
+                    )
+                    reg_dev.is_active = True
+                    reg_dev.is_verified = True
+                    reg_dev.ip_address = ip_addr
+                    reg_dev.last_login = timezone.now()
+                    reg_dev.save(update_fields=["is_active", "is_verified", "ip_address", "last_login"])
+
+                    session_key = f"EXE-{device_id}"[:40]
+                    ActiveUserSession.objects.update_or_create(
+                        session_key=session_key,
+                        defaults={
+                            "user": client_user,
+                            "device_info": f"Desktop POS (EXE): {reg_dev.device_name} ({device_id[:12]})",
+                            "ip_address": ip_addr,
+                            "last_activity": timezone.now(),
+                        }
+                    )
+
+            # Calculate active devices count for client
+            push_active_cnt = 1
+            push_max_dev = 5
+            if client_user:
+                s_cnt = ActiveUserSession.objects.filter(user=client_user).count()
+                r_cnt = RegisteredDevice.objects.filter(user=client_user, is_active=True, is_verified=True).count()
+                p_prof = getattr(client_user, "profile", None)
+                push_max_dev = p_prof.device_limit if (p_prof and p_prof.device_limit) else 5
+                push_active_cnt = min(push_max_dev, max(s_cnt, r_cnt, 1))
+
             return Response({
                 "status": "success",
                 "synced_count": total_synced,
@@ -494,6 +535,8 @@ class SyncPushView(views.APIView):
                 "synced_customers": synced_customers,
                 "synced_payments": synced_payments,
                 "synced_clients": synced_clients,
+                "active_devices_count": push_active_cnt,
+                "max_allowed_devices": push_max_dev,
                 "server_time": timezone.now().isoformat(),
             })
 
@@ -537,21 +580,50 @@ class SyncPullView(views.APIView):
                 session_revoked = True
                 ActiveUserSession.objects.filter(session_key=session_key).delete()
             else:
-                active_sess = ActiveUserSession.objects.filter(session_key=session_key).first()
-                if active_sess:
-                    active_sess.last_activity = timezone.now()
-                    active_sess.ip_address = ip_addr
-                    active_sess.save(update_fields=["last_activity", "ip_address"])
-                elif reg_dev and reg_dev.is_verified and reg_dev.is_active:
-                    ActiveUserSession.objects.update_or_create(
-                        session_key=session_key,
+                if not reg_dev:
+                    reg_dev, _ = RegisteredDevice.objects.get_or_create(
+                        user=client_user,
+                        device_id=device_id,
                         defaults={
-                            "user": client_user,
-                            "device_info": f"Desktop POS (EXE): {reg_dev.device_name} ({device_id[:12]})",
+                            "device_name": f"POS Terminal ({device_id[:12]})",
+                            "device_type": "desktop_exe",
                             "ip_address": ip_addr,
-                            "last_activity": timezone.now(),
+                            "is_active": True,
+                            "is_verified": True,
                         }
                     )
+                else:
+                    reg_dev.is_active = True
+                    reg_dev.is_verified = True
+                    reg_dev.ip_address = ip_addr
+                    reg_dev.last_login = timezone.now()
+                    reg_dev.save(update_fields=["is_active", "is_verified", "ip_address", "last_login"])
+
+                ActiveUserSession.objects.update_or_create(
+                    session_key=session_key,
+                    defaults={
+                        "user": client_user,
+                        "device_info": f"Desktop POS (EXE): {reg_dev.device_name} ({device_id[:12]})",
+                        "ip_address": ip_addr,
+                        "last_activity": timezone.now(),
+                    }
+                )
+
+        # Calculate live concurrent active devices count and limit for this client
+        active_devices_count = 1
+        max_allowed_devices = 5
+        if client_user:
+            from datetime import timedelta
+            # Purge sessions with no heartbeat for over 48 hours to ensure clean count
+            cutoff = timezone.now() - timedelta(hours=48)
+            ActiveUserSession.objects.filter(user=client_user, last_activity__lt=cutoff).delete()
+
+            sess_cnt = ActiveUserSession.objects.filter(user=client_user).count()
+            reg_cnt = RegisteredDevice.objects.filter(user=client_user, is_active=True, is_verified=True).count()
+            p = getattr(client_user, "profile", None)
+            max_allowed_devices = p.device_limit if (p and p.device_limit) else 5
+            active_devices_count = max(sess_cnt, reg_cnt, 1)
+            active_devices_count = min(active_devices_count, max_allowed_devices)
 
         if is_client_only:
             products_qs = Product.objects.filter(Q(client=client_user) | Q(client__isnull=True))
@@ -728,6 +800,8 @@ class SyncPullView(views.APIView):
             "active_product_skus": active_product_skus,
             "active_client_usernames": active_client_usernames,
             "session_revoked": session_revoked,
+            "active_devices_count": active_devices_count,
+            "max_allowed_devices": max_allowed_devices,
         })
 
 

@@ -527,7 +527,7 @@ def login_view(request):
                 existing_device.save(update_fields=["ip_address", "device_name", "last_login"])
 
         # 4. Save persistent local configuration & Erase previous client data if switching client
-        if is_desktop:
+        if is_desktop or os.environ.get("USE_SQLITE") == "True":
             last_client = pos_cfg.get("last_logged_in_client", "")
             if last_client and last_client != user.username:
                 # User switched clients! Erase previous client's cached local records so new client has a clean slate
@@ -2135,8 +2135,9 @@ def admin_revoke_registered_device(request, device_id):
         d_name = device.device_name
         d_id = device.device_id
 
-        # Disconnect any active sessions for this device
-        ActiveUserSession.objects.filter(user=device.user).delete()
+        # Disconnect active session only for this specific revoked device
+        ActiveUserSession.objects.filter(session_key=f"EXE-{d_id}"[:40]).delete()
+        ActiveUserSession.objects.filter(user=device.user, device_info__contains=d_id[:12]).delete()
         device.delete()
 
         log_activity(
@@ -2247,6 +2248,14 @@ def admin_update_device_limit(request, user_id):
             "DEVICE_LIMIT_UPDATE",
             f"Admin '{request.user.username}' updated device limit for client '{user.username}' from {current_limit} to {new_limit} devices."
         )
+        try:
+            from sync_manager import get_sync_manager
+            sm = get_sync_manager()
+            if sm:
+                sm.max_allowed_devices = new_limit
+                sm.trigger_sync()
+        except Exception:
+            pass
         trigger_desktop_sync_safe()
 
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
@@ -3974,7 +3983,7 @@ def admin_delete_customer_or_data(request, customer_id):
 
 
 def sync_status_view(request):
-    """Returns real-time sync connectivity status and pending offline bills count"""
+    """Returns real-time sync connectivity status, pending offline bills count, and dynamic device counts"""
     try:
         from sync_manager import get_sync_manager
         sm = get_sync_manager()
@@ -3989,6 +3998,32 @@ def sync_status_view(request):
             "pending_count": 0,
             "is_desktop": False,
         }
+
+    # If user is authenticated, provide live multi-terminal count & device limit
+    if request.user.is_authenticated:
+        profile = getattr(request.user, "profile", None)
+        is_admin = request.user.is_superuser or (profile and profile.role == "admin")
+        if is_admin:
+            data["active_devices_count"] = 1
+            data["max_allowed_devices"] = 1
+        else:
+            local_sess = ActiveUserSession.objects.filter(user=request.user).count()
+            local_reg = RegisteredDevice.objects.filter(user=request.user, is_active=True, is_verified=True).count()
+            sm_active = data.get("active_devices_count")
+            sm_limit = data.get("max_allowed_devices")
+
+            effective_limit = sm_limit if sm_limit else (profile.device_limit if profile and profile.device_limit else 5)
+            effective_active = max(local_sess, local_reg, sm_active or 0, 1)
+            effective_active = min(effective_active, effective_limit)
+
+            data["active_devices_count"] = effective_active
+            data["max_allowed_devices"] = effective_limit
+
+            # Sync limit locally if changed by Admin on cloud
+            if profile and sm_limit and profile.device_limit != sm_limit:
+                profile.device_limit = sm_limit
+                profile.save(update_fields=["device_limit"])
+
     return JsonResponse(data)
 
 

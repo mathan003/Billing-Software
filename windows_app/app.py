@@ -120,6 +120,7 @@ def init_database():
 
         prof, _ = UserProfile.objects.get_or_create(user=admin_u)
         prof.role = "admin"
+        prof.device_limit = 2
         prof.save()
 
         # Ensure default shop branch exists

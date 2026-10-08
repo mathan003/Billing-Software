@@ -194,6 +194,7 @@
                                             <form method="post" action="{% url 'billing:admin_update_device_limit' u.id %}" class="d-inline mb-0">
                                                 {% csrf_token %}
                                                 <input type="hidden" name="action" value="decrease">
+                                                <input type="hidden" name="username" value="{{ u.username }}">
                                                 <button type="submit" class="btn btn-sm btn-outline-danger px-1 py-0 d-flex align-items-center justify-content-center rounded-circle" style="width: 24px; height: 24px;" title="Decrease Allowed Devices (-1)" {% if u.profile.device_limit <= 1 %}disabled{% endif %}>
                                                     <i class="fa-solid fa-minus" style="font-size: 9px;"></i>
                                                 </button>
@@ -208,6 +209,7 @@
                                             <form method="post" action="{% url 'billing:admin_update_device_limit' u.id %}" class="d-inline mb-0">
                                                 {% csrf_token %}
                                                 <input type="hidden" name="action" value="increase">
+                                                <input type="hidden" name="username" value="{{ u.username }}">
                                                 <button type="submit" class="btn btn-sm btn-outline-success px-1 py-0 d-flex align-items-center justify-content-center rounded-circle" style="width: 24px; height: 24px;" title="Increase Allowed Devices (+1)" {% if u.profile.device_limit >= 50 %}disabled{% endif %}>
                                                     <i class="fa-solid fa-plus" style="font-size: 9px;"></i>
                                                 </button>
@@ -982,8 +984,10 @@
                                             </button>
                                         </form>
                                     {% endif %}
-                                    <form method="post" action="{% url 'billing:admin_revoke_registered_device' d.id %}" class="d-inline" onsubmit="return confirm('Remove approved device slot for {{ d.device_name }}? This will free up a device slot for a new device.');">
+                                    <form method="post" action="{% url 'billing:admin_revoke_registered_device' d.id %}" class="d-inline" onsubmit="return confirm('Remove approved device slot for {{ d.device_name }}? This will disconnect the device and free up a device slot.');">
                                         {% csrf_token %}
+                                        <input type="hidden" name="device_hw_id" value="{{ d.device_id }}">
+                                        <input type="hidden" name="username" value="{{ d.user.username }}">
                                         <button type="submit" class="btn btn-sm btn-outline-danger px-2 py-1" title="Remove device slot">
                                             <i class="fa-solid fa-trash me-1"></i> Remove
                                         </button>
@@ -1039,7 +1043,7 @@
                                 </td>
                                 <td>
                                     {% if s.user.profile.role == 'admin' or s.user.is_superuser %}
-                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">Admin (1 Device)</span>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">Admin ({{ s.user.profile.device_limit|default:2 }} Devices)</span>
                                     {% else %}
                                         <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1">Client (Max {{ s.user.profile.device_limit|default:5 }})</span>
                                     {% endif %}

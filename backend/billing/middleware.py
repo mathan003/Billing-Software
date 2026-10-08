@@ -55,25 +55,37 @@ class SessionSecurityMiddleware:
 
         # 4. Device Session Verification & Limit Enforcement
         session_key = request.session.session_key
+        device_id = request.COOKIES.get("billing_device_id", "")
         if session_key:
             active = ActiveUserSession.objects.filter(session_key=session_key).first()
-            if not active:
-                # Session was evicted (Admin single-device rule, client 5-device limit, or admin revocation)
+            device_revoked = False
+            if device_id:
+                from .models import RegisteredDevice
+                rd = RegisteredDevice.objects.filter(user=request.user, device_id=device_id).first()
+                if rd and not rd.is_active:
+                    device_revoked = True
+
+            if not active or device_revoked:
+                # Session was evicted or device was disconnected by Administrator
                 is_admin_user = request.user.is_superuser or (
                     hasattr(request.user, "profile") and request.user.profile.role == "admin"
                 )
                 logout(request)
-                if is_admin_user:
+                if device_revoked:
                     messages.warning(
                         request,
-                        "Your Administrator session has ended because this account logged in on another device. "
-                        "(Admin accounts are strictly restricted to 1 active device for security)."
+                        "Your session has ended because this device was disconnected or removed by the Administrator."
+                    )
+                elif is_admin_user:
+                    messages.warning(
+                        request,
+                        "Your Administrator session has ended because this account reached its allowed active devices limit on another terminal."
                     )
                 else:
                     dev_limit = getattr(getattr(request.user, "profile", None), "device_limit", 5)
                     messages.warning(
                         request,
-                        f"Your session has ended because the maximum limit of {dev_limit} concurrent devices was reached for this client account."
+                        f"Your session has ended because this device was disconnected by Administrator or the maximum limit of {dev_limit} concurrent devices was reached."
                     )
                 return redirect("billing:login")
             else:

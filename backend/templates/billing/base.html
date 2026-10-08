@@ -205,7 +205,7 @@
                                 {% endif %}
                                 <span class="fw-semibold small text-dark">{{ user.username }}</span>
                                 {% if is_admin_user %}
-                                    <span class="badge bg-primary text-white rounded-pill px-2 py-0" style="font-size: 0.65rem;">Admin (1 Dev)</span>
+                                    <span class="badge bg-primary text-white rounded-pill px-2 py-0" style="font-size: 0.65rem;" id="clientDeviceBadge">Admin ({{ active_devices_count }}/{{ max_allowed_devices }})</span>
                                 {% else %}
                                     <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-0" style="font-size: 0.65rem;" id="clientDeviceBadge">Client ({{ active_devices_count }}/{{ max_allowed_devices }})</span>
                                 {% endif %}
@@ -218,7 +218,7 @@
                                     {% endif %}
                                     <div class="text-muted small mt-1" id="clientDeviceDropdownText">
                                         {% if is_admin_user %}
-                                            <i class="fa-solid fa-shield-halved text-primary me-1"></i><strong>Admin:</strong> 1 Device Allowed
+                                            <i class="fa-solid fa-shield-halved text-primary me-1"></i><strong>Admin:</strong> {{ active_devices_count }}/{{ max_allowed_devices }} Devices Active
                                         {% else %}
                                             <i class="fa-solid fa-users text-success me-1"></i><strong>Client:</strong> {{ active_devices_count }}/{{ max_allowed_devices }} Active Devices
                                         {% endif %}
@@ -666,15 +666,17 @@
                 }
             }
 
-            // Real-Time Client Devices Quota & Concurrent Active Terminals Live Update
+            // Real-Time Client/Admin Devices Quota & Concurrent Active Terminals Live Update
             if (status.active_devices_count !== undefined && status.max_allowed_devices !== undefined) {
                 const devBadge = document.getElementById("clientDeviceBadge");
+                const rolePrefix = status.is_admin ? "Admin" : "Client";
                 if (devBadge) {
-                    devBadge.innerText = `Client (${status.active_devices_count}/${status.max_allowed_devices})`;
+                    devBadge.innerText = `${rolePrefix} (${status.active_devices_count}/${status.max_allowed_devices})`;
                 }
                 const devDropdown = document.getElementById("clientDeviceDropdownText");
                 if (devDropdown) {
-                    devDropdown.innerHTML = `<i class="fa-solid fa-users text-success me-1"></i><strong>Client:</strong> ${status.active_devices_count}/${status.max_allowed_devices} Active Devices`;
+                    const icon = status.is_admin ? '<i class="fa-solid fa-shield-halved text-primary me-1"></i><strong>Admin:</strong>' : '<i class="fa-solid fa-users text-success me-1"></i><strong>Client:</strong>';
+                    devDropdown.innerHTML = `${icon} ${status.active_devices_count}/${status.max_allowed_devices} Active Devices`;
                 }
                 const profileDevBadge = document.getElementById("clientProfileDevicesBadge");
                 if (profileDevBadge) {

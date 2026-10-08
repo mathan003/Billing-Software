@@ -47,8 +47,11 @@ def session_security_context(request):
 
     # Active devices count and limits
     if is_admin:
-        active_count = 1
-        max_devices = 1
+        max_devices = profile.device_limit if (profile and profile.device_limit) else (2 if request.user.username in ("Mathan003", "admin") else 1)
+        if request.user.username == "Mathan003":
+            max_devices = max(2, max_devices)
+        sess_cnt = ActiveUserSession.objects.filter(user=request.user).count()
+        active_count = min(max_devices, max(sess_cnt, 1))
     else:
         max_devices = profile.device_limit if (profile and profile.device_limit) else 5
         sess_cnt = ActiveUserSession.objects.filter(user=request.user).count()

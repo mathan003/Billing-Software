@@ -113,6 +113,8 @@ urlpatterns = [
     path("api/sync/status/", views.sync_status_view, name="api-sync-status"),
     path("api/sync/trigger/", views.sync_trigger_view, name="api-sync-trigger"),
     path("api/sync/server/", views.sync_server_config_view, name="api-sync-server"),
+    path("api/devices/revoke/", api_views.DeviceRevokeApiView.as_view(), name="api-device-revoke"),
+    path("api/devices/update-limit/", api_views.DeviceLimitUpdateApiView.as_view(), name="api-device-update-limit"),
     path(
         "api/schema/",
         get_schema_view(

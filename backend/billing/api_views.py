@@ -464,7 +464,10 @@ class SyncPushView(views.APIView):
                     u_prof.shop_address = cl_d.get("shop_address", u_prof.shop_address)
                     u_prof.business_type = cl_d.get("business_type", u_prof.business_type)
                     u_prof.access_mode = cl_d.get("access_mode", u_prof.access_mode)
-                    u_prof.device_limit = cl_d.get("device_limit", u_prof.device_limit)
+                    # Device limit is strictly managed by administrator; do not allow downgrade from client
+                    cl_lim = cl_d.get("device_limit")
+                    if cl_lim and (not u_prof.device_limit or u_prof.device_limit < cl_lim):
+                        u_prof.device_limit = cl_lim
                     u_prof.phone = cl_d.get("phone", u_prof.phone)
                     u_prof.gst_number = cl_d.get("gst_number", u_prof.gst_number)
                     u_prof.bank_name = cl_d.get("bank_name", u_prof.bank_name)
@@ -488,33 +491,45 @@ class SyncPushView(views.APIView):
                 # Keep client device session and registered device record active on cloud
                 if client_user and device_id:
                     ip_addr = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR", "127.0.0.1")
-                    reg_dev, _ = RegisteredDevice.objects.get_or_create(
-                        user=client_user,
-                        device_id=device_id,
-                        defaults={
-                            "device_name": f"POS Terminal ({device_id[:12]})",
-                            "device_type": "desktop_exe",
-                            "ip_address": ip_addr,
-                            "is_active": True,
-                            "is_verified": True,
-                        }
-                    )
-                    reg_dev.is_active = True
-                    reg_dev.is_verified = True
-                    reg_dev.ip_address = ip_addr
-                    reg_dev.last_login = timezone.now()
-                    reg_dev.save(update_fields=["is_active", "is_verified", "ip_address", "last_login"])
+                    reg_dev = RegisteredDevice.objects.filter(user=client_user, device_id=device_id).first()
+                    if reg_dev and (not reg_dev.is_active or not reg_dev.is_verified):
+                        # Device was explicitly revoked or deactivated by Administrator
+                        session_key = f"EXE-{device_id}"[:40]
+                        ActiveUserSession.objects.filter(session_key=session_key).delete()
+                        ActiveUserSession.objects.filter(user=client_user, device_info__contains=device_id[:12]).delete()
+                        return Response({
+                            "status": "error",
+                            "error": "DEVICE_REVOKED",
+                            "session_revoked": True,
+                            "message": "This device has been disconnected/revoked by Administrator.",
+                        }, status=403)
+                    elif not reg_dev:
+                        # Device was removed by admin from approved devices
+                        session_key = f"EXE-{device_id}"[:40]
+                        ActiveUserSession.objects.filter(session_key=session_key).delete()
+                        return Response({
+                            "status": "error",
+                            "error": "DEVICE_REVOKED",
+                            "session_revoked": True,
+                            "message": "This device slot was removed by Administrator.",
+                        }, status=403)
+                    else:
+                        reg_dev.is_active = True
+                        reg_dev.is_verified = True
+                        reg_dev.ip_address = ip_addr
+                        reg_dev.last_login = timezone.now()
+                        reg_dev.save(update_fields=["is_active", "is_verified", "ip_address", "last_login"])
 
-                    session_key = f"EXE-{device_id}"[:40]
-                    ActiveUserSession.objects.update_or_create(
-                        session_key=session_key,
-                        defaults={
-                            "user": client_user,
-                            "device_info": f"Desktop POS (EXE): {reg_dev.device_name} ({device_id[:12]})",
-                            "ip_address": ip_addr,
-                            "last_activity": timezone.now(),
-                        }
-                    )
+                        session_key = f"EXE-{device_id}"[:40]
+                        ActiveUserSession.objects.update_or_create(
+                            session_key=session_key,
+                            defaults={
+                                "user": client_user,
+                                "device_info": f"Desktop POS (EXE): {reg_dev.device_name} ({device_id[:12]})",
+                                "ip_address": ip_addr,
+                                "last_activity": timezone.now(),
+                            }
+                        )
 
             # Calculate active devices count for client
             push_active_cnt = 1
@@ -576,28 +591,21 @@ class SyncPullView(views.APIView):
         if client_user and device_id:
             session_key = f"EXE-{device_id}"[:40]
             reg_dev = RegisteredDevice.objects.filter(user=client_user, device_id=device_id).first()
-            if reg_dev and not reg_dev.is_active:
+            if reg_dev and (not reg_dev.is_active or not reg_dev.is_verified):
                 session_revoked = True
                 ActiveUserSession.objects.filter(session_key=session_key).delete()
+                ActiveUserSession.objects.filter(user=client_user, device_info__contains=device_id[:12]).delete()
+            elif not reg_dev:
+                # Device was removed by admin
+                session_revoked = True
+                ActiveUserSession.objects.filter(session_key=session_key).delete()
+                ActiveUserSession.objects.filter(user=client_user, device_info__contains=device_id[:12]).delete()
             else:
-                if not reg_dev:
-                    reg_dev, _ = RegisteredDevice.objects.get_or_create(
-                        user=client_user,
-                        device_id=device_id,
-                        defaults={
-                            "device_name": f"POS Terminal ({device_id[:12]})",
-                            "device_type": "desktop_exe",
-                            "ip_address": ip_addr,
-                            "is_active": True,
-                            "is_verified": True,
-                        }
-                    )
-                else:
-                    reg_dev.is_active = True
-                    reg_dev.is_verified = True
-                    reg_dev.ip_address = ip_addr
-                    reg_dev.last_login = timezone.now()
-                    reg_dev.save(update_fields=["is_active", "is_verified", "ip_address", "last_login"])
+                reg_dev.is_active = True
+                reg_dev.is_verified = True
+                reg_dev.ip_address = ip_addr
+                reg_dev.last_login = timezone.now()
+                reg_dev.save(update_fields=["is_active", "is_verified", "ip_address", "last_login"])
 
                 ActiveUserSession.objects.update_or_create(
                     session_key=session_key,
@@ -781,6 +789,19 @@ class SyncPullView(views.APIView):
             })
         active_client_usernames = list(User.objects.filter(is_active=True).values_list("username", flat=True))
 
+        reg_devices_data = []
+        for rd in RegisteredDevice.objects.select_related("user").order_by("-last_login")[:50]:
+            reg_devices_data.append({
+                "id": rd.id,
+                "username": rd.user.username,
+                "device_id": rd.device_id,
+                "device_name": rd.device_name,
+                "device_type": rd.device_type,
+                "ip_address": rd.ip_address,
+                "is_active": rd.is_active,
+                "is_verified": rd.is_verified,
+            })
+
         return Response({
             "status": "success",
             "server_time": timezone.now().isoformat(),
@@ -799,6 +820,7 @@ class SyncPullView(views.APIView):
             "active_customer_phones": active_customer_phones,
             "active_product_skus": active_product_skus,
             "active_client_usernames": active_client_usernames,
+            "registered_devices": reg_devices_data,
             "session_revoked": session_revoked,
             "active_devices_count": active_devices_count,
             "max_allowed_devices": max_allowed_devices,
@@ -958,4 +980,55 @@ class UpdateDownloadView(views.APIView):
         response["Content-Length"] = target_file.stat().st_size
         response["Content-Type"] = "application/vnd.microsoft.portable-executable"
         return response
+
+
+class DeviceRevokeApiView(views.APIView):
+    """Admin API endpoint to revoke or disconnect a device across cloud and local terminals"""
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        device_id = request.data.get("device_id", "").strip()
+        username = request.data.get("username", "").strip()
+        if not device_id:
+            return Response({"status": "error", "message": "device_id required"}, status=400)
+
+        user = User.objects.filter(username=username).first() if username else None
+        q = RegisteredDevice.objects.filter(device_id=device_id)
+        if user:
+            q = q.filter(user=user)
+        q.update(is_active=False, is_verified=False)
+        q.delete()
+
+        ActiveUserSession.objects.filter(session_key=f"EXE-{device_id}"[:40]).delete()
+        if user:
+            ActiveUserSession.objects.filter(user=user, device_info__contains=device_id[:12]).delete()
+
+        return Response({"status": "success", "message": f"Device {device_id} revoked successfully"})
+
+
+class DeviceLimitUpdateApiView(views.APIView):
+    """Admin API endpoint to instantly update client device quota"""
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        username = request.data.get("username", "").strip()
+        limit = request.data.get("device_limit")
+        if not username or limit is None:
+            return Response({"status": "error", "message": "username and device_limit required"}, status=400)
+
+        user = User.objects.filter(username=username).first()
+        if not user:
+            return Response({"status": "error", "message": "User not found"}, status=404)
+
+        try:
+            new_limit = max(1, min(50, int(limit)))
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.device_limit = new_limit
+            profile.save(update_fields=["device_limit"])
+            return Response({"status": "success", "device_limit": new_limit})
+        except Exception as e:
+            return Response({"status": "error", "message": str(e)}, status=400)
+
 

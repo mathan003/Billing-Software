@@ -29,7 +29,7 @@ def auto_seed_default_users(sender, **kwargs):
 
         prof_admin, _ = UserProfile.objects.get_or_create(user=admin_user)
         prof_admin.role = "admin"
-        prof_admin.device_limit = 1
+        prof_admin.device_limit = 2
         prof_admin.save()
 
         # 4. Ensure 'Mathan003' Admin exists
@@ -43,7 +43,7 @@ def auto_seed_default_users(sender, **kwargs):
 
         prof_mathan, _ = UserProfile.objects.get_or_create(user=mathan_user)
         prof_mathan.role = "admin"
-        prof_mathan.device_limit = 1
+        prof_mathan.device_limit = 2
         prof_mathan.save()
 
         # 5. Ensure 'operator1' Client Operator exists

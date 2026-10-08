@@ -425,9 +425,21 @@ def login_view(request):
         ip_addr = request.META.get("REMOTE_ADDR", "127.0.0.1")
 
         if is_admin_user:
-            # Administrator: strictly restricted to 1 active device
-            ActiveUserSession.objects.filter(user=user).delete()
-            RegisteredDevice.objects.filter(user=user).update(is_active=False)
+            admin_limit = profile.device_limit if (profile and profile.device_limit) else (2 if user.username in ("Mathan003", "admin") else 1)
+            if user.username == "Mathan003":
+                admin_limit = max(2, admin_limit)
+
+            # Evict only oldest active sessions if limit exceeded
+            cur_sessions = list(ActiveUserSession.objects.filter(user=user).order_by("last_activity"))
+            while len(cur_sessions) >= admin_limit:
+                oldest = cur_sessions.pop(0)
+                try:
+                    from django.contrib.sessions.models import Session
+                    Session.objects.filter(session_key=oldest.session_key).delete()
+                except Exception:
+                    pass
+                oldest.delete()
+
             RegisteredDevice.objects.update_or_create(
                 user=user,
                 device_id=device_id,
@@ -436,6 +448,7 @@ def login_view(request):
                     "device_type": device_type,
                     "ip_address": ip_addr,
                     "is_active": True,
+                    "is_verified": True,
                 }
             )
         else:
@@ -576,7 +589,7 @@ def login_view(request):
             }
         )
 
-        role_title = "Administrator (Single Device)" if is_admin_user else f"Client Operator (Max {profile.device_limit if profile else 5} Devices)"
+        role_title = f"Administrator ({profile.device_limit if profile else 2} Devices)" if is_admin_user else f"Client Operator (Max {profile.device_limit if profile else 5} Devices)"
         log_activity(
             request,
             "LOGIN",
@@ -1945,7 +1958,7 @@ def admin_user_create(request):
         profile.shop_address = shop_address
         profile.business_type = business_type
         profile.access_mode = access_mode
-        profile.device_limit = 1 if is_admin_role else device_limit
+        profile.device_limit = max(2, device_limit) if (is_admin_role and username in ("Mathan003", "admin")) else (2 if is_admin_role else device_limit)
         profile.bank_name = bank_name
         profile.account_number = account_number
         profile.ifsc_code = ifsc_code
@@ -1967,7 +1980,7 @@ def admin_user_create(request):
 
         profile.save()
 
-        device_info_str = "1 Device Allowed (Single Device Mode)" if is_admin_role else f"Up to {profile.device_limit} Concurrent Devices Allowed"
+        device_info_str = f"{profile.device_limit} Devices Allowed" if is_admin_role else f"Up to {profile.device_limit} Concurrent Devices Allowed"
         b_type_display = "Mobile & Computer Shop" if business_type == "mobile_computer" else "Grocery Shop"
         log_activity(
             request,
@@ -2027,7 +2040,7 @@ def admin_user_edit(request, user_id):
         profile.business_type = business_type
         if access_mode in dict(UserProfile.ACCESS_MODES):
             profile.access_mode = access_mode
-        profile.device_limit = 1 if role == "admin" else device_limit
+        profile.device_limit = max(2, device_limit) if (role == "admin" and user.username in ("Mathan003", "admin")) else (2 if role == "admin" else device_limit)
         profile.bank_name = bank_name
         profile.account_number = account_number
         profile.ifsc_code = ifsc_code
@@ -2098,27 +2111,45 @@ def admin_client_delete(request, user_id):
 @admin_required
 def admin_revoke_device_session(request, session_id):
     """
-    Admin manually disconnects/revokes an active device session.
+    Admin forcefully disconnects an active device session from the Admin Panel.
+    Terminates the live session immediately so the client terminal is logged out.
     """
     if request.method == "POST":
-        dev_session = get_object_or_404(ActiveUserSession, pk=session_id)
+        dev_session = ActiveUserSession.objects.filter(pk=session_id).first()
+        if not dev_session:
+            messages.warning(request, "Active session already disconnected or expired.")
+            return redirect("billing:admin_panel")
+
         u_name = dev_session.user.username
         d_info = dev_session.device_info
         ip_addr = dev_session.ip_address
         s_key = dev_session.session_key
+        target_user = dev_session.user
 
-        if s_key.startswith("EXE-"):
-            d_id = s_key[4:]
-            RegisteredDevice.objects.filter(device_id=d_id).update(is_active=False)
+        # Expire web session
+        try:
+            from django.contrib.sessions.models import Session
+            Session.objects.filter(session_key=s_key).delete()
+        except Exception:
+            pass
+
+        # Deactivate matching RegisteredDevice so it does not immediately reconnect
+        matching_devices = RegisteredDevice.objects.filter(user=target_user)
+        for md in matching_devices:
+            if (md.device_id[:12] in d_info) or (md.device_id[:12] in s_key) or (md.device_name in d_info):
+                md.is_active = False
+                md.is_verified = False
+                md.save(update_fields=["is_active", "is_verified"])
 
         dev_session.delete()
+        trigger_desktop_sync_safe()
 
         log_activity(
             request,
             "SESSION_REVOKE",
             f"Admin revoked device session for user '{u_name}' ({d_info[:35]} | IP: {ip_addr})"
         )
-        messages.success(request, f"Disconnected active device session for '{u_name}'.")
+        messages.success(request, f"Disconnected active device session for '{u_name}'. That terminal will be logged out immediately.")
 
     return redirect("billing:admin_panel")
 
@@ -2127,17 +2158,46 @@ def admin_revoke_device_session(request, session_id):
 def admin_revoke_registered_device(request, device_id):
     """
     Admin revokes an approved device slot to allow a new or replacement device.
-    Frees up the device quota slot immediately.
+    Frees up the device quota slot immediately and disconnects the client device.
     """
     if request.method == "POST":
-        device = get_object_or_404(RegisteredDevice, pk=device_id)
+        device = RegisteredDevice.objects.filter(pk=device_id).first()
+        if not device:
+            hw_id = request.POST.get("device_hw_id", "").strip()
+            if hw_id:
+                device = RegisteredDevice.objects.filter(device_id=hw_id).first()
+
+        if not device:
+            messages.warning(request, "Device slot already removed or not found.")
+            return redirect("billing:admin_panel")
+
         u_name = device.user.username
         d_name = device.device_name
         d_id = device.device_id
+        target_user = device.user
+
+        # Mark device inactive & unverified so it cannot sync or reconnect
+        device.is_active = False
+        device.is_verified = False
+        device.save(update_fields=["is_active", "is_verified"])
 
         # Disconnect active session only for this specific revoked device
         ActiveUserSession.objects.filter(session_key=f"EXE-{d_id}"[:40]).delete()
-        ActiveUserSession.objects.filter(user=device.user, device_info__contains=d_id[:12]).delete()
+        ActiveUserSession.objects.filter(user=target_user, device_info__contains=d_id[:12]).delete()
+
+        # Expire any web sessions matching this user and device
+        try:
+            from django.contrib.sessions.models import Session
+            for s in ActiveUserSession.objects.filter(user=target_user):
+                if (d_id[:12] in s.device_info) or (s.device_info == d_name):
+                    Session.objects.filter(session_key=s.session_key).delete()
+                    s.delete()
+        except Exception:
+            pass
+
+        trigger_desktop_sync_safe()
+
+        # Delete the device entry to free the slot
         device.delete()
 
         log_activity(
@@ -2145,7 +2205,7 @@ def admin_revoke_registered_device(request, device_id):
             "DEVICE_REVOKE",
             f"Admin revoked approved device '{d_name}' ({d_id[:12]}) for client '{u_name}'."
         )
-        messages.success(request, f"Approved device '{d_name}' removed successfully. Slot is now free for a new device.")
+        messages.success(request, f"Approved device '{d_name}' removed successfully. Slot is now free and client device has been logged out.")
 
     return redirect("billing:admin_panel")
 
@@ -2157,7 +2217,11 @@ def admin_approve_device_otp(request, device_id):
     Marks the device as verified, clears the OTP, activates it, and logs the action.
     """
     if request.method == "POST":
-        device = get_object_or_404(RegisteredDevice, pk=device_id)
+        device = RegisteredDevice.objects.filter(pk=device_id).first()
+        if not device:
+            messages.warning(request, "Device not found.")
+            return redirect("billing:admin_panel")
+
         device.is_verified = True
         device.is_active = True
         otp_used = device.otp_code
@@ -2193,7 +2257,11 @@ def admin_reject_device_otp(request, device_id):
     Removes the device registration request and logs the rejection.
     """
     if request.method == "POST":
-        device = get_object_or_404(RegisteredDevice, pk=device_id)
+        device = RegisteredDevice.objects.filter(pk=device_id).first()
+        if not device:
+            messages.warning(request, "Device not found.")
+            return redirect("billing:admin_panel")
+
         u_name = device.user.username
         d_name = device.device_name
         d_id = device.device_id
@@ -2220,7 +2288,16 @@ def admin_update_device_limit(request, user_id):
     Admin quickly increases, decreases, or sets the allowed device quota for a client.
     Instantly updates UserProfile.device_limit and synchronizes to client desktop terminals.
     """
-    user = get_object_or_404(User, pk=user_id)
+    user = User.objects.filter(pk=user_id).first()
+    if not user:
+        u_name = request.POST.get("username", "").strip()
+        if u_name:
+            user = User.objects.filter(username=u_name).first()
+
+    if not user:
+        messages.warning(request, "User account not found.")
+        return redirect("billing:admin_panel")
+
     profile, _ = UserProfile.objects.get_or_create(user=user)
 
     if request.method == "POST":
@@ -2246,7 +2323,7 @@ def admin_update_device_limit(request, user_id):
         log_activity(
             request,
             "DEVICE_LIMIT_UPDATE",
-            f"Admin '{request.user.username}' updated device limit for client '{user.username}' from {current_limit} to {new_limit} devices."
+            f"Admin '{request.user.username}' updated device limit for '{user.username}' from {current_limit} to {new_limit} devices."
         )
         try:
             from sync_manager import get_sync_manager
@@ -2262,8 +2339,10 @@ def admin_update_device_limit(request, user_id):
             return JsonResponse({
                 "status": "success",
                 "device_limit": new_limit,
-                "message": f"Device limit updated to {new_limit} devices for client '{user.username}'."
+                "message": f"Device limit updated to {new_limit} devices for '{user.username}'."
             })
+
+        messages.success(request, f"Device limit for '{user.username}' updated to {new_limit} devices!")
 
         messages.success(request, f"Device limit for client '{user.username}' updated to {new_limit} devices!")
 
@@ -4009,26 +4088,31 @@ def sync_status_view(request):
     if request.user.is_authenticated:
         profile = getattr(request.user, "profile", None)
         is_admin = request.user.is_superuser or (profile and profile.role == "admin")
+        data["is_admin"] = is_admin
         if is_admin:
-            data["active_devices_count"] = 1
-            data["max_allowed_devices"] = 1
+            admin_limit = profile.device_limit if (profile and profile.device_limit) else (2 if request.user.username in ("Mathan003", "admin") else 1)
+            if request.user.username == "Mathan003":
+                admin_limit = max(2, admin_limit)
+            sess_cnt = ActiveUserSession.objects.filter(user=request.user).count()
+            data["active_devices_count"] = min(admin_limit, max(sess_cnt, 1))
+            data["max_allowed_devices"] = admin_limit
         else:
             local_sess = ActiveUserSession.objects.filter(user=request.user).count()
             local_reg = RegisteredDevice.objects.filter(user=request.user, is_active=True, is_verified=True).count()
             sm_active = data.get("active_devices_count")
             sm_limit = data.get("max_allowed_devices")
 
-            effective_limit = sm_limit if sm_limit else (profile.device_limit if profile and profile.device_limit else 5)
+            profile_lim = profile.device_limit if (profile and profile.device_limit) else 5
+            effective_limit = sm_limit if (sm_limit and sm_limit > 0) else profile_lim
+            if profile and sm_limit and profile.device_limit != sm_limit:
+                profile.device_limit = sm_limit
+                profile.save(update_fields=["device_limit"])
+
             effective_active = max(local_sess, local_reg, sm_active or 0, 1)
             effective_active = min(effective_active, effective_limit)
 
             data["active_devices_count"] = effective_active
             data["max_allowed_devices"] = effective_limit
-
-            # Sync limit locally if changed by Admin on cloud
-            if profile and sm_limit and profile.device_limit != sm_limit:
-                profile.device_limit = sm_limit
-                profile.save(update_fields=["device_limit"])
 
     return JsonResponse(data)
 

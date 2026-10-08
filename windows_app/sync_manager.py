@@ -289,6 +289,20 @@ class SyncManager:
                 timeout=12.0
             )
 
+            if resp.status_code == 403 or (resp.status_code == 200 and resp.json().get("session_revoked")):
+                logger.warning("Session or device revoked on cloud server.")
+                try:
+                    from django.contrib.sessions.models import Session
+                    from billing.models import ActiveUserSession, RegisteredDevice
+                    from billing.device_utils import save_desktop_pos_config
+                    Session.objects.all().delete()
+                    ActiveUserSession.objects.all().delete()
+                    if push_device_id:
+                        RegisteredDevice.objects.filter(device_id=push_device_id).update(is_active=False, is_verified=False)
+                    save_desktop_pos_config({"is_activated": False, "remembered_username": ""})
+                except Exception:
+                    pass
+
             if resp.status_code == 200:
                 result = resp.json()
                 if "active_devices_count" in result and result["active_devices_count"]:
@@ -468,8 +482,42 @@ class SyncManager:
                                         "ip_address": "Cloud Synced",
                                     }
                                 )
+                        elif local_cnt > self.active_devices_count:
+                            excess = list(ActiveUserSession.objects.filter(
+                                user=client_user,
+                                session_key__startswith="CLOUD-DEV-"
+                            ).order_by("-id"))
+                            to_remove = local_cnt - self.active_devices_count
+                            for ex in excess[:to_remove]:
+                                ex.delete()
                     except Exception:
                         pass
+
+                # 2.9. Synchronize approved registered devices from cloud
+                cloud_reg_devs = data.get("registered_devices", [])
+                if cloud_reg_devs:
+                    try:
+                        from billing.models import RegisteredDevice
+                        for rd_info in cloud_reg_devs:
+                            d_uname = rd_info.get("username")
+                            d_id = rd_info.get("device_id")
+                            if not d_uname or not d_id:
+                                continue
+                            d_u = User.objects.filter(username=d_uname).first()
+                            if d_u:
+                                RegisteredDevice.objects.update_or_create(
+                                    user=d_u,
+                                    device_id=d_id,
+                                    defaults={
+                                        "device_name": rd_info.get("device_name", "Terminal"),
+                                        "device_type": rd_info.get("device_type", "desktop_exe"),
+                                        "ip_address": rd_info.get("ip_address", "127.0.0.1"),
+                                        "is_active": rd_info.get("is_active", True),
+                                        "is_verified": rd_info.get("is_verified", True),
+                                    }
+                                )
+                    except Exception as rd_err:
+                        logger.debug(f"Error syncing registered devices: {rd_err}")
 
                 # 3. Synchronize Branches
                 for br_d in branches_data:

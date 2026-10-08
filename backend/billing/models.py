@@ -22,7 +22,7 @@ class Product(models.Model):
     name_tamil = models.CharField(max_length=200, default="", blank=True, help_text="Tamil Name (e.g. அரிசி, சர்க்கரை)")
     name = models.CharField(max_length=200, blank=True, default="", help_text="English Name (Optional)")
     client = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="products")
-    sku = models.CharField(max_length=50, unique=True, db_index=True)
+    sku = models.CharField(max_length=50, db_index=True)
     category = models.CharField(max_length=100, default="General", db_index=True)
     price = models.DecimalField(max_digits=12, decimal_places=2, help_text="Selling price")
     cost_price = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, help_text="Purchase / Buy price")
@@ -35,6 +35,7 @@ class Product(models.Model):
 
     class Meta:
         ordering = ["name_tamil", "name"]
+        unique_together = [("client", "sku")]
 
     @property
     def display_name(self):
@@ -175,6 +176,7 @@ class Invoice(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name="invoices")
     customer_name = models.CharField(max_length=150, default="Cash Customer")
     customer_phone = models.CharField(max_length=20, blank=True, default="")
+    customer_address = models.TextField(blank=True, default="")
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)

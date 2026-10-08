@@ -265,6 +265,11 @@
                 <div class="col-sm-6">
                     <div><strong>Customer Name:</strong> <span class="fs-6 text-dark fw-semibold">{{ invoice.customer_name }}</span></div>
                     <div><strong>Contact Phone:</strong> {{ invoice.customer_phone|default:"N/A" }}</div>
+                    {% if invoice.customer_address %}
+                        <div><strong>Address:</strong> {{ invoice.customer_address }}</div>
+                    {% elif invoice.customer and invoice.customer.address %}
+                        <div><strong>Address:</strong> {{ invoice.customer.address }}</div>
+                    {% endif %}
                     {% if invoice.branch_name %}
                         <div><strong>Branch:</strong> {{ invoice.branch_name }}</div>
                     {% endif %}

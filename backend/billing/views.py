@@ -60,7 +60,7 @@ def get_client_filter(request):
         return Q(pk__in=[])
     if is_admin_user(request.user):
         return Q()
-    return Q(client=request.user) | Q(client__isnull=True)
+    return Q(client=request.user)
 
 
 def get_client_user(request):
@@ -99,17 +99,25 @@ def check_user_has_gst(user):
 def get_available_categories(request):
     """
     Returns a sorted distinct list of categories combining ProductCategory records,
-    distinct Product categories, and default retail departments.
+    distinct Product categories, and default retail departments for the active client/admin.
+    Guarantees strict multi-tenant isolation.
     """
+    if not request.user.is_authenticated:
+        return ["General"]
+
     c_filter = get_client_filter(request)
-    if not ProductCategory.objects.exists():
-        initial_cats = [
-            "General", "Grocery", "Fruits", "Vegetables",
-            "Snacks", "Beverages", "Dairy", "Spices",
-            "Stationery", "Electronics", "Mobile & Computer"
-        ]
-        for c_name in initial_cats:
-            ProductCategory.objects.get_or_create(name=c_name)
+    client_user = get_client_user(request)
+
+    # If this client has no categories yet, initialize their own default set
+    if not is_admin_user(request.user) and client_user:
+        if not ProductCategory.objects.filter(client=client_user).exists():
+            initial_cats = [
+                "General", "Grocery", "Fruits", "Vegetables",
+                "Snacks", "Beverages", "Dairy", "Spices",
+                "Stationery", "Electronics"
+            ]
+            for c_name in initial_cats:
+                ProductCategory.objects.get_or_create(name=c_name, client=client_user)
 
     prod_cats = set(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True))
     saved_cats = set(ProductCategory.objects.filter(c_filter).exclude(name="").values_list("name", flat=True))
@@ -756,17 +764,20 @@ def billing_page(request):
         customer_id = request.POST.get("customer_id", "").strip()
         customer_name = request.POST.get("customer_name", "").strip()
         customer_phone = request.POST.get("customer_phone", "").strip()
+        customer_address = request.POST.get("customer_address", "").strip()
         branch_id = request.POST.get("branch_id", "").strip()
         payment_method = request.POST.get("payment_method", "Cash")
         paid_amount_str = request.POST.get("paid_amount", "").strip()
         notes = request.POST.get("notes", "").strip()
 
         product_ids = request.POST.getlist("product_id[]") or request.POST.getlist("product_id")
+        product_names = request.POST.getlist("product_name[]") or request.POST.getlist("product_name")
         units = request.POST.getlist("unit[]") or request.POST.getlist("unit")
         unit_prices = request.POST.getlist("unit_price[]") or request.POST.getlist("unit_price")
         quantities = request.POST.getlist("quantity[]") or request.POST.getlist("quantity")
 
-        if not product_ids:
+        total_row_count = max(len(product_ids), len(product_names))
+        if total_row_count == 0:
             messages.error(request, "Please add at least one product to the bill.")
             return redirect("billing:billing_page")
 
@@ -788,15 +799,33 @@ def billing_page(request):
                 customer_name = cust_obj.name
             if cust_obj and not customer_phone and cust_obj.phone:
                 customer_phone = cust_obj.phone
+            if cust_obj and customer_address and cust_obj.address != customer_address:
+                cust_obj.address = customer_address
+                cust_obj.save(update_fields=["address", "updated_at"])
         elif customer_phone:
             cust_obj, _ = Customer.objects.get_or_create(
                 phone=customer_phone,
                 client=client_user,
-                defaults={"name": customer_name or "Cash Customer"}
+                defaults={"name": customer_name or "Cash Customer", "address": customer_address}
             )
+            if cust_obj and customer_address and cust_obj.address != customer_address:
+                cust_obj.address = customer_address
+                cust_obj.save(update_fields=["address", "updated_at"])
+        elif customer_name and customer_name != "Cash Customer" and customer_address:
+            cust_obj = Customer.objects.filter(c_filter, name__iexact=customer_name).first()
+            if not cust_obj:
+                cust_obj = Customer.objects.create(
+                    name=customer_name,
+                    client=client_user,
+                    address=customer_address
+                )
+            elif customer_address and cust_obj.address != customer_address:
+                cust_obj.address = customer_address
+                cust_obj.save(update_fields=["address", "updated_at"])
 
-        final_customer_name = cust_obj.name if cust_obj else (customer_name or "Cash Customer")
-        final_customer_phone = cust_obj.phone if cust_obj else customer_phone
+        final_customer_name = (cust_obj.name if cust_obj else customer_name) or "Cash Customer"
+        final_customer_phone = (cust_obj.phone if cust_obj else customer_phone) or ""
+        final_customer_address = customer_address or (cust_obj.address if (cust_obj and cust_obj.address) else "") or ""
 
         # Generate unique collision-free sequential Invoice Number
         prefix = "POS" if is_desktop_environment(request) else "WEB"
@@ -813,29 +842,39 @@ def billing_page(request):
         total_tax = Decimal("0.00")
         has_shop_gst = check_user_has_gst(client_user)
 
-        for i in range(len(product_ids)):
-            pid = product_ids[i]
-            if not pid:
-                continue
-
-            product = Product.objects.filter(c_filter, pk=pid, is_active=True).first()
-            if not product:
-                continue
-
-            unit = units[i] if i < len(units) else product.unit
-            price = parse_decimal(unit_prices[i] if i < len(unit_prices) else str(product.price), str(product.price))
+        for i in range(total_row_count):
+            pid = str(product_ids[i]).strip() if i < len(product_ids) and product_ids[i] else ""
+            item_name = str(product_names[i]).strip() if i < len(product_names) and product_names[i] else ""
+            unit = units[i].strip() if i < len(units) and units[i] else "KG"
             qty = parse_decimal(quantities[i] if i < len(quantities) else "1", "1")
 
             if qty <= Decimal("0.00"):
                 continue
 
+            product = None
+            if pid and pid != "custom" and pid.isdigit():
+                product = Product.objects.filter(c_filter, pk=int(pid), is_active=True).first()
+
+            if product:
+                price = parse_decimal(unit_prices[i] if i < len(unit_prices) else str(product.price), str(product.price))
+                if not unit:
+                    unit = product.unit
+                tax_pct = product.tax_percent if has_shop_gst else Decimal("0.00")
+                item_title = product.display_name
+                item_sku = product.sku
+            elif item_name:
+                price = parse_decimal(unit_prices[i] if i < len(unit_prices) else "0.00", "0.00")
+                tax_pct = Decimal("0.00")
+                item_title = item_name
+                item_sku = "CUSTOM"
+            else:
+                continue
+
             item_subtotal = price * qty
-            if has_shop_gst:
-                item_tax = (item_subtotal * product.tax_percent) / Decimal("100.00")
-                item_tax_pct = product.tax_percent
+            if has_shop_gst and tax_pct > Decimal("0.00"):
+                item_tax = (item_subtotal * tax_pct) / Decimal("100.00")
             else:
                 item_tax = Decimal("0.00")
-                item_tax_pct = Decimal("0.00")
             item_total = item_subtotal + item_tax
 
             subtotal += item_subtotal
@@ -843,12 +882,12 @@ def billing_page(request):
 
             line_items.append({
                 "product": product,
-                "name": product.display_name,
-                "sku": product.sku,
+                "name": item_title,
+                "sku": item_sku,
                 "unit": unit,
                 "unit_price": price,
                 "quantity": qty,
-                "tax_percent": item_tax_pct,
+                "tax_percent": tax_pct,
                 "tax_amount": item_tax,
                 "total_price": item_total,
             })
@@ -875,6 +914,7 @@ def billing_page(request):
             customer=cust_obj,
             customer_name=final_customer_name,
             customer_phone=final_customer_phone,
+            customer_address=final_customer_address,
             subtotal=subtotal,
             tax_amount=total_tax,
             discount_amount=discount_amount,
@@ -902,24 +942,28 @@ def billing_page(request):
                 total_price=item["total_price"],
             )
 
-            # Decrement stock
+            # Decrement stock if standard catalog product
             prod = item["product"]
-            old_stock = prod.stock_quantity
-            new_stock = max(Decimal("0.00"), old_stock - item["quantity"])
-            prod.stock_quantity = new_stock
-            prod.save(update_fields=["stock_quantity", "updated_at"])
+            if prod:
+                old_stock = prod.stock_quantity
+                new_stock = max(Decimal("0.00"), old_stock - item["quantity"])
+                prod.stock_quantity = new_stock
+                prod.save(update_fields=["stock_quantity", "updated_at"])
 
-            # Create StockLog entry for audit ledger
-            StockLog.objects.create(
-                product=prod,
-                change_type="BILLING_SALE",
-                quantity_change=-item["quantity"],
-                previous_quantity=old_stock,
-                new_quantity=new_stock,
-                invoice=invoice,
-                notes=f"Express billing sale #{inv_number} ({item['quantity']} {item['unit']})",
-                created_by=user_name,
-            )
+                # Create StockLog entry for audit ledger
+                try:
+                    StockLog.objects.create(
+                        product=prod,
+                        change_type="BILLING_SALE",
+                        quantity_change=-item["quantity"],
+                        previous_quantity=old_stock,
+                        new_quantity=new_stock,
+                        invoice=invoice,
+                        notes=f"Express billing sale #{inv_number} ({item['quantity']} {item['unit']})",
+                        created_by=user_name,
+                    )
+                except Exception:
+                    pass
 
         # Create initial payment record if paid > 0
         if paid_amount > Decimal("0.00"):
@@ -1650,7 +1694,7 @@ def category_delete(request):
                 ProductCategory.objects.filter(name__iexact=name).delete()
             else:
                 ProductCategory.objects.filter(
-                    Q(client=request.user) | Q(client__isnull=True),
+                    client=request.user,
                     name__iexact=name
                 ).delete()
 

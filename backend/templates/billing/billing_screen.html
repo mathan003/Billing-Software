@@ -106,7 +106,7 @@
                         <select class="form-select bg-light" id="existingCustomerSelect">
                             <option value="">-- Choose Existing or Enter --</option>
                             {% for c in customers %}
-                                <option value="{{ c.id }}" data-name="{{ c.name }}" data-phone="{{ c.phone|default:'' }}">
+                                <option value="{{ c.id }}" data-name="{{ c.name }}" data-phone="{{ c.phone|default:'' }}" data-address="{{ c.address|default:'' }}">
                                     {{ c.name }} {% if c.phone %}({{ c.phone }}){% endif %}
                                 </option>
                             {% endfor %}
@@ -114,14 +114,18 @@
                     </div>
                 </div>
 
-                <div class="row g-2 align-items-center">
-                    <div class="col-12 col-md-6">
+                <div class="row g-2 align-items-center mt-1">
+                    <div class="col-12 col-md-4">
                         <label class="form-label small fw-semibold text-secondary">Mobile Phone Number</label>
-                        <input type="tel" name="customer_phone" class="form-control" id="customerPhoneInput">
+                        <input type="tel" name="customer_phone" class="form-control" id="customerPhoneInput" placeholder="Mobile phone number">
                     </div>
-                    <div class="col-12 col-md-6">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-semibold text-secondary"><i class="fa-solid fa-location-dot text-primary me-1"></i>Customer Address (வாடிக்கையாளர் முகவரி)</label>
+                        <input type="text" name="customer_address" class="form-control" id="customerAddressInput" placeholder="Street / Area / Address..." autocomplete="off">
+                    </div>
+                    <div class="col-12 col-md-4">
                         <label class="form-label small fw-semibold text-secondary">Bill Notes / Order Reference</label>
-                        <input type="text" name="notes" class="form-control">
+                        <input type="text" name="notes" class="form-control" placeholder="Optional notes / remarks...">
                     </div>
                 </div>
             </div>
@@ -132,9 +136,12 @@
                     <div>
                         <h6 class="fw-bold text-dark mb-0"><i class="fa-solid fa-boxes-stacked me-2 text-primary"></i>Bill Items (பொருட்கள்)</h6>
                     </div>
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-2 flex-wrap">
                         <button type="button" class="btn btn-primary-custom btn-sm" id="addProductRowBtn">
                             <i class="fa-solid fa-plus me-1"></i> Add Product (+ பொருள் சேர்க்க)
+                        </button>
+                        <button type="button" class="btn btn-success btn-sm fw-semibold" id="addOtherProductBtn">
+                            <i class="fa-solid fa-pen-to-square me-1"></i> Other Product (+ மற்ற பொருள் சேர்க்க)
                         </button>
                     </div>
                 </div>
@@ -163,11 +170,11 @@
                     <table class="table table-bordered align-middle table-items" id="billItemsTable">
                         <thead>
                             <tr>
-                                <th style="width: 38%;">Product (பொருள் பெயர்)</th>
+                                <th style="width: 36%;">Product (பொருள் பெயர்)</th>
                                 <th style="width: 14%;">Unit Type</th>
-                                <th style="width: 14%;">Rate / Price (₹)</th>
-                                <th style="width: 16%;">Quantity (அளவு)</th>
-                                <th style="width: 12%;">Total (₹)</th>
+                                <th style="width: 16%;">Rate / Price (₹)</th>
+                                <th style="width: 15%;">Quantity (அளவு)</th>
+                                <th style="width: 13%;">Total (₹)</th>
                                 <th style="width: 6%;" class="text-center">Action</th>
                             </tr>
                         </thead>
@@ -181,6 +188,9 @@
                 <div class="mt-2 d-flex justify-content-start align-items-center flex-wrap gap-2">
                     <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3" id="addProductRowBtn2">
                         <i class="fa-solid fa-circle-plus me-1"></i> Add Another Product (+ மேலும் பொருள் சேர்க்க)
+                    </button>
+                    <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold" id="addOtherProductBtn2">
+                        <i class="fa-solid fa-pen-to-square me-1"></i> + Other Product (மற்ற பொருள் சேர்க்க)
                     </button>
                 </div>
             </div>
@@ -289,7 +299,8 @@
         {
             id: {{ c.id }},
             name: "{{ c.name|escapejs }}",
-            phone: "{{ c.phone|default:''|escapejs }}"
+            phone: "{{ c.phone|default:''|escapejs }}",
+            address: "{{ c.address|default:''|escapejs }}"
         }{% if not forloop.last %},{% endif %}
         {% endfor %}
     ];
@@ -297,6 +308,8 @@
     const itemsBody = document.getElementById("billItemsBody");
     const addRowBtn = document.getElementById("addProductRowBtn");
     const addRowBtn2 = document.getElementById("addProductRowBtn2");
+    const addOtherBtn = document.getElementById("addOtherProductBtn");
+    const addOtherBtn2 = document.getElementById("addOtherProductBtn2");
     const paidInput = document.getElementById("paidAmountInput");
     const termCategory = document.getElementById("terminalCategorySelect");
     const catalogCountBadge = document.getElementById("catalogCountBadge");
@@ -382,7 +395,7 @@
         });
     });
 
-    // 2. Add dynamic product row with visible product list dropdown
+    // 2. Add dynamic standard product row
     function addProductRow(selectedId = null) {
         const tr = document.createElement("tr");
         tr.className = "item-row";
@@ -403,6 +416,7 @@
                 <select name="product_id[]" class="form-select form-select-sm product-select" required>
                     ${buildProductOptionsHtml(initialId, getSelectedCategory())}
                 </select>
+                <input type="hidden" name="product_name[]" class="item-name-hidden" value="${initialProd ? escapeHtml(initialProd.display_name) : ''}">
                 <div class="prod-category-tag small text-muted mt-1" style="font-size: 0.75rem;">${initialCatText}</div>
             </td>
             <td>
@@ -419,7 +433,11 @@
                 </select>
             </td>
             <td>
-                <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control form-control-sm price-input text-end" value="${initialPrice}" required>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light text-muted px-1" style="font-size:0.75rem;">₹</span>
+                    <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control form-control-sm price-input text-end fw-semibold" value="${initialPrice}" title="Edit price manually anytime" required>
+                </div>
+                <div class="small text-muted text-end mt-1" style="font-size: 0.70rem;"><i class="fa-solid fa-pen text-primary me-1"></i>Edit Price (மாற்றலாம்)</div>
             </td>
             <td>
                 <input type="number" step="any" min="0.001" name="quantity[]" class="form-control form-control-sm qty-input text-center fw-bold" value="1" required>
@@ -439,6 +457,7 @@
 
         // Bind Row Elements
         const prodSelect = tr.querySelector(".product-select");
+        const nameHidden = tr.querySelector(".item-name-hidden");
         const catTag = tr.querySelector(".prod-category-tag");
         const unitSelect = tr.querySelector(".unit-select");
         const priceInput = tr.querySelector(".price-input");
@@ -468,6 +487,7 @@
             const pid = parseInt(this.value);
             if (!pid) {
                 if (catTag) catTag.innerText = "";
+                if (nameHidden) nameHidden.value = "";
                 priceInput.value = "0.00";
                 taxInput.value = "0";
                 updateRow();
@@ -475,6 +495,7 @@
             }
             const p = catalog.find(x => x.id === pid);
             if (p) {
+                if (nameHidden) nameHidden.value = p.display_name;
                 unitSelect.value = p.unit;
                 priceInput.value = p.price.toFixed(2);
                 taxInput.value = hasShopGst ? p.tax : 0;
@@ -501,6 +522,89 @@
         });
 
         updateRow();
+    }
+
+    // 2.5. Add "Other Product" row for manual entry of product name and amount
+    function addOtherProductRow() {
+        const tr = document.createElement("tr");
+        tr.className = "item-row bg-warning-subtle bg-opacity-10";
+
+        tr.innerHTML = `
+            <td>
+                <div class="d-flex align-items-center gap-1 mb-1">
+                    <span class="badge bg-warning text-dark py-1 px-2" style="font-size: 0.72rem;">
+                        <i class="fa-solid fa-pen-to-square me-1"></i>Other Product (மற்ற பொருள்)
+                    </span>
+                </div>
+                <input type="hidden" name="product_id[]" value="custom">
+                <input type="text" name="product_name[]" class="form-control form-control-sm custom-prod-name fw-semibold" placeholder="Type Product Name (பொருள் பெயர் தட்டச்சு செய்க)..." required autocomplete="off">
+            </td>
+            <td>
+                <select name="unit[]" class="form-select form-select-sm unit-select">
+                    <option value="Pcs" selected>Pcs (எண்ணிக்கை)</option>
+                    <option value="Nos">Nos (எண்கள்)</option>
+                    <option value="Unit">Unit (யூனிட்)</option>
+                    <option value="KG">KG (கிலோ)</option>
+                    <option value="Gram">Gram (கிராம்)</option>
+                    <option value="Pack">Pack / Bag (பேக்)</option>
+                    <option value="Box">Box (பெட்டி)</option>
+                    <option value="Ltr">Liter (லிட்டர்)</option>
+                    <option value="Set">Set (செட்)</option>
+                </select>
+            </td>
+            <td>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light text-muted px-1" style="font-size:0.75rem;">₹</span>
+                    <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control form-control-sm price-input text-end fw-bold" placeholder="0.00" value="" required>
+                </div>
+                <div class="small text-muted text-end mt-1" style="font-size: 0.70rem;">Manual Amount</div>
+            </td>
+            <td>
+                <input type="number" step="any" min="0.001" name="quantity[]" class="form-control form-control-sm qty-input text-center fw-bold" value="1" required>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm total-input text-end fw-bold bg-light" readonly value="₹0.00">
+                <input type="hidden" class="tax-pct" value="0">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm remove-row-btn" title="Remove (நீக்கு)">
+                    <i class="fa-solid fa-trash text-danger"></i>
+                </button>
+            </td>
+        `;
+
+        itemsBody.appendChild(tr);
+
+        const nameInput = tr.querySelector(".custom-prod-name");
+        const priceInput = tr.querySelector(".price-input");
+        const qtyInput = tr.querySelector(".qty-input");
+        const totalInput = tr.querySelector(".total-input");
+        const removeBtn = tr.querySelector(".remove-row-btn");
+
+        function updateRow() {
+            const price = parseFloat(priceInput.value || 0);
+            const qty = parseFloat(qtyInput.value || 0);
+            const rowSubtotal = price * qty;
+            totalInput.value = "₹" + rowSubtotal.toFixed(2);
+            recalculateGrandTotals();
+        }
+
+        priceInput.addEventListener("input", updateRow);
+        qtyInput.addEventListener("input", updateRow);
+
+        removeBtn.addEventListener("click", function() {
+            if (itemsBody.children.length > 1) {
+                tr.remove();
+                recalculateGrandTotals();
+            } else {
+                alert("An invoice must contain at least one product row.");
+            }
+        });
+
+        updateRow();
+        if (nameInput) {
+            nameInput.focus();
+        }
     }
 
     // Recalculate Grand Totals
@@ -578,11 +682,14 @@
 
     addRowBtn.addEventListener("click", () => addProductRow());
     addRowBtn2.addEventListener("click", () => addProductRow());
+    if (addOtherBtn) addOtherBtn.addEventListener("click", () => addOtherProductRow());
+    if (addOtherBtn2) addOtherBtn2.addEventListener("click", () => addOtherProductRow());
 
     // 3. Customer Selection with Instant Typing Filter
     const custNameInput = document.getElementById("customerNameInput");
     const custIdInput = document.getElementById("customerIdInput");
     const custPhoneInput = document.getElementById("customerPhoneInput");
+    const custAddressInput = document.getElementById("customerAddressInput");
     const custSuggestions = document.getElementById("customerSuggestions");
     const existCustSelect = document.getElementById("existingCustomerSelect");
     const clearCustBtn = document.getElementById("clearCustomerBtn");
@@ -610,8 +717,11 @@
             html += `
                 <div class="cust-suggest-item p-2 border-bottom d-flex justify-content-between align-items-center"
                      style="cursor: pointer; transition: background 0.15s;"
-                     data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-phone="${escapeHtml(c.phone)}">
-                    <strong class="text-dark">${escapeHtml(c.name)}</strong>
+                     data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-phone="${escapeHtml(c.phone)}" data-address="${escapeHtml(c.address || '')}">
+                    <div>
+                        <strong class="text-dark">${escapeHtml(c.name)}</strong>
+                        ${c.address ? `<div class="text-muted small" style="font-size:0.75rem;"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(c.address)}</div>` : ''}
+                    </div>
                     <span class="text-muted small font-monospace">${escapeHtml(c.phone || 'No phone')}</span>
                 </div>
             `;
@@ -625,8 +735,10 @@
                 const id = this.getAttribute("data-id");
                 const name = this.getAttribute("data-name");
                 const phone = this.getAttribute("data-phone");
+                const address = this.getAttribute("data-address");
                 if (custNameInput) custNameInput.value = name;
                 if (custPhoneInput) custPhoneInput.value = phone || "";
+                if (custAddressInput) custAddressInput.value = address || "";
                 if (custIdInput) custIdInput.value = id;
                 if (existCustSelect) existCustSelect.value = id;
                 custSuggestions.style.display = "none";
@@ -648,6 +760,7 @@
         clearCustBtn.addEventListener("click", function() {
             if (custNameInput) custNameInput.value = "";
             if (custPhoneInput) custPhoneInput.value = "";
+            if (custAddressInput) custAddressInput.value = "";
             if (custIdInput) custIdInput.value = "";
             if (existCustSelect) existCustSelect.value = "";
             if (custSuggestions) custSuggestions.style.display = "none";
@@ -660,10 +773,12 @@
             if (opt && opt.value) {
                 if (custNameInput) custNameInput.value = opt.getAttribute("data-name");
                 if (custPhoneInput) custPhoneInput.value = opt.getAttribute("data-phone") || "";
+                if (custAddressInput) custAddressInput.value = opt.getAttribute("data-address") || "";
                 if (custIdInput) custIdInput.value = opt.value;
             } else {
                 if (custNameInput) custNameInput.value = "";
                 if (custPhoneInput) custPhoneInput.value = "";
+                if (custAddressInput) custAddressInput.value = "";
                 if (custIdInput) custIdInput.value = "";
             }
         });

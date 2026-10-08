@@ -382,6 +382,7 @@ class SyncPushView(views.APIView):
                         customer=cust_obj,
                         customer_name=cust_name or "Cash Customer",
                         customer_phone=cust_phone,
+                        customer_address=inv_data.get("customer_address", "") or (cust_obj.address if cust_obj else ""),
                         subtotal=inv_data["subtotal"],
                         tax_amount=inv_data["tax_amount"],
                         discount_amount=inv_data["discount_amount"],
@@ -634,14 +635,18 @@ class SyncPullView(views.APIView):
             active_devices_count = min(active_devices_count, max_allowed_devices)
 
         if is_client_only:
-            products_qs = Product.objects.filter(Q(client=client_user) | Q(client__isnull=True))
-            customers_qs = Customer.objects.filter(Q(client=client_user) | Q(client__isnull=True))
-            categories_qs = ProductCategory.objects.filter(Q(client=client_user) | Q(client__isnull=True))
+            if not ProductCategory.objects.filter(client=client_user).exists():
+                for c_name in ["General", "Grocery", "Fruits", "Vegetables", "Snacks", "Beverages", "Dairy", "Spices", "Stationery", "Electronics"]:
+                    ProductCategory.objects.get_or_create(name=c_name, client=client_user)
+
+            products_qs = Product.objects.filter(client=client_user)
+            customers_qs = Customer.objects.filter(client=client_user)
+            categories_qs = ProductCategory.objects.filter(client=client_user)
             invoices_qs = Invoice.objects.filter(client=client_user).prefetch_related("items").order_by("-created_at")[:100]
             branches_qs = Branch.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_active=True)
             active_uuids = [str(u) for u in Invoice.objects.filter(client=client_user).values_list("invoice_uuid", flat=True)]
-            active_customer_phones = list(Customer.objects.filter(Q(client=client_user) | Q(client__isnull=True)).exclude(phone="").values_list("phone", flat=True))
-            active_product_skus = list(Product.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_active=True).values_list("sku", flat=True))
+            active_customer_phones = list(Customer.objects.filter(client=client_user).exclude(phone="").values_list("phone", flat=True))
+            active_product_skus = list(Product.objects.filter(client=client_user, is_active=True).values_list("sku", flat=True))
         elif client_user and (client_user.is_superuser or (hasattr(client_user, "profile") and client_user.profile.role == "admin")):
             products_qs = Product.objects.all()
             customers_qs = Customer.objects.all()
@@ -746,6 +751,7 @@ class SyncPullView(views.APIView):
                 "branch_name": inv.branch_name,
                 "customer_name": inv.customer_name,
                 "customer_phone": inv.customer_phone,
+                "customer_address": inv.customer_address,
                 "subtotal": str(inv.subtotal),
                 "tax_amount": str(inv.tax_amount),
                 "discount_amount": str(inv.discount_amount),

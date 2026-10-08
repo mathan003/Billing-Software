@@ -69,6 +69,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "customer",
             "customer_name",
             "customer_phone",
+            "customer_address",
             "subtotal",
             "tax_amount",
             "discount_amount",
@@ -99,6 +100,7 @@ class SyncInvoicePayloadSerializer(serializers.Serializer):
     invoice_number = serializers.CharField(max_length=50)
     customer_name = serializers.CharField(max_length=150, default="Cash Customer")
     customer_phone = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
+    customer_address = serializers.CharField(required=False, allow_blank=True, default="")
     customer_email = serializers.EmailField(required=False, allow_blank=True, default="")
     subtotal = serializers.DecimalField(max_digits=12, decimal_places=2)
     tax_amount = serializers.DecimalField(max_digits=12, decimal_places=2, default=0.00)

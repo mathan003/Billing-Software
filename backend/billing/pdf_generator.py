@@ -249,12 +249,16 @@ def generate_invoice_pdf(invoice, client_profile=None):
     y += 30
 
     # 5. Customer Details Box
-    cust_box = pymupdf.Rect(15, y, page_width - 15, y + 42)
+    cust_addr = getattr(invoice, "customer_address", "") or (invoice.customer.address if invoice.customer else "")
+    cust_box_h = 52 if cust_addr else 42
+    cust_box = pymupdf.Rect(15, y, page_width - 15, y + cust_box_h)
     page.draw_rect(cust_box, color=color_border, width=0.8, fill=(0.98, 0.99, 1.0))
 
-    _safe_insert_text(page, pymupdf.Point(22, y + 16), f"Customer: {invoice.customer_name}", fontsize=9.5, fontname="helv", color=color_dark)
+    _safe_insert_text(page, pymupdf.Point(22, y + 15), f"Customer: {invoice.customer_name}", fontsize=9.5, fontname="helv", color=color_dark)
     cust_phone_str = f"Phone: {invoice.customer_phone}" if invoice.customer_phone else "Phone: N/A"
-    _safe_insert_text(page, pymupdf.Point(22, y + 32), cust_phone_str, fontsize=8.5, fontname="helv", color=color_muted)
+    _safe_insert_text(page, pymupdf.Point(22, y + 29), cust_phone_str, fontsize=8.5, fontname="helv", color=color_muted)
+    if cust_addr:
+        _safe_insert_text(page, pymupdf.Point(22, y + 43), f"Address: {cust_addr[:42]}", fontsize=8, fontname="helv", color=color_muted)
 
     status_str = f"Status: {invoice.payment_status.upper()}"
     status_col = color_success if invoice.payment_status == "Paid" else color_danger
@@ -279,7 +283,7 @@ def generate_invoice_pdf(invoice, client_profile=None):
             color=color_muted,
             align=pymupdf.TEXT_ALIGN_RIGHT
         )
-    y += 48
+    y += (cust_box_h + 6)
 
     # 6. Table Header
     th_rect = pymupdf.Rect(15, y, page_width - 15, y + 20)

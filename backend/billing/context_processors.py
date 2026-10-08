@@ -105,7 +105,19 @@ def session_security_context(request):
     from .models import Customer, ProductCategory, Product
 
     today_date_str = timezone.now().strftime("%Y-%m-%d")
-    c_filter = Q(client=request.user) | Q(client__isnull=True) if not is_admin else Q()
+    c_filter = Q(client=request.user) if not is_admin else Q()
+    if request.user.is_authenticated and not is_admin:
+        try:
+            if not ProductCategory.objects.filter(client=request.user).exists():
+                initial_cats = [
+                    "General", "Grocery", "Fruits", "Vegetables",
+                    "Snacks", "Beverages", "Dairy", "Spices",
+                    "Stationery", "Electronics"
+                ]
+                for c_name in initial_cats:
+                    ProductCategory.objects.get_or_create(name=c_name, client=request.user)
+        except Exception:
+            pass
     try:
         global_customers = Customer.objects.filter(c_filter).order_by("name")
     except Exception:

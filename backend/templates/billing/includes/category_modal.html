@@ -87,7 +87,7 @@
                                             </div>
                                         </div>
                                         {% if not item.is_default %}
-                                        <form method="post" action="{% url 'billing:category_delete' %}" class="d-inline mb-0 category-delete-form" onsubmit="return confirm('Are you sure you want to remove category \'{{ item.name }}\'? {% if item.product_count > 0 %}{{ item.product_count }} product(s) will be moved to General.{% endif %}');">
+                                        <form method="post" action="{% url 'billing:category_delete' %}" class="d-inline mb-0 category-delete-form">
                                             {% csrf_token %}
                                             <input type="hidden" name="name" value="{{ item.name }}">
                                             <button type="submit" class="btn btn-outline-danger btn-sm py-1 px-2 rounded-pill fw-semibold" title="Remove {{ item.name }}">
@@ -287,6 +287,13 @@
                     return;
                 }
 
+                const btn = form.querySelector('button[type="submit"]');
+                const origBtnHtml = btn ? btn.innerHTML : "";
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+                }
+
                 const formData = new FormData(form);
                 fetch(form.action, {
                     method: "POST",
@@ -315,11 +322,27 @@
                             const total = modalEl.querySelectorAll(".category-row-item").length;
                             badge.innerText = `${total} Categories`;
                         }
+
+                        // Also update catalog count or category filter if on billing terminal
+                        if (typeof updateCategoryFilter === "function") {
+                            const termCat = document.getElementById("terminalCategorySelect");
+                            if (termCat && termCat.value.toLowerCase() === name.toLowerCase()) {
+                                updateCategoryFilter("");
+                            }
+                        }
                     } else {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = origBtnHtml;
+                        }
                         showCatModalAlert(data.message || "Failed to remove category", "danger");
                     }
                 })
-                .catch(() => {
+                .catch(err => {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = origBtnHtml;
+                    }
                     form.submit();
                 });
             });

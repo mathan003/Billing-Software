@@ -199,6 +199,7 @@ class SyncManager:
                     "invoice_number": inv.invoice_number,
                     "customer_name": inv.customer_name,
                     "customer_phone": inv.customer_phone or "",
+                    "customer_address": getattr(inv, "customer_address", "") or "",
                     "subtotal": str(inv.subtotal),
                     "tax_amount": str(inv.tax_amount),
                     "discount_amount": str(inv.discount_amount),
@@ -540,9 +541,14 @@ class SyncManager:
                 # 3.5. Synchronize Categories locally
                 cloud_categories = data.get("categories", [])
                 from billing.models import ProductCategory
-                for c_name in cloud_categories:
-                    if c_name and c_name.strip():
-                        ProductCategory.objects.get_or_create(name=c_name.strip())
+                if client_user:
+                    for c_name in cloud_categories:
+                        if c_name and c_name.strip():
+                            ProductCategory.objects.get_or_create(name=c_name.strip(), client=client_user)
+                    if cloud_categories:
+                        ProductCategory.objects.filter(client=client_user).exclude(name__iexact="General").filter(
+                            ~Q(name__in=cloud_categories)
+                        ).delete()
 
                 # 4. Update products locally without touching existing invoice records
                 for p_data in products:
@@ -551,6 +557,7 @@ class SyncManager:
                         continue
                     prod, created = Product.objects.get_or_create(
                         sku=sku,
+                        client=client_user,
                         defaults={
                             "client": client_user,
                             "name": p_data.get("name", ""),
@@ -626,6 +633,7 @@ class SyncManager:
                             customer=c_match,
                             customer_name=inv_data.get("customer_name", "Cash Customer"),
                             customer_phone=cust_phone,
+                            customer_address=inv_data.get("customer_address", ""),
                             subtotal=Decimal(str(inv_data.get("subtotal", "0.00"))),
                             tax_amount=Decimal(str(inv_data.get("tax_amount", "0.00"))),
                             discount_amount=Decimal(str(inv_data.get("discount_amount", "0.00"))),

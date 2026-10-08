@@ -656,5 +656,19 @@ class SoftwareUpdate(models.Model):
 
     @classmethod
     def get_latest_update(cls):
-        return cls.objects.filter(is_published=True).order_by("-created_at").first()
+        try:
+            from .version import APP_VERSION, APP_TITLE, APP_RELEASE_NOTES
+            latest = cls.objects.filter(is_published=True).order_by("-created_at").first()
+            if not latest or latest.version != APP_VERSION:
+                latest, _ = cls.objects.update_or_create(
+                    version=APP_VERSION,
+                    defaults={
+                        "title": APP_TITLE,
+                        "release_notes": APP_RELEASE_NOTES,
+                        "is_published": True,
+                    }
+                )
+            return latest
+        except Exception:
+            return cls.objects.filter(is_published=True).order_by("-created_at").first()
 

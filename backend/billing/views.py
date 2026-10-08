@@ -3787,15 +3787,21 @@ def client_apply_software_update(request):
     version = latest.version if latest else "v2.5.0"
     request.session["applied_update_version"] = version
 
-    is_desktop = os.getenv("IS_DESKTOP_APP") == "True"
+    is_desktop = os.getenv("IS_DESKTOP_APP") == "True" or is_desktop_environment(request)
     restarting = False
     if is_desktop:
         try:
-            from auto_updater import get_auto_updater
+            try:
+                from auto_updater import get_auto_updater
+            except ImportError:
+                from windows_app.auto_updater import get_auto_updater
             updater = get_auto_updater()
-            if updater and updater.is_update_ready():
-                restarting = True
-                updater.schedule_restart()
+            if updater:
+                if updater.is_update_ready():
+                    restarting = True
+                    updater.schedule_restart()
+                else:
+                    updater.trigger_check()
         except Exception:
             pass
 

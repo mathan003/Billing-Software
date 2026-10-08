@@ -3,12 +3,12 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.5.1"
-APP_TITLE = "MathanHub Cloud & POS Synchronized Update"
+APP_VERSION = "v2.5.2"
+APP_TITLE = "MathanHub Multi-Terminal Sync & Software Update"
 APP_RELEASE_NOTES = (
-    "• Automatic Synchronized Updates for Website and Windows Desktop POS\n"
-    "• Simultaneous cloud deploy & desktop background auto-update\n"
-    "• Bi-directional real-time bill and stock synchronization\n"
-    "• Customer footfall and visit analytics in side section\n"
+    "• Real-time multi-device concurrent active terminal tracking (Client 2/2)\n"
+    "• Instant administrator device quota controls and live synchronization\n"
+    "• Client profile Software Update button with Update and Not Update controls\n"
+    "• Automated background auto-updater for client desktop terminals\n"
     "• Zero data-loss guarantees: Client settings, bills, and databases preserved 100%"
 )

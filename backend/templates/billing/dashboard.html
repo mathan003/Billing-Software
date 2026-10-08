@@ -34,11 +34,6 @@
                 <i class="fa-solid fa-shield-halved"></i>
                 <span>Admin Panel (நிர்வாகம்)</span>
             </a>
-        {% else %}
-            <button type="button" class="btn btn-outline-danger fw-bold px-3 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#adminUnlockModal" title="Unlock Admin Panel using Admin Password">
-                <i class="fa-solid fa-lock text-danger"></i>
-                <span>Admin Panel (நிர்வாகம்)</span>
-            </button>
         {% endif %}
         <a href="{% url 'billing:billing_page' %}{{ sec_param }}" class="btn btn-warning fw-bold px-3 py-2 rounded-3 shadow-sm text-dark d-flex align-items-center gap-2">
             <i class="fa-solid fa-bolt"></i>

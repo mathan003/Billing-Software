@@ -3,13 +3,12 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.5.4"
-APP_TITLE = "MathanHub EXE Admin Panel Direct Access & Terminal Switch"
+APP_VERSION = "v2.5.5"
+APP_TITLE = "MathanHub Strict Client Isolation & Admin Panel Security"
 APP_RELEASE_NOTES = (
-    "• Direct Admin Panel access enabled in Desktop POS (EXE) top navigation bar\n"
-    "• Fast Admin Unlock Modal: Open Admin Panel from client terminal using admin credentials\n"
-    "• One-click Admin Login & Panel button on desktop login screen\n"
-    "• 1-Click POS Billing return button from Admin Panel\n"
-    "• Fixed client data wipe bug when administrator logs in or unlocks terminal\n"
-    "• Full multi-terminal synchronization & 2 active admin devices for Mathan003"
+    "• Removed Admin Login button from login screen on both Web and Desktop EXE\n"
+    "• Completely removed Admin Panel button from Client home page (Dashboard) & navbar\n"
+    "• Client terminals strictly blocked from viewing or accessing the Admin Panel\n"
+    "• Admin Panel navigation exclusively visible and accessible to Administrator (Mathan003)\n"
+    "• Multi-device synchronization & 2 active admin devices preserved"
 )

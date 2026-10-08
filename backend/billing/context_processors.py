@@ -119,19 +119,19 @@ def session_security_context(request):
         except Exception:
             pass
     try:
-        global_customers = Customer.objects.filter(c_filter).order_by("name")
+        global_customers = Customer.objects.filter(c_filter, is_deleted=False).order_by("name")
     except Exception:
         global_customers = []
 
     global_categories = []
     global_category_list_data = []
     try:
-        prod_cats = set(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True))
+        prod_cats = set(Product.objects.filter(c_filter, is_active=True, is_deleted=False).exclude(category="").values_list("category", flat=True))
         saved_cats = set(ProductCategory.objects.filter(c_filter).exclude(name="").values_list("name", flat=True))
         all_cats = {"General"} | prod_cats | saved_cats
         global_categories = sorted([c.strip() for c in all_cats if c and c.strip()])
         cat_counts_map = dict(
-            Product.objects.filter(c_filter, is_active=True)
+            Product.objects.filter(c_filter, is_active=True, is_deleted=False)
             .values("category")
             .annotate(cnt=Count("id"))
             .values_list("category", "cnt")
@@ -146,6 +146,19 @@ def session_security_context(request):
         ]
     except Exception:
         pass
+
+    recycle_bin_count = 0
+    if request.user.is_authenticated:
+        try:
+            from .models import Invoice, SavedReport
+            recycle_bin_count = (
+                Invoice.objects.filter(c_filter, is_deleted=True).count() +
+                Customer.objects.filter(c_filter, is_deleted=True).count() +
+                Product.objects.filter(c_filter, is_deleted=True).count() +
+                SavedReport.objects.filter(c_filter, is_deleted=True).count()
+            )
+        except Exception:
+            pass
 
     return {
         "sec_token": sec_token,
@@ -167,6 +180,7 @@ def session_security_context(request):
         "active_account_number": account_number,
         "active_ifsc_code": ifsc_code,
         "business_type": business_type,
+        "recycle_bin_count": recycle_bin_count,
         "global_customers": global_customers,
         "global_categories": global_categories,
         "global_category_list_data": global_category_list_data,

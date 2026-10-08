@@ -89,6 +89,9 @@ def generate_invoice_pdf(invoice, client_profile=None):
     ifsc_code = company.ifsc_code or "N/A"
     shop_gst = getattr(company, "gst_number", "").strip()
 
+    if not client_profile and invoice.client and hasattr(invoice.client, "profile"):
+        client_profile = invoice.client.profile
+
     if client_profile:
         # If client has not provided GST, GST is empty and not mandatory
         shop_gst = getattr(client_profile, "gst_number", "").strip()
@@ -112,8 +115,52 @@ def generate_invoice_pdf(invoice, client_profile=None):
             ifsc_code = client_profile.ifsc_code
 
     item_count = invoice.items.count()
-    page_width = 440
-    page_height = max(680, 500 + (item_count * 26))
+
+    # Dynamic Paper Dimensions (selectable width, auto-adjusting height, auto-expansion for longer bills)
+    paper_width_mm = float(getattr(client_profile, "effective_paper_width_mm", 80.0) if client_profile else 80.0)
+    paper_height_mode = getattr(client_profile, "print_paper_height_mode", "auto") if client_profile else "auto"
+    paper_height_mm = float(getattr(client_profile, "effective_paper_height_mm", 210.0) or 210.0) if client_profile else 210.0
+    auto_expand = getattr(client_profile, "print_auto_expand_height", True) if client_profile else True
+
+    # 1 mm ≈ 2.83465 points
+    page_width = max(160.0, paper_width_mm * 2.83465)
+
+    # Dynamic layout scaling factors based on page width
+    margin = 8.0 if page_width < 210 else (12.0 if page_width <= 340 else 20.0)
+    avail_w = page_width - (2 * margin)
+
+    # Font scale
+    if page_width < 210:  # 58mm Thermal
+        fs_title, fs_head, fs_body, fs_small, fs_total = 11.0, 10.0, 7.5, 6.5, 9.5
+        row_h = 16.0
+    elif page_width <= 340: # 80mm - 100mm Thermal
+        fs_title, fs_head, fs_body, fs_small, fs_total = 13.0, 11.5, 8.5, 7.5, 11.0
+        row_h = 19.0
+    else: # A5 & A4
+        fs_title, fs_head, fs_body, fs_small, fs_total = 15.0, 13.0, 9.5, 8.5, 12.5
+        row_h = 22.0
+
+    # Calculate exact needed height dynamically based on content (no unnecessary blank space)
+    cust_addr = getattr(invoice, "customer_address", "") or (invoice.customer.address if invoice.customer else "")
+    cust_box_h = (48 if page_width < 210 else 52) if cust_addr else (38 if page_width < 210 else 42)
+    header_approx = 105 if page_width < 210 else (125 if page_width <= 340 else 145)
+    table_approx = 22 + (item_count * row_h)
+    totals_approx = 95 if page_width < 210 else 115
+    bank_approx = 45 if page_width < 210 else 52
+    footer_approx = 35
+
+    exact_needed_height = header_approx + 24 + cust_box_h + table_approx + totals_approx + bank_approx + footer_approx + 20
+
+    if paper_height_mode == "auto":
+        page_height = max(260.0, exact_needed_height)
+    else:
+        fixed_pt = paper_height_mm * 2.83465
+        if auto_expand:
+            # Automatically support longer paper size when bill contains more items so nothing is cut off
+            page_height = max(fixed_pt, exact_needed_height)
+        else:
+            page_height = fixed_pt
+
     doc = pymupdf.open()
     page = doc.new_page(width=page_width, height=page_height)
 
@@ -130,260 +177,268 @@ def generate_invoice_pdf(invoice, client_profile=None):
     wm_bytes = _get_image_bytes(company.watermark_base64 or shop_logo_b64)
     if wm_bytes:
         try:
-            wm_rect = pymupdf.Rect((page_width - 200) / 2, (page_height - 200) / 2, (page_width + 200) / 2, (page_height + 200) / 2)
+            wm_dim = min(page_width * 0.6, 200)
+            wm_rect = pymupdf.Rect((page_width - wm_dim) / 2, (page_height - wm_dim) / 2, (page_width + wm_dim) / 2, (page_height + wm_dim) / 2)
             page.insert_image(wm_rect, stream=wm_bytes, keep_proportion=True, overlay=False)
         except Exception:
             pass
 
-    y = 12
+    y = 10 if page_width < 210 else 12
 
     # 2. Centered Top Title: 'Invoice' (underlined)
     _safe_insert_textbox(
         page,
-        pymupdf.Rect(0, y, page_width, y + 20),
+        pymupdf.Rect(0, y, page_width, y + 18),
         "Invoice",
-        fontsize=15,
+        fontsize=fs_title,
         fontname="helv",
         color=color_dark,
         align=pymupdf.TEXT_ALIGN_CENTER
     )
-    # Underline below 'Invoice'
-    page.draw_line(pymupdf.Point(page_width / 2 - 28, y + 18), pymupdf.Point(page_width / 2 + 28, y + 18), color=color_dark, width=1.2)
-    y += 28
+    underline_w = 22 if page_width < 210 else 28
+    page.draw_line(pymupdf.Point(page_width / 2 - underline_w, y + 16), pymupdf.Point(page_width / 2 + underline_w, y + 16), color=color_dark, width=1.1)
+    y += (22 if page_width < 210 else 26)
 
     # 3. Header: Left = Shop Name & Address, Right = Shop Logo
     logo_bytes = _get_image_bytes(shop_logo_b64)
-    logo_width = 85
-    if logo_bytes:
+    logo_w = min(avail_w * 0.26, 75.0) if logo_bytes else 0
+    if logo_bytes and logo_w > 0:
         try:
-            logo_rect = pymupdf.Rect(page_width - 20 - logo_width, y, page_width - 20, y + 70)
+            logo_rect = pymupdf.Rect(page_width - margin - logo_w, y, page_width - margin, y + 55)
             page.insert_image(logo_rect, stream=logo_bytes, keep_proportion=True)
         except Exception:
             pass
 
-    text_right_bound = page_width - 115 if logo_bytes else page_width - 20
+    text_right_bound = page_width - margin - (logo_w + 6) if logo_bytes else page_width - margin
 
     # Shop Name (Bold Large)
     _safe_insert_textbox(
         page,
-        pymupdf.Rect(20, y, text_right_bound, y + 20),
+        pymupdf.Rect(margin, y, text_right_bound, y + 18),
         shop_name,
-        fontsize=13.5,
+        fontsize=fs_head,
         fontname="helv",
         color=color_dark,
         align=pymupdf.TEXT_ALIGN_LEFT
     )
-    y += 20
+    y += (16 if page_width < 210 else 18)
 
     # Address Lines
     addr_lines = [line.strip() for line in shop_address.replace("\r\n", "\n").split("\n") if line.strip()]
     if not addr_lines:
         addr_lines = ["Commercial Complex, Main Road"]
 
-    for al in addr_lines[:3]:
+    for al in addr_lines[:2]:
         _safe_insert_textbox(
             page,
-            pymupdf.Rect(20, y, text_right_bound, y + 14),
+            pymupdf.Rect(margin, y, text_right_bound, y + 12),
             al,
-            fontsize=8.5,
+            fontsize=fs_small,
             fontname="helv",
             color=color_muted
         )
-        y += 13
+        y += (11 if page_width < 210 else 12)
 
-    # Email & Phone & GSTIN
-    if shop_email:
-        _safe_insert_textbox(
-            page,
-            pymupdf.Rect(20, y, text_right_bound, y + 14),
-            f"Email  : {shop_email}",
-            fontsize=8.5,
-            fontname="helv",
-            color=color_dark
-        )
-        y += 13
+    # Email & GSTIN
+    if shop_email and page_width >= 210:
+        _safe_insert_textbox(page, pymupdf.Rect(margin, y, text_right_bound, y + 12), f"Email  : {shop_email}", fontsize=fs_small, fontname="helv", color=color_dark)
+        y += 12
 
     if shop_gst:
-        _safe_insert_textbox(
-            page,
-            pymupdf.Rect(20, y, text_right_bound, y + 14),
-            f"GSTIN  : {shop_gst}",
-            fontsize=8.5,
-            fontname="helv",
-            color=color_dark
-        )
-        y += 13
+        _safe_insert_textbox(page, pymupdf.Rect(margin, y, text_right_bound, y + 12), f"GSTIN  : {shop_gst}", fontsize=fs_small, fontname="helv", color=color_dark)
+        y += (11 if page_width < 210 else 12)
 
     if shop_phone:
-        # Green highlighted or clean box per user image
-        page.draw_rect(pymupdf.Rect(18, y, 220, y + 16), color=(0.10, 0.45, 0.20), width=0.8)
+        phone_box_w = min(avail_w * 0.65, 180.0)
+        page.draw_rect(pymupdf.Rect(margin, y, margin + phone_box_w, y + 14), color=(0.10, 0.45, 0.20), width=0.8)
         _safe_insert_textbox(
             page,
-            pymupdf.Rect(22, y + 1, 218, y + 15),
+            pymupdf.Rect(margin + 4, y + 1, margin + phone_box_w - 2, y + 13),
             f"Phone : {shop_phone}",
-            fontsize=8.5,
+            fontsize=fs_small,
             fontname="helv",
             color=color_dark
         )
-        y += 20
+        y += 18
     else:
-        y += 8
+        y += 6
 
     # 4. Soft Blue Info Bar: Invoice Number on Left, Date on Right
-    bar_rect = pymupdf.Rect(15, y, page_width - 15, y + 24)
+    bar_h = 20 if page_width < 210 else 22
+    bar_rect = pymupdf.Rect(margin, y, page_width - margin, y + bar_h)
     page.draw_rect(bar_rect, color=None, fill=color_bar_bg)
 
-    inv_num_str = f"Invoice Number: {invoice.invoice_number}"
-    date_str = f"Date:    {invoice.created_at.strftime('%d.%m.%Y')}"
+    inv_num_str = f"Invoice: {invoice.invoice_number}"
+    date_str = f"Date: {invoice.created_at.strftime('%d.%m.%Y')}"
 
-    _safe_insert_text(page, pymupdf.Point(22, y + 16), inv_num_str, fontsize=9.5, fontname="helv", color=color_dark)
+    _safe_insert_text(page, pymupdf.Point(margin + 5, y + 14), inv_num_str, fontsize=fs_body, fontname="helv", color=color_dark)
     _safe_insert_textbox(
         page,
-        pymupdf.Rect(page_width - 180, y + 2, page_width - 22, y + 22),
+        pymupdf.Rect(page_width - 120 - margin, y + 1, page_width - margin - 5, y + (bar_h - 1)),
         date_str,
-        fontsize=9.5,
+        fontsize=fs_body,
         fontname="helv",
         color=color_dark,
         align=pymupdf.TEXT_ALIGN_RIGHT
     )
-    y += 30
+    y += (bar_h + 5)
 
     # 5. Customer Details Box
-    cust_addr = getattr(invoice, "customer_address", "") or (invoice.customer.address if invoice.customer else "")
-    cust_box_h = 52 if cust_addr else 42
-    cust_box = pymupdf.Rect(15, y, page_width - 15, y + cust_box_h)
+    cust_box = pymupdf.Rect(margin, y, page_width - margin, y + cust_box_h)
     page.draw_rect(cust_box, color=color_border, width=0.8, fill=(0.98, 0.99, 1.0))
 
-    _safe_insert_text(page, pymupdf.Point(22, y + 15), f"Customer: {invoice.customer_name}", fontsize=9.5, fontname="helv", color=color_dark)
+    _safe_insert_text(page, pymupdf.Point(margin + 6, y + 13), f"Customer: {invoice.customer_name}", fontsize=fs_body, fontname="helv", color=color_dark)
     cust_phone_str = f"Phone: {invoice.customer_phone}" if invoice.customer_phone else "Phone: N/A"
-    _safe_insert_text(page, pymupdf.Point(22, y + 29), cust_phone_str, fontsize=8.5, fontname="helv", color=color_muted)
+    _safe_insert_text(page, pymupdf.Point(margin + 6, y + 25), cust_phone_str, fontsize=fs_small, fontname="helv", color=color_muted)
     if cust_addr:
-        _safe_insert_text(page, pymupdf.Point(22, y + 43), f"Address: {cust_addr[:42]}", fontsize=8, fontname="helv", color=color_muted)
+        _safe_insert_text(page, pymupdf.Point(margin + 6, y + 37), f"Address: {cust_addr[:36]}", fontsize=fs_small, fontname="helv", color=color_muted)
 
     status_str = f"Status: {invoice.payment_status.upper()}"
     status_col = color_success if invoice.payment_status == "Paid" else color_danger
     _safe_insert_textbox(
         page,
-        pymupdf.Rect(page_width - 160, y + 6, page_width - 25, y + 22),
+        pymupdf.Rect(page_width - margin - 110, y + 4, page_width - margin - 6, y + 18),
         status_str,
-        fontsize=9,
+        fontsize=fs_small,
         fontname="helv",
         color=status_col,
         align=pymupdf.TEXT_ALIGN_RIGHT
     )
+    y += (cust_box_h + 5)
 
-    branch_str = f"Branch: {invoice.branch_name}" if invoice.branch_name else ""
-    if branch_str:
-        _safe_insert_textbox(
-            page,
-            pymupdf.Rect(page_width - 180, y + 22, page_width - 25, y + 38),
-            branch_str,
-            fontsize=8,
-            fontname="helv",
-            color=color_muted,
-            align=pymupdf.TEXT_ALIGN_RIGHT
-        )
-    y += (cust_box_h + 6)
-
-    # 6. Table Header
-    th_rect = pymupdf.Rect(15, y, page_width - 15, y + 20)
+    # 6. Table Header & Proportional Column Widths
+    th_h = 17 if page_width < 210 else 19
+    th_rect = pymupdf.Rect(margin, y, page_width - margin, y + th_h)
     page.draw_rect(th_rect, color=None, fill=(0.91, 0.94, 0.98))
 
-    _safe_insert_text(page, pymupdf.Point(20, y + 14), "#  Item Description", fontsize=8.5, fontname="helv", color=color_primary)
-    _safe_insert_textbox(page, pymupdf.Rect(200, y + 2, 235, y + 18), "Unit", fontsize=8.5, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_CENTER)
-    _safe_insert_textbox(page, pymupdf.Rect(235, y + 2, 275, y + 18), "Qty", fontsize=8.5, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_CENTER)
-    _safe_insert_textbox(page, pymupdf.Rect(275, y + 2, 335, y + 18), "Rate", fontsize=8.5, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
-    _safe_insert_textbox(page, pymupdf.Rect(335, y + 2, page_width - 20, y + 18), "Total", fontsize=8.5, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
+    if page_width < 210:  # 58mm compact (Item, Qty, Rate, Total)
+        col_item_w = avail_w * 0.46
+        col_qty_w = avail_w * 0.16
+        col_rate_w = avail_w * 0.18
+        c_item = margin + 3
+        c_qty = margin + col_item_w
+        c_rate = c_qty + col_qty_w
+        c_total = c_rate + col_rate_w
 
-    y += 22
+        _safe_insert_text(page, pymupdf.Point(c_item, y + 12), "Item", fontsize=fs_small, fontname="helv", color=color_primary)
+        _safe_insert_textbox(page, pymupdf.Rect(c_qty, y + 1, c_rate, y + th_h - 1), "Qty", fontsize=fs_small, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_CENTER)
+        _safe_insert_textbox(page, pymupdf.Rect(c_rate, y + 1, c_total, y + th_h - 1), "Rate", fontsize=fs_small, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
+        _safe_insert_textbox(page, pymupdf.Rect(c_total, y + 1, page_width - margin - 3, y + th_h - 1), "Total", fontsize=fs_small, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
+    else:  # 80mm, A5, A4 (Item Description, Unit, Qty, Rate, Total)
+        col_item_w = avail_w * 0.42
+        col_unit_w = avail_w * 0.12
+        col_qty_w = avail_w * 0.14
+        col_rate_w = avail_w * 0.15
+        c_item = margin + 4
+        c_unit = margin + col_item_w
+        c_qty = c_unit + col_unit_w
+        c_rate = c_qty + col_qty_w
+        c_total = c_rate + col_rate_w
+
+        _safe_insert_text(page, pymupdf.Point(c_item, y + 13), "#  Item Description", fontsize=fs_body, fontname="helv", color=color_primary)
+        _safe_insert_textbox(page, pymupdf.Rect(c_unit, y + 1, c_qty, y + th_h - 1), "Unit", fontsize=fs_body, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_CENTER)
+        _safe_insert_textbox(page, pymupdf.Rect(c_qty, y + 1, c_rate, y + th_h - 1), "Qty", fontsize=fs_body, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_CENTER)
+        _safe_insert_textbox(page, pymupdf.Rect(c_rate, y + 1, c_total, y + th_h - 1), "Rate", fontsize=fs_body, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
+        _safe_insert_textbox(page, pymupdf.Rect(c_total, y + 1, page_width - margin - 4, y + th_h - 1), "Total", fontsize=fs_body, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
+
+    y += (th_h + 1)
 
     # 7. Table Rows
     for idx, item in enumerate(invoice.items.all()):
         row_bg = (0.98, 0.99, 1.0) if idx % 2 == 0 else (1.0, 1.0, 1.0)
-        row_rect = pymupdf.Rect(15, y, page_width - 15, y + 20)
+        row_rect = pymupdf.Rect(margin, y, page_width - margin, y + row_h)
         page.draw_rect(row_rect, color=None, fill=row_bg)
 
-        item_str = f"{idx + 1}. {_clean_str(item.product_name)[:28]}"
-        _safe_insert_text(page, pymupdf.Point(20, y + 14), item_str, fontsize=8.5, fontname="helv", color=color_dark)
-        _safe_insert_textbox(page, pymupdf.Rect(200, y + 2, 235, y + 18), str(item.unit or "Pcs"), fontsize=8, fontname="helv", color=color_muted, align=pymupdf.TEXT_ALIGN_CENTER)
-        _safe_insert_textbox(page, pymupdf.Rect(235, y + 2, 275, y + 18), f"{item.quantity:.2f}".rstrip("0").rstrip("."), fontsize=8.5, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_CENTER)
-        _safe_insert_textbox(page, pymupdf.Rect(275, y + 2, 335, y + 18), f"{item.unit_price:.2f}", fontsize=8.5, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
-        _safe_insert_textbox(page, pymupdf.Rect(335, y + 2, page_width - 20, y + 18), f"{item.total_price:.2f}", fontsize=8.5, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
+        item_max_len = 16 if page_width < 210 else (28 if page_width <= 340 else 45)
+        item_str = f"{idx + 1}. {_clean_str(item.product_name)[:item_max_len]}"
 
-        y += 20
+        if page_width < 210:
+            _safe_insert_text(page, pymupdf.Point(c_item, y + row_h - 5), item_str, fontsize=fs_small, fontname="helv", color=color_dark)
+            _safe_insert_textbox(page, pymupdf.Rect(c_qty, y + 1, c_rate, y + row_h - 1), f"{item.quantity:.2f}".rstrip("0").rstrip("."), fontsize=fs_small, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_CENTER)
+            _safe_insert_textbox(page, pymupdf.Rect(c_rate, y + 1, c_total, y + row_h - 1), f"{item.unit_price:.2f}", fontsize=fs_small, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
+            _safe_insert_textbox(page, pymupdf.Rect(c_total, y + 1, page_width - margin - 3, y + row_h - 1), f"{item.total_price:.2f}", fontsize=fs_small, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
+        else:
+            _safe_insert_text(page, pymupdf.Point(c_item, y + row_h - 6), item_str, fontsize=fs_body, fontname="helv", color=color_dark)
+            _safe_insert_textbox(page, pymupdf.Rect(c_unit, y + 1, c_qty, y + row_h - 1), str(item.unit or "Pcs"), fontsize=fs_small, fontname="helv", color=color_muted, align=pymupdf.TEXT_ALIGN_CENTER)
+            _safe_insert_textbox(page, pymupdf.Rect(c_qty, y + 1, c_rate, y + row_h - 1), f"{item.quantity:.2f}".rstrip("0").rstrip("."), fontsize=fs_body, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_CENTER)
+            _safe_insert_textbox(page, pymupdf.Rect(c_rate, y + 1, c_total, y + row_h - 1), f"{item.unit_price:.2f}", fontsize=fs_body, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
+            _safe_insert_textbox(page, pymupdf.Rect(c_total, y + 1, page_width - margin - 4, y + row_h - 1), f"{item.total_price:.2f}", fontsize=fs_body, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
 
-    y += 6
-    page.draw_line(pymupdf.Point(15, y), pymupdf.Point(page_width - 15, y), color=color_border, width=0.8)
-    y += 10
+        y += row_h
+
+    y += 4
+    page.draw_line(pymupdf.Point(margin, y), pymupdf.Point(page_width - margin, y), color=color_border, width=0.8)
+    y += 8
 
     # 8. Totals Breakdown Section
-    box_total_left = 220
-    box_total_right = page_width - 22
+    box_total_left = max(margin, page_width - (avail_w * 0.65 if page_width >= 340 else avail_w * 0.90))
+    box_total_right = page_width - margin - 4
 
     # Subtotal
-    _safe_insert_text(page, pymupdf.Point(box_total_left, y + 10), "Subtotal:", fontsize=8.5, fontname="helv", color=color_muted)
-    _safe_insert_textbox(page, pymupdf.Rect(290, y, box_total_right, y + 14), f"Rs. {invoice.subtotal:.2f}", fontsize=8.5, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
-    y += 15
+    _safe_insert_text(page, pymupdf.Point(box_total_left, y + 9), "Subtotal:", fontsize=fs_small, fontname="helv", color=color_muted)
+    _safe_insert_textbox(page, pymupdf.Rect(box_total_left + 60, y, box_total_right, y + 13), f"Rs. {invoice.subtotal:.2f}", fontsize=fs_body, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
+    y += 14
 
-    # Tax (if any and only if shop has registered GST)
+    # Tax (if any)
     if invoice.tax_amount > Decimal("0.00") and shop_gst:
-        _safe_insert_text(page, pymupdf.Point(box_total_left, y + 10), "Tax / GST:", fontsize=8.5, fontname="helv", color=color_muted)
-        _safe_insert_textbox(page, pymupdf.Rect(290, y, box_total_right, y + 14), f"Rs. {invoice.tax_amount:.2f}", fontsize=8.5, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
-        y += 15
+        _safe_insert_text(page, pymupdf.Point(box_total_left, y + 9), "Tax / GST:", fontsize=fs_small, fontname="helv", color=color_muted)
+        _safe_insert_textbox(page, pymupdf.Rect(box_total_left + 60, y, box_total_right, y + 13), f"Rs. {invoice.tax_amount:.2f}", fontsize=fs_body, fontname="helv", color=color_dark, align=pymupdf.TEXT_ALIGN_RIGHT)
+        y += 14
 
-    # Discount / Offer (if any)
+    # Discount (if any)
     if invoice.discount_amount > Decimal("0.00"):
-        _safe_insert_text(page, pymupdf.Point(box_total_left, y + 10), "Discount / Offer:", fontsize=8.5, fontname="helv", color=color_success)
-        _safe_insert_textbox(page, pymupdf.Rect(290, y, box_total_right, y + 14), f"- Rs. {invoice.discount_amount:.2f}", fontsize=8.5, fontname="helv", color=color_success, align=pymupdf.TEXT_ALIGN_RIGHT)
-        y += 15
+        _safe_insert_text(page, pymupdf.Point(box_total_left, y + 9), "Discount:", fontsize=fs_small, fontname="helv", color=color_success)
+        _safe_insert_textbox(page, pymupdf.Rect(box_total_left + 60, y, box_total_right, y + 13), f"- Rs. {invoice.discount_amount:.2f}", fontsize=fs_body, fontname="helv", color=color_success, align=pymupdf.TEXT_ALIGN_RIGHT)
+        y += 14
 
     # Grand Total Highlight
-    gt_rect = pymupdf.Rect(box_total_left - 10, y, page_width - 15, y + 24)
+    gt_h = 20 if page_width < 210 else 22
+    gt_rect = pymupdf.Rect(box_total_left - 6, y, page_width - margin, y + gt_h)
     page.draw_rect(gt_rect, color=None, fill=(0.92, 0.95, 1.0))
-    _safe_insert_text(page, pymupdf.Point(box_total_left, y + 16), "GRAND TOTAL:", fontsize=10, fontname="helv", color=color_primary)
-    _safe_insert_textbox(page, pymupdf.Rect(280, y + 2, box_total_right, y + 22), f"Rs. {invoice.grand_total:.2f}", fontsize=12, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
-    y += 28
+    _safe_insert_text(page, pymupdf.Point(box_total_left, y + (gt_h - 6)), "GRAND TOTAL:", fontsize=fs_body, fontname="helv", color=color_primary)
+    _safe_insert_textbox(page, pymupdf.Rect(box_total_left + 60, y + 2, box_total_right, y + gt_h - 2), f"Rs. {invoice.grand_total:.2f}", fontsize=fs_total, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
+    y += (gt_h + 4)
 
     # Customer Paid
-    _safe_insert_text(page, pymupdf.Point(box_total_left, y + 10), "Customer Paid:", fontsize=9, fontname="helv", color=color_success)
-    _safe_insert_textbox(page, pymupdf.Rect(280, y, box_total_right, y + 14), f"Rs. {invoice.paid_amount:.2f}", fontsize=9, fontname="helv", color=color_success, align=pymupdf.TEXT_ALIGN_RIGHT)
-    y += 16
+    _safe_insert_text(page, pymupdf.Point(box_total_left, y + 9), "Paid:", fontsize=fs_small, fontname="helv", color=color_success)
+    _safe_insert_textbox(page, pymupdf.Rect(box_total_left + 60, y, box_total_right, y + 13), f"Rs. {invoice.paid_amount:.2f}", fontsize=fs_body, fontname="helv", color=color_success, align=pymupdf.TEXT_ALIGN_RIGHT)
+    y += 14
 
     # Balance Due
     bal_col = color_danger if invoice.balance_amount > Decimal("0.00") else color_muted
-    _safe_insert_text(page, pymupdf.Point(box_total_left, y + 10), "Pending Balance Due:", fontsize=9, fontname="helv", color=bal_col)
-    _safe_insert_textbox(page, pymupdf.Rect(280, y, box_total_right, y + 14), f"Rs. {invoice.balance_amount:.2f}", fontsize=9.5, fontname="helv", color=bal_col, align=pymupdf.TEXT_ALIGN_RIGHT)
-    y += 26
+    _safe_insert_text(page, pymupdf.Point(box_total_left, y + 9), "Balance Due:", fontsize=fs_small, fontname="helv", color=bal_col)
+    _safe_insert_textbox(page, pymupdf.Rect(box_total_left + 60, y, box_total_right, y + 13), f"Rs. {invoice.balance_amount:.2f}", fontsize=fs_body, fontname="helv", color=bal_col, align=pymupdf.TEXT_ALIGN_RIGHT)
+    y += 20
 
     # 9. Shop's Bank Account Details Box at bottom of bill (Per Requirement)
-    bank_box = pymupdf.Rect(15, y, page_width - 15, y + 48)
+    bank_h = 42 if page_width < 210 else 46
+    bank_box = pymupdf.Rect(margin, y, page_width - margin, y + bank_h)
     page.draw_rect(bank_box, color=(0.78, 0.84, 0.92), width=0.8, fill=(0.96, 0.98, 1.0))
 
-    _safe_insert_text(page, pymupdf.Point(24, y + 15), "BANK ACCOUNT DETAILS FOR PAYMENT:", fontsize=8.5, fontname="helv", color=color_primary)
-    _safe_insert_text(page, pymupdf.Point(24, y + 30), f"Bank Name: {bank_name}  |  A/C: {account_number}", fontsize=8, fontname="helv", color=color_dark)
-    _safe_insert_text(page, pymupdf.Point(24, y + 42), f"IFSC Code: {ifsc_code}  |  Pay Mode: {invoice.payment_method}", fontsize=8, fontname="helv", color=color_muted)
-
-    y += 56
+    _safe_insert_text(page, pymupdf.Point(margin + 6, y + 12), "BANK ACCOUNT PAYMENT DETAILS:", fontsize=fs_small, fontname="helv", color=color_primary)
+    _safe_insert_text(page, pymupdf.Point(margin + 6, y + 24), f"Bank: {bank_name}  |  A/C: {account_number}", fontsize=fs_small, fontname="helv", color=color_dark)
+    _safe_insert_text(page, pymupdf.Point(margin + 6, y + 36), f"IFSC: {ifsc_code}  |  Pay Mode: {invoice.payment_method}", fontsize=fs_small, fontname="helv", color=color_muted)
+    y += (bank_h + 8)
 
     # 10. Footer Sign-off
-    page.draw_line(pymupdf.Point(30, y), pymupdf.Point(page_width - 30, y), color=color_border, width=0.5)
-    y += 12
+    page.draw_line(pymupdf.Point(margin + 15, y), pymupdf.Point(page_width - margin - 15, y), color=color_border, width=0.5)
+    y += 10
     _safe_insert_textbox(
         page,
-        pymupdf.Rect(0, y, page_width, y + 14),
+        pymupdf.Rect(0, y, page_width, y + 12),
         "Thank you for your business! Visit again.",
-        fontsize=8.5,
+        fontsize=fs_small,
         fontname="helv",
         color=color_muted,
         align=pymupdf.TEXT_ALIGN_CENTER
     )
-    y += 12
+    y += 11
     inv_label = "Tax Invoice" if (invoice.tax_amount > Decimal("0.00") and shop_gst) else "Invoice"
     _safe_insert_textbox(
         page,
-        pymupdf.Rect(0, y, page_width, y + 12),
+        pymupdf.Rect(0, y, page_width, y + 11),
         f"Computer Generated {inv_label} - {shop_name}",
-        fontsize=7.5,
+        fontsize=fs_small - 0.5,
         fontname="helv",
         color=color_border,
         align=pymupdf.TEXT_ALIGN_CENTER

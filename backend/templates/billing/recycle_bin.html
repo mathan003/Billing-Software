@@ -1,0 +1,298 @@
+{% extends "billing/base.html" %}
+
+{% block title %}Deleted Items / Recycle Bin (3-Day Recovery) - MathanHub{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- Header Card -->
+    <div class="col-12">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 p-3 bg-white rounded-4 shadow-sm border">
+            <div class="d-flex align-items-center gap-3">
+                <div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width: 50px; height: 50px; background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);">
+                    <i class="fa-solid fa-trash-can fa-lg"></i>
+                </div>
+                <div>
+                    <h4 class="fw-bold mb-0 text-dark">Deleted Items / Recycle Bin (குப்பைத்தொட்டி)</h4>
+                    <p class="text-muted small mb-0">
+                        Items deleted by clients or admin remain safely recoverable here for <strong>3 days (72 hours)</strong>. 
+                        After 3 days, expired items are permanently purged. Deleted items never affect active bills, reports, or business data.
+                    </p>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-info-subtle text-info border border-info-subtle px-3 py-2 rounded-pill fs-6">
+                    <i class="fa-solid fa-clock-rotate-left me-1"></i> 3-Day Recovery Window
+                </span>
+                {% if total_deleted > 0 %}
+                    <form method="POST" action="{% url 'billing:recycle_bin_empty' %}" onsubmit="return confirm('Are you sure you want to permanently delete ALL items in the Recycle Bin? This action CANNOT be undone.');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-3 py-2 fw-semibold shadow-sm">
+                            <i class="fa-solid fa-trash me-1"></i> Empty Recycle Bin (முழுவதும் காலியாக்கு)
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Tabs & Stats -->
+    <div class="col-12">
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-header bg-white border-bottom pt-3 px-4 pb-0">
+                <ul class="nav nav-tabs border-bottom-0 gap-2" id="recycleTabs" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'all' %}active fw-bold text-danger border-danger border-bottom-0{% else %}text-secondary{% endif %}" href="?tab=all">
+                            <i class="fa-solid fa-boxes-stacked me-1"></i> All Deleted ({{ total_deleted }})
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'invoices' %}active fw-bold text-danger border-danger border-bottom-0{% else %}text-secondary{% endif %}" href="?tab=invoices">
+                            <i class="fa-solid fa-file-invoice me-1"></i> Deleted Bills / Invoices ({{ invoices_count }})
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'customers' %}active fw-bold text-danger border-danger border-bottom-0{% else %}text-secondary{% endif %}" href="?tab=customers">
+                            <i class="fa-solid fa-address-book me-1"></i> Deleted Customers ({{ customers_count }})
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'products' %}active fw-bold text-danger border-danger border-bottom-0{% else %}text-secondary{% endif %}" href="?tab=products">
+                            <i class="fa-solid fa-boxes-stacked me-1"></i> Deleted Products ({{ products_count }})
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_tab == 'reports' %}active fw-bold text-danger border-danger border-bottom-0{% else %}text-secondary{% endif %}" href="?tab=reports">
+                            <i class="fa-solid fa-chart-line me-1"></i> Deleted Reports ({{ reports_count }})
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="card-body p-4">
+                {% if total_deleted == 0 %}
+                    <div class="text-center py-5">
+                        <div class="rounded-circle bg-light d-inline-flex align-items-center justify-content-center p-4 mb-3 border">
+                            <i class="fa-solid fa-trash-can fa-3x text-secondary opacity-50"></i>
+                        </div>
+                        <h5 class="fw-bold text-dark">Recycle Bin is Empty</h5>
+                        <p class="text-muted small mb-3">No deleted bills, customer data, products, or reports found in the 3-day recovery window.</p>
+                        <a href="{% url 'billing:dashboard' %}" class="btn btn-sm btn-primary-custom px-4 rounded-pill">
+                            <i class="fa-solid fa-arrow-left me-1"></i> Back to Dashboard
+                        </a>
+                    </div>
+                {% else %}
+                    <!-- Items List Table -->
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light text-secondary small">
+                                <tr>
+                                    <th scope="col" style="width: 140px;">Item Type</th>
+                                    <th scope="col">Title / Details</th>
+                                    <th scope="col">Amount / Info</th>
+                                    <th scope="col">Deleted On</th>
+                                    <th scope="col" style="width: 200px;">Recovery Expiry</th>
+                                    <th scope="col" class="text-end" style="width: 220px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Invoices -->
+                                {% if active_tab == 'all' or active_tab == 'invoices' %}
+                                    {% for item in deleted_invoices %}
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1">
+                                                    <i class="fa-solid fa-file-invoice me-1"></i> Bill / Invoice
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="fw-bold text-dark font-monospace">#{{ item.invoice_number }}</div>
+                                                <div class="small text-muted">
+                                                    Customer: <strong>{{ item.customer_name }}</strong> 
+                                                    {% if item.customer_phone %}({{ item.customer_phone }}){% endif %}
+                                                    {% if item.customer_address %}• <span class="text-truncate d-inline-block" style="max-width: 200px;">{{ item.customer_address }}</span>{% endif %}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="fw-bold text-primary">₹{{ item.grand_total|floatformat:2 }}</div>
+                                                <small class="text-muted">{{ item.items.count }} items • {{ item.payment_method }}</small>
+                                            </td>
+                                            <td>
+                                                <div class="small text-dark">{{ item.deleted_at|date:"d M Y, h:i A" }}</div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center gap-1">
+                                                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1 small">
+                                                        <i class="fa-solid fa-clock me-1"></i> {{ item.time_left_str }}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td class="text-end">
+                                                <div class="d-inline-flex gap-2">
+                                                    <form method="POST" action="{% url 'billing:recycle_bin_restore' 'invoice' item.id %}">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-success rounded-pill px-3 shadow-sm fw-semibold" title="Restore this bill back to active records">
+                                                            <i class="fa-solid fa-rotate-left me-1"></i> Restore (மீட்டெடு)
+                                                        </button>
+                                                    </form>
+                                                    <form method="POST" action="{% url 'billing:recycle_bin_permanent_delete' 'invoice' item.id %}" onsubmit="return confirm('Permanently delete Invoice #{{ item.invoice_number }}? This CANNOT be undone.');">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle shadow-sm" title="Permanently delete now" style="width: 32px; height: 32px;">
+                                                            <i class="fa-solid fa-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                {% endif %}
+
+                                <!-- Customers -->
+                                {% if active_tab == 'all' or active_tab == 'customers' %}
+                                    {% for item in deleted_customers %}
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1">
+                                                    <i class="fa-solid fa-address-book me-1"></i> Customer Data
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="fw-bold text-dark">{{ item.name }}</div>
+                                                <div class="small text-muted">
+                                                    Phone: {{ item.phone|default:"N/A" }} 
+                                                    {% if item.address %}• Address: {{ item.address }}{% endif %}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="small text-muted">
+                                                    Total Billed: <span class="fw-semibold text-dark">₹{{ item.total_billed|floatformat:2 }}</span>
+                                                </div>
+                                                {% if item.total_pending > 0 %}
+                                                    <small class="text-danger fw-semibold">Pending Due: ₹{{ item.total_pending|floatformat:2 }}</small>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="small text-dark">{{ item.deleted_at|date:"d M Y, h:i A" }}</div>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1 small">
+                                                    <i class="fa-solid fa-clock me-1"></i> {{ item.time_left_str }}
+                                                </span>
+                                            </td>
+                                            <td class="text-end">
+                                                <div class="d-inline-flex gap-2">
+                                                    <form method="POST" action="{% url 'billing:recycle_bin_restore' 'customer' item.id %}">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-success rounded-pill px-3 shadow-sm fw-semibold" title="Restore customer record">
+                                                            <i class="fa-solid fa-rotate-left me-1"></i> Restore
+                                                        </button>
+                                                    </form>
+                                                    <form method="POST" action="{% url 'billing:recycle_bin_permanent_delete' 'customer' item.id %}" onsubmit="return confirm('Permanently delete Customer {{ item.name }}? This CANNOT be undone.');">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle shadow-sm" title="Permanently delete now" style="width: 32px; height: 32px;">
+                                                            <i class="fa-solid fa-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                {% endif %}
+
+                                <!-- Products -->
+                                {% if active_tab == 'all' or active_tab == 'products' %}
+                                    {% for item in deleted_products %}
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1">
+                                                    <i class="fa-solid fa-box me-1"></i> Product Item
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="fw-bold text-dark">{{ item.display_name }}</div>
+                                                <div class="small text-muted font-monospace">SKU: {{ item.sku }} • Category: {{ item.category }}</div>
+                                            </td>
+                                            <td>
+                                                <div class="fw-bold text-dark">₹{{ item.price|floatformat:2 }}</div>
+                                                <small class="text-muted">Stock: {{ item.stock_quantity }} {{ item.unit }}</small>
+                                            </td>
+                                            <td>
+                                                <div class="small text-dark">{{ item.deleted_at|date:"d M Y, h:i A" }}</div>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1 small">
+                                                    <i class="fa-solid fa-clock me-1"></i> {{ item.time_left_str }}
+                                                </span>
+                                            </td>
+                                            <td class="text-end">
+                                                <div class="d-inline-flex gap-2">
+                                                    <form method="POST" action="{% url 'billing:recycle_bin_restore' 'product' item.id %}">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-success rounded-pill px-3 shadow-sm fw-semibold" title="Restore product item">
+                                                            <i class="fa-solid fa-rotate-left me-1"></i> Restore
+                                                        </button>
+                                                    </form>
+                                                    <form method="POST" action="{% url 'billing:recycle_bin_permanent_delete' 'product' item.id %}" onsubmit="return confirm('Permanently delete Product {{ item.display_name }}?');">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle shadow-sm" title="Permanently delete now" style="width: 32px; height: 32px;">
+                                                            <i class="fa-solid fa-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                {% endif %}
+
+                                <!-- Saved Reports -->
+                                {% if active_tab == 'all' or active_tab == 'reports' %}
+                                    {% for item in deleted_reports %}
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-secondary-subtle text-secondary border rounded-pill px-2 py-1">
+                                                    <i class="fa-solid fa-chart-line me-1"></i> Business Report
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="fw-bold text-dark">{{ item.report_name }}</div>
+                                                <div class="small text-muted">{{ item.date_range_label }} • {{ item.get_report_type_display }}</div>
+                                            </td>
+                                            <td>
+                                                <div class="fw-bold text-dark">₹{{ item.total_amount|floatformat:2 }}</div>
+                                                <small class="text-muted">{{ item.records_count }} records</small>
+                                            </td>
+                                            <td>
+                                                <div class="small text-dark">{{ item.deleted_at|date:"d M Y, h:i A" }}</div>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1 small">
+                                                    <i class="fa-solid fa-clock me-1"></i> {{ item.time_left_str }}
+                                                </span>
+                                            </td>
+                                            <td class="text-end">
+                                                <div class="d-inline-flex gap-2">
+                                                    <form method="POST" action="{% url 'billing:recycle_bin_restore' 'report' item.id %}">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-success rounded-pill px-3 shadow-sm fw-semibold" title="Restore report">
+                                                            <i class="fa-solid fa-rotate-left me-1"></i> Restore
+                                                        </button>
+                                                    </form>
+                                                    <form method="POST" action="{% url 'billing:recycle_bin_permanent_delete' 'report' item.id %}" onsubmit="return confirm('Permanently delete report {{ item.report_name }}?');">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle shadow-sm" title="Permanently delete now" style="width: 32px; height: 32px;">
+                                                            <i class="fa-solid fa-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

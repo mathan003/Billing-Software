@@ -15,7 +15,8 @@ from django.http import HttpResponse, JsonResponse
 from .models import (
     Product, ProductCategory, Customer, Invoice, InvoiceItem, Purchase,
     PaymentRecord, ActiveUserSession, RegisteredDevice, UserProfile, ActivityLog,
-    CompanySettings, Branch, StockLog, SoftwareUpdate, purge_old_customer_data, log_activity
+    CompanySettings, Branch, StockLog, SoftwareUpdate, purge_old_customer_data, log_activity,
+    SavedReport, purge_expired_deleted_items
 )
 from .device_utils import (
     get_hardware_device_id, get_desktop_pos_config, save_desktop_pos_config,
@@ -119,7 +120,7 @@ def get_available_categories(request):
             for c_name in initial_cats:
                 ProductCategory.objects.get_or_create(name=c_name, client=client_user)
 
-    prod_cats = set(Product.objects.filter(c_filter, is_active=True).exclude(category="").values_list("category", flat=True))
+    prod_cats = set(Product.objects.filter(c_filter, is_active=True, is_deleted=False).exclude(category="").values_list("category", flat=True))
     saved_cats = set(ProductCategory.objects.filter(c_filter).exclude(name="").values_list("name", flat=True))
     all_cats = {"General"} | prod_cats | saved_cats
     return sorted([c.strip() for c in all_cats if c and c.strip()])
@@ -660,12 +661,12 @@ def dashboard(request):
     b_filter = get_branch_filter(request)
 
     # 1. Today's Invoices & Total Sales scoped to client
-    today_invoices = Invoice.objects.filter(c_filter, created_at__date=today).select_related("customer", "branch").prefetch_related("items").order_by("-created_at")
+    today_invoices = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date=today).select_related("customer", "branch").prefetch_related("items").order_by("-created_at")
     today_sales = today_invoices.aggregate(Sum("grand_total"))["grand_total__sum"] or Decimal("0.00")
     today_bills_count = today_invoices.count()
 
     # 2. Customer Paid TODAY (replaces previous Total Buy!)
-    client_invoices_all = Invoice.objects.filter(c_filter)
+    client_invoices_all = Invoice.objects.filter(c_filter, is_deleted=False)
     today_payments = PaymentRecord.objects.filter(invoice__in=today_invoices).aggregate(Sum("amount"))["amount__sum"] or Decimal("0.00")
     if today_payments == Decimal("0.00") and today_invoices.exists():
         today_payments = today_invoices.aggregate(Sum("paid_amount"))["paid_amount__sum"] or Decimal("0.00")
@@ -679,14 +680,14 @@ def dashboard(request):
 
     # Total counts
     total_invoices_count = client_invoices_all.count()
-    low_stock_count = Product.objects.filter(c_filter, stock_quantity__lte=5, is_active=True).count()
+    low_stock_count = Product.objects.filter(c_filter, is_deleted=False, stock_quantity__lte=5, is_active=True).count()
 
     # 4. Pending Customers Breakdown (Customers who currently have pending payments)
-    pending_customers_qs = Customer.objects.filter(c_filter).annotate(
-        calc_pending=Sum("invoices__balance_amount"),
-        calc_billed=Sum("invoices__grand_total"),
-        calc_paid=Sum("invoices__paid_amount"),
-        due_bills_count=Count("invoices", filter=Q(invoices__balance_amount__gt=0))
+    pending_customers_qs = Customer.objects.filter(c_filter, is_deleted=False).annotate(
+        calc_pending=Sum("invoices__balance_amount", filter=Q(invoices__is_deleted=False)),
+        calc_billed=Sum("invoices__grand_total", filter=Q(invoices__is_deleted=False)),
+        calc_paid=Sum("invoices__paid_amount", filter=Q(invoices__is_deleted=False)),
+        due_bills_count=Count("invoices", filter=Q(invoices__balance_amount__gt=0, invoices__is_deleted=False))
     ).filter(calc_pending__gt=0).order_by("-calc_pending")
 
     pending_customers = []
@@ -707,8 +708,8 @@ def dashboard(request):
     walkin_pending = client_invoices_all.filter(customer__isnull=True, balance_amount__gt=0).order_by("-created_at")[:20]
 
     recent_invoices = client_invoices_all.select_related("customer", "branch").prefetch_related("items").order_by("-created_at")[:10]
-    customers = Customer.objects.filter(c_filter).order_by("name")
-    products = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
+    customers = Customer.objects.filter(c_filter, is_deleted=False).order_by("name")
+    products = Product.objects.filter(c_filter, is_deleted=False, is_active=True).order_by("name_tamil", "name")
     categories = get_available_categories(request)
     branches = Branch.objects.filter(b_filter).order_by("-is_default", "name")
     default_branch = Branch.get_default_branch()
@@ -794,7 +795,7 @@ def billing_page(request):
         # Customer association (default blank if not selected or entered, falls back to 'Cash Customer')
         cust_obj = None
         if customer_id:
-            cust_obj = Customer.objects.filter(c_filter, pk=customer_id).first()
+            cust_obj = Customer.objects.filter(c_filter, is_deleted=False, pk=customer_id).first()
             if cust_obj and not customer_name:
                 customer_name = cust_obj.name
             if cust_obj and not customer_phone and cust_obj.phone:
@@ -803,16 +804,23 @@ def billing_page(request):
                 cust_obj.address = customer_address
                 cust_obj.save(update_fields=["address", "updated_at"])
         elif customer_phone:
-            cust_obj, _ = Customer.objects.get_or_create(
+            cust_obj = Customer.objects.filter(
                 phone=customer_phone,
                 client=client_user,
-                defaults={"name": customer_name or "Cash Customer", "address": customer_address}
-            )
-            if cust_obj and customer_address and cust_obj.address != customer_address:
+                is_deleted=False
+            ).first()
+            if not cust_obj:
+                cust_obj = Customer.objects.create(
+                    phone=customer_phone,
+                    client=client_user,
+                    name=customer_name or "Cash Customer",
+                    address=customer_address
+                )
+            elif customer_address and cust_obj.address != customer_address:
                 cust_obj.address = customer_address
                 cust_obj.save(update_fields=["address", "updated_at"])
         elif customer_name and customer_name != "Cash Customer" and customer_address:
-            cust_obj = Customer.objects.filter(c_filter, name__iexact=customer_name).first()
+            cust_obj = Customer.objects.filter(c_filter, is_deleted=False, name__iexact=customer_name).first()
             if not cust_obj:
                 cust_obj = Customer.objects.create(
                     name=customer_name,
@@ -853,7 +861,7 @@ def billing_page(request):
 
             product = None
             if pid and pid != "custom" and pid.isdigit():
-                product = Product.objects.filter(c_filter, pk=int(pid), is_active=True).first()
+                product = Product.objects.filter(c_filter, is_deleted=False, pk=int(pid), is_active=True).first()
 
             if product:
                 price = parse_decimal(unit_prices[i] if i < len(unit_prices) else str(product.price), str(product.price))
@@ -989,9 +997,9 @@ def billing_page(request):
     # GET request
     c_filter = get_client_filter(request)
     b_filter = get_branch_filter(request)
-    products = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
+    products = Product.objects.filter(c_filter, is_active=True, is_deleted=False).order_by("name_tamil", "name")
     categories = get_available_categories(request)
-    customers = Customer.objects.filter(c_filter).order_by("name")
+    customers = Customer.objects.filter(c_filter, is_deleted=False).order_by("name")
     branches = Branch.objects.filter(b_filter).order_by("-is_default", "name")
     default_branch = Branch.get_default_branch()
     return render(request, "billing/billing_screen.html", {
@@ -1030,7 +1038,7 @@ def quick_bill_create(request):
                 messages.error(request, "Quantity must be greater than zero.")
                 return redirect("billing:dashboard")
 
-            product = get_object_or_404(Product.objects.filter(c_filter, is_active=True), pk=product_id)
+            product = get_object_or_404(Product.objects.filter(c_filter, is_active=True, is_deleted=False), pk=product_id)
             unit_price = product.price
             subtotal = unit_price * qty
             has_shop_gst = check_user_has_gst(client_user)
@@ -1064,17 +1072,23 @@ def quick_bill_create(request):
             # Customer association
             cust_obj = None
             if customer_id:
-                cust_obj = Customer.objects.filter(c_filter, pk=customer_id).first()
+                cust_obj = Customer.objects.filter(c_filter, is_deleted=False, pk=customer_id).first()
                 if cust_obj and not customer_name:
                     customer_name = cust_obj.name
                 if cust_obj and not customer_phone and cust_obj.phone:
                     customer_phone = cust_obj.phone
             elif customer_phone:
-                cust_obj, _ = Customer.objects.get_or_create(
+                cust_obj = Customer.objects.filter(
                     phone=customer_phone,
                     client=client_user,
-                    defaults={"name": customer_name or "Cash Customer"}
-                )
+                    is_deleted=False
+                ).first()
+                if not cust_obj:
+                    cust_obj = Customer.objects.create(
+                        phone=customer_phone,
+                        client=client_user,
+                        name=customer_name or "Cash Customer"
+                    )
 
             final_customer_name = cust_obj.name if cust_obj else (customer_name or "Cash Customer")
             final_customer_phone = cust_obj.phone if cust_obj else customer_phone
@@ -1182,7 +1196,7 @@ def invoice_list(request):
     - Apply / Update discounts & offers with automatic recalculation of grand total and balance due
     """
     c_filter = get_client_filter(request)
-    invoices = Invoice.objects.filter(c_filter).select_related("customer", "branch").prefetch_related("items", "payments").order_by("-created_at")
+    invoices = Invoice.objects.filter(c_filter, is_deleted=False).select_related("customer", "branch").prefetch_related("items", "payments").order_by("-created_at")
     search = request.GET.get("search", "").strip()
     status_filter = request.GET.get("status", "").strip()
     payment_method = request.GET.get("method", "").strip()
@@ -1193,14 +1207,14 @@ def invoice_list(request):
 
     if customer_id:
         try:
-            selected_customer = Customer.objects.filter(c_filter, pk=customer_id).first()
+            selected_customer = Customer.objects.filter(c_filter, is_deleted=False, pk=customer_id).first()
             if selected_customer:
                 cust_query = Q(customer=selected_customer)
                 if selected_customer.phone:
                     cust_query |= Q(customer_phone=selected_customer.phone)
                 invoices = invoices.filter(cust_query)
 
-                all_cust_invs = Invoice.objects.filter(c_filter).filter(cust_query)
+                all_cust_invs = Invoice.objects.filter(c_filter, is_deleted=False).filter(cust_query)
                 agg = all_cust_invs.aggregate(
                     total_billed=Sum("grand_total"),
                     total_paid=Sum("paid_amount"),
@@ -1227,7 +1241,7 @@ def invoice_list(request):
     if payment_method:
         invoices = invoices.filter(payment_method=payment_method)
 
-    customers = Customer.objects.filter(c_filter).order_by("name")
+    customers = Customer.objects.filter(c_filter, is_deleted=False).order_by("name")
 
     context = {
         "invoices": invoices[:100],
@@ -1243,44 +1257,66 @@ def invoice_list(request):
 
 def invoice_detail(request, invoice_id):
     c_filter = get_client_filter(request)
-    invoice = get_object_or_404(Invoice.objects.filter(c_filter).prefetch_related("items", "payments"), pk=invoice_id)
+    invoice = get_object_or_404(Invoice.objects.filter(c_filter, is_deleted=False).prefetch_related("items", "payments"), pk=invoice_id)
     company = CompanySettings.get_settings()
+    profile = getattr(request.user, "profile", None) if request.user.is_authenticated else None
+    if not profile and invoice.client and hasattr(invoice.client, "profile"):
+        profile = invoice.client.profile
+
+    paper_size = profile.print_paper_size if profile else "80mm"
+    paper_width_mm = profile.effective_paper_width_mm if profile else Decimal("80.0")
+    paper_height_mode = profile.print_paper_height_mode if profile else "auto"
+    paper_height_mm = profile.effective_paper_height_mm if profile else None
+    auto_expand = profile.print_auto_expand_height if profile else True
+    font_scaling = profile.print_font_scaling if profile else "auto"
+    dimensions_display = profile.paper_dimensions_display if profile else "80mm × Auto-Fit"
+
     return render(request, "billing/invoice_detail.html", {
         "invoice": invoice,
         "company": company,
+        "profile": profile,
+        "print_paper_size": paper_size,
+        "print_paper_width_mm": paper_width_mm,
+        "print_paper_height_mode": paper_height_mode,
+        "print_paper_height_mm": paper_height_mm,
+        "print_auto_expand_height": auto_expand,
+        "print_font_scaling": font_scaling,
+        "print_dimensions_display": dimensions_display,
     })
 
 
 def invoice_delete(request, invoice_id):
     """
-    Permanently deletes an individual invoice, restores inventory product stock,
-    and updates customer balances and dashboard metrics.
+    Moves an individual invoice to the Recycle Bin / Deleted Items (3-day recovery window).
+    Restores inventory product stock while in the recycle bin.
     """
     if not request.user.is_authenticated:
         return redirect("billing:login")
     if request.method == "POST":
         c_filter = get_client_filter(request)
-        invoice = get_object_or_404(Invoice.objects.filter(c_filter).prefetch_related("items"), pk=invoice_id)
+        invoice = get_object_or_404(Invoice.objects.filter(c_filter, is_deleted=False).prefetch_related("items"), pk=invoice_id)
         inv_number = invoice.invoice_number
         inv_uuid = str(invoice.invoice_uuid)
 
-        # Restore inventory stock
+        # Restore inventory stock while invoice is in recycle bin
         for item in invoice.items.all():
             if item.product:
                 Product.objects.filter(pk=item.product.id).update(
                     stock_quantity=F("stock_quantity") + item.quantity
                 )
 
-        invoice.items.all().delete()
-        invoice.delete()
+        # Soft-delete: Move to Recycle Bin (3-day recovery window)
+        invoice.is_deleted = True
+        invoice.deleted_at = timezone.now()
+        invoice.save(update_fields=["is_deleted", "deleted_at"])
 
         log_activity(
             request,
-            "INVOICE_DELETE",
-            f"User '{request.user.username}' deleted invoice #{inv_number} (UUID: {inv_uuid}). Stock restored."
+            "RECYCLE_BIN_DELETE",
+            f"User '{request.user.username}' moved invoice #{inv_number} (UUID: {inv_uuid}) to Recycle Bin (3-day recovery). Stock restored."
         )
         trigger_desktop_sync_safe()
-        messages.success(request, f"Invoice #{inv_number} deleted successfully and product stock restored.")
+        messages.success(request, f"Invoice #{inv_number} moved to Recycle Bin (Deleted Items). It will remain recoverable for 3 days before permanent deletion.")
     return redirect("billing:invoice_list")
 
 
@@ -1294,9 +1330,9 @@ def invoice_edit(request, invoice_id):
     - Automatically recalculates subtotal, taxes, grand total, and balance due
     """
     c_filter = get_client_filter(request)
-    invoice = get_object_or_404(Invoice.objects.filter(c_filter).prefetch_related("items"), pk=invoice_id)
-    products = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
-    customers = Customer.objects.filter(c_filter).order_by("name")
+    invoice = get_object_or_404(Invoice.objects.filter(c_filter, is_deleted=False).prefetch_related("items"), pk=invoice_id)
+    products = Product.objects.filter(c_filter, is_active=True, is_deleted=False).order_by("name_tamil", "name")
+    customers = Customer.objects.filter(c_filter, is_deleted=False).order_by("name")
 
     if request.method == "POST":
         customer_id = request.POST.get("customer_id")
@@ -1341,12 +1377,20 @@ def invoice_edit(request, invoice_id):
         # 3. Associate Customer
         cust_obj = None
         if customer_id:
-            cust_obj = Customer.objects.filter(pk=customer_id).first()
+            cust_obj = Customer.objects.filter(c_filter, is_deleted=False, pk=customer_id).first()
         elif customer_phone:
-            cust_obj, _ = Customer.objects.get_or_create(
+            client_user = invoice.client or (request.user if request.user.is_authenticated else None)
+            cust_obj = Customer.objects.filter(
                 phone=customer_phone,
-                defaults={"name": customer_name}
-            )
+                client=client_user,
+                is_deleted=False
+            ).first()
+            if not cust_obj:
+                cust_obj = Customer.objects.create(
+                    phone=customer_phone,
+                    client=client_user,
+                    name=customer_name
+                )
 
         invoice.customer = cust_obj
         invoice.customer_name = cust_obj.name if cust_obj else customer_name
@@ -1453,10 +1497,13 @@ def invoice_edit(request, invoice_id):
 
 
 def invoice_download_pdf(request, invoice_id):
-    """Generates and serves downloadable PDF receipt with company branding"""
+    """Generates and serves downloadable PDF receipt with company branding and configured paper size"""
     c_filter = get_client_filter(request)
-    invoice = get_object_or_404(Invoice.objects.filter(c_filter).prefetch_related("items"), pk=invoice_id)
-    pdf_bytes = generate_invoice_pdf(invoice)
+    invoice = get_object_or_404(Invoice.objects.filter(c_filter, is_deleted=False).prefetch_related("items"), pk=invoice_id)
+    profile = getattr(request.user, "profile", None) if request.user.is_authenticated else None
+    if not profile and invoice.client and hasattr(invoice.client, "profile"):
+        profile = invoice.client.profile
+    pdf_bytes = generate_invoice_pdf(invoice, client_profile=profile)
 
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     filename = f"Receipt_{invoice.invoice_number}.pdf"
@@ -1472,7 +1519,7 @@ def invoice_update_payment(request, invoice_id):
     """
     if request.method == "POST":
         c_filter = get_client_filter(request)
-        invoice = get_object_or_404(Invoice.objects.filter(c_filter), pk=invoice_id)
+        invoice = get_object_or_404(Invoice.objects.filter(c_filter, is_deleted=False), pk=invoice_id)
         amount_str = request.POST.get("amount", "0")
         pay_mode = request.POST.get("payment_method", "Cash")
         note = request.POST.get("notes", "").strip()
@@ -1524,7 +1571,7 @@ def invoice_apply_discount(request, invoice_id):
     """
     if request.method == "POST":
         c_filter = get_client_filter(request)
-        invoice = get_object_or_404(Invoice.objects.filter(c_filter), pk=invoice_id)
+        invoice = get_object_or_404(Invoice.objects.filter(c_filter, is_deleted=False), pk=invoice_id)
         discount_type = request.POST.get("discount_type", "amount")
         discount_val_str = request.POST.get("discount_value", "0").strip()
         offer_name = request.POST.get("offer_name", "").strip()
@@ -1586,7 +1633,7 @@ def product_list(request):
     Units: KG, Pack, Box, Pcs, Ltr.
     """
     c_filter = get_client_filter(request)
-    products = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
+    products = Product.objects.filter(c_filter, is_active=True, is_deleted=False).order_by("name_tamil", "name")
     search = request.GET.get("search", "").strip()
     category = request.GET.get("category", "").strip()
 
@@ -1601,7 +1648,7 @@ def product_list(request):
 
     categories = get_available_categories(request)
     cat_counts_map = dict(
-        Product.objects.filter(c_filter, is_active=True)
+        Product.objects.filter(c_filter, is_active=True, is_deleted=False)
         .values("category")
         .annotate(cnt=Count("id"))
         .values_list("category", "cnt")
@@ -1642,7 +1689,7 @@ def category_add(request):
             c_filter = get_client_filter(request)
             exists = (
                 ProductCategory.objects.filter(c_filter, name__iexact=name).exists()
-                or Product.objects.filter(c_filter, category__iexact=name).exists()
+                or Product.objects.filter(c_filter, is_deleted=False, category__iexact=name).exists()
             )
             if exists:
                 if is_ajax:
@@ -1772,7 +1819,7 @@ def product_add(request):
 def product_edit(request, product_id):
     """Edit / Update product details (Price, Stock, Unit, Names) anytime"""
     c_filter = get_client_filter(request)
-    product = get_object_or_404(Product.objects.filter(c_filter), pk=product_id)
+    product = get_object_or_404(Product.objects.filter(c_filter, is_deleted=False), pk=product_id)
 
     if request.method == "POST":
         product.name_tamil = request.POST.get("name_tamil", product.name_tamil).strip()
@@ -1798,24 +1845,27 @@ def product_edit(request, product_id):
 
 
 def product_delete(request, product_id):
-    """Remove product from catalog"""
+    """Moves product to Recycle Bin (3-day recovery window)"""
     if not request.user.is_authenticated:
         return redirect("billing:login")
     if request.method == "POST":
         c_filter = get_client_filter(request)
-        product = get_object_or_404(Product.objects.filter(c_filter), pk=product_id)
+        product = get_object_or_404(Product.objects.filter(c_filter, is_deleted=False), pk=product_id)
         prod_name = product.display_name
-        # Soft delete / deactivate so historical invoices remain intact
+
+        # Soft delete: move to Recycle Bin
         product.is_active = False
-        product.save(update_fields=["is_active", "updated_at"])
+        product.is_deleted = True
+        product.deleted_at = timezone.now()
+        product.save(update_fields=["is_active", "is_deleted", "deleted_at", "updated_at"])
 
         log_activity(
             request,
-            "PRODUCT_DELETE",
-            f"Removed/deactivated product '{prod_name}' (SKU: {product.sku})"
+            "RECYCLE_BIN_DELETE",
+            f"User '{request.user.username}' moved product '{prod_name}' (SKU: {product.sku}) to Recycle Bin (3-day recovery)."
         )
         trigger_desktop_sync_safe()
-        messages.success(request, f"Product '{prod_name}' removed from active inventory.")
+        messages.success(request, f"Product '{prod_name}' moved to Recycle Bin (Deleted Items). Recoverable for 3 days.")
 
     return redirect("billing:product_list")
 
@@ -1839,7 +1889,7 @@ def customer_add(request):
             return redirect(request.META.get("HTTP_REFERER", "billing:dashboard"))
 
         c_filter = get_client_filter(request)
-        if phone and Customer.objects.filter(c_filter, phone=phone).exists():
+        if phone and Customer.objects.filter(c_filter, is_deleted=False, phone=phone).exists():
             messages.warning(request, f"Customer with phone {phone} already exists.")
         else:
             cust = Customer.objects.create(
@@ -1865,7 +1915,7 @@ def customer_add(request):
 def customer_edit(request, customer_id):
     """Alter / Edit customer details"""
     c_filter = get_client_filter(request)
-    customer = get_object_or_404(Customer.objects.filter(c_filter), pk=customer_id)
+    customer = get_object_or_404(Customer.objects.filter(c_filter, is_deleted=False), pk=customer_id)
 
     if request.method == "POST":
         customer.name = request.POST.get("name", customer.name).strip()
@@ -1970,10 +2020,10 @@ def admin_panel(request):
     users = User.objects.select_related("profile").prefetch_related("active_sessions").order_by("username")
     clients = [u for u in users if getattr(u, "profile", None) and u.profile.role == "client"]
     for c in clients:
-        c.invoice_count = Invoice.objects.filter(client=c).count()
-        c.customer_count = Customer.objects.filter(client=c).count()
-        c.product_count = Product.objects.filter(client=c).count()
-        c.sales_total = Invoice.objects.filter(client=c).aggregate(Sum("grand_total"))["grand_total__sum"] or Decimal("0.00")
+        c.invoice_count = Invoice.objects.filter(client=c, is_deleted=False).count()
+        c.customer_count = Customer.objects.filter(client=c, is_deleted=False).count()
+        c.product_count = Product.objects.filter(client=c, is_deleted=False).count()
+        c.sales_total = Invoice.objects.filter(client=c, is_deleted=False).aggregate(Sum("grand_total"))["grand_total__sum"] or Decimal("0.00")
     admin_users = [u for u in users if u.is_superuser or (getattr(u, "profile", None) and u.profile.role == "admin")]
 
     active_device_sessions = ActiveUserSession.objects.select_related("user", "user__profile").order_by("-last_activity")
@@ -1999,10 +2049,10 @@ def admin_panel(request):
     action_types = ActivityLog.objects.values_list("action_type", flat=True).distinct()
     branches = Branch.objects.order_by("-is_default", "name")
 
-    all_customers = Customer.objects.select_related("client").order_by("-created_at")
+    all_customers = Customer.objects.filter(is_deleted=False).select_related("client").order_by("-created_at")
     for cust in all_customers:
-        cust.bill_count = Invoice.objects.filter(customer=cust).count()
-        cust.total_spend = Invoice.objects.filter(customer=cust).aggregate(Sum("grand_total"))["grand_total__sum"] or Decimal("0.00")
+        cust.bill_count = Invoice.objects.filter(customer=cust, is_deleted=False).count()
+        cust.total_spend = Invoice.objects.filter(customer=cust, is_deleted=False).aggregate(Sum("grand_total"))["grand_total__sum"] or Decimal("0.00")
 
     context = {
         "admin_users": admin_users,
@@ -2568,15 +2618,18 @@ def client_delete_data(request):
         user_name = request.user.username
 
         def _restore_and_delete_invoices(qs):
-            for inv in qs.prefetch_related("items"):
+            now = timezone.now()
+            count = 0
+            for inv in qs.filter(is_deleted=False).prefetch_related("items"):
                 for item in inv.items.all():
                     if item.product:
                         Product.objects.filter(pk=item.product.id).update(
                             stock_quantity=F("stock_quantity") + item.quantity
                         )
-                inv.items.all().delete()
-            count = qs.count()
-            qs.delete()
+                inv.is_deleted = True
+                inv.deleted_at = now
+                inv.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+                count += 1
             return count
 
         if delete_type == "single_date":
@@ -2652,43 +2705,45 @@ def client_delete_data(request):
             inv_count = _restore_and_delete_invoices(invoices)
 
             if delete_customer_profile:
-                customer.delete()
+                customer.is_deleted = True
+                customer.deleted_at = timezone.now()
+                customer.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
                 log_activity(
                     request,
-                    "DATA_CLEANUP",
-                    f"User '{user_name}' deleted customer '{cust_name}' and all {inv_count} associated invoice(s)."
+                    "RECYCLE_BIN_DELETE",
+                    f"User '{user_name}' moved customer '{cust_name}' and all {inv_count} associated invoice(s) to Recycle Bin (3-day recovery)."
                 )
-                messages.success(request, f"Successfully deleted customer '{cust_name}' and {inv_count} invoice(s). Dashboard updated.")
+                messages.success(request, f"Customer '{cust_name}' and {inv_count} invoice(s) moved to Recycle Bin (3-day recovery).")
             else:
                 log_activity(
                     request,
-                    "DATA_CLEANUP",
-                    f"User '{user_name}' deleted {inv_count} invoice(s) for customer '{cust_name}'. Pending balance cleared."
+                    "RECYCLE_BIN_DELETE",
+                    f"User '{user_name}' moved {inv_count} invoice(s) for customer '{cust_name}' to Recycle Bin. Pending balance cleared."
                 )
-                messages.success(request, f"Successfully deleted {inv_count} bill(s) for '{cust_name}'. Customer balance reset to ₹0.00. Dashboard updated.")
+                messages.success(request, f"Successfully moved {inv_count} bill(s) for '{cust_name}' to Recycle Bin. Customer balance reset to ₹0.00.")
 
         elif delete_type == "all_invoices":
-            invoices = Invoice.objects.filter(c_filter)
+            invoices = Invoice.objects.filter(c_filter, is_deleted=False)
             inv_count = _restore_and_delete_invoices(invoices)
             log_activity(
                 request,
-                "DATA_CLEANUP",
-                f"User '{user_name}' deleted all {inv_count} store invoices. Stock restored."
+                "RECYCLE_BIN_DELETE",
+                f"User '{user_name}' moved all {inv_count} store invoices to Recycle Bin (3-day recovery). Stock restored."
             )
-            messages.success(request, f"Successfully deleted all {inv_count} store invoices. Dashboard and sales figures reset to ₹0.00.")
+            messages.success(request, f"Successfully moved {inv_count} store invoices to Recycle Bin (3-day recovery). Dashboard and sales reset to ₹0.00.")
 
         elif delete_type == "wipe_all":
-            invoices = Invoice.objects.filter(c_filter)
+            invoices = Invoice.objects.filter(c_filter, is_deleted=False)
             inv_count = _restore_and_delete_invoices(invoices)
-            customers = Customer.objects.filter(c_filter)
+            customers = Customer.objects.filter(c_filter, is_deleted=False)
             cust_count = customers.count()
-            customers.delete()
+            customers.update(is_deleted=True, deleted_at=timezone.now())
             log_activity(
                 request,
-                "DATA_CLEANUP",
-                f"User '{user_name}' performed full data cleanup: deleted {inv_count} invoices and {cust_count} customers."
+                "RECYCLE_BIN_DELETE",
+                f"User '{user_name}' moved {inv_count} invoices and {cust_count} customers to Recycle Bin (3-day recovery)."
             )
-            messages.success(request, f"Full store data reset completed: purged {inv_count} invoices and {cust_count} customers.")
+            messages.success(request, f"Moved {inv_count} invoices and {cust_count} customers to Recycle Bin (Recoverable for 3 days).")
 
         else:
             messages.error(request, "Invalid delete action specified.")
@@ -2753,7 +2808,7 @@ def get_customer_statement_data(customer, start_date, end_date):
         cust_query |= Q(customer_phone=customer.phone)
 
     # 1. Opening Balance prior to start_date
-    prior_invoices = Invoice.objects.filter(cust_query, created_at__date__lt=start_date)
+    prior_invoices = Invoice.objects.filter(cust_query, is_deleted=False, created_at__date__lt=start_date)
     prior_billed = prior_invoices.aggregate(Sum("grand_total"))["grand_total__sum"] or Decimal("0.00")
     prior_paid = prior_invoices.aggregate(Sum("paid_amount"))["paid_amount__sum"] or Decimal("0.00")
     opening_balance = max(Decimal("0.00"), prior_billed - prior_paid)
@@ -2761,13 +2816,14 @@ def get_customer_statement_data(customer, start_date, end_date):
     # 2. Invoices in date range
     range_invoices = Invoice.objects.filter(
         cust_query,
+        is_deleted=False,
         created_at__date__gte=start_date,
         created_at__date__lte=end_date
     ).prefetch_related("items").order_by("created_at")
 
     # 3. Payments in date range
     range_payments = PaymentRecord.objects.filter(
-        invoice__in=Invoice.objects.filter(cust_query),
+        invoice__in=Invoice.objects.filter(cust_query, is_deleted=False),
         created_at__date__gte=start_date,
         created_at__date__lte=end_date
     ).select_related("invoice").order_by("created_at")
@@ -2823,7 +2879,7 @@ def customer_statement_view(request, customer_id):
     Renders customer account statement for selected date range (or default last 45 days)
     """
     c_filter = get_client_filter(request)
-    customer = get_object_or_404(Customer.objects.filter(c_filter), pk=customer_id)
+    customer = get_object_or_404(Customer.objects.filter(c_filter, is_deleted=False), pk=customer_id)
     today = timezone.now().date()
     default_start = today - timedelta(days=45)
 
@@ -2858,7 +2914,7 @@ def customer_statement_pdf(request, customer_id):
     Generates and downloads the Customer Account Statement as PDF
     """
     c_filter = get_client_filter(request)
-    customer = get_object_or_404(Customer.objects.filter(c_filter), pk=customer_id)
+    customer = get_object_or_404(Customer.objects.filter(c_filter, is_deleted=False), pk=customer_id)
     today = timezone.now().date()
     default_start = today - timedelta(days=45)
 
@@ -2965,7 +3021,7 @@ def stock_management(request):
     category = request.GET.get("category", "").strip()
     stock_status = request.GET.get("status", "").strip()
 
-    products_qs = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
+    products_qs = Product.objects.filter(c_filter, is_active=True, is_deleted=False).order_by("name_tamil", "name")
 
     if search:
         products_qs = products_qs.filter(
@@ -2982,7 +3038,7 @@ def stock_management(request):
     elif stock_status == "ok":
         products_qs = products_qs.filter(stock_quantity__gt=5)
 
-    all_active = Product.objects.filter(c_filter, is_active=True)
+    all_active = Product.objects.filter(c_filter, is_active=True, is_deleted=False)
     total_sku_count = all_active.count()
     low_stock_count = all_active.filter(stock_quantity__lte=5, stock_quantity__gt=0).count()
     out_of_stock_count = all_active.filter(stock_quantity__lte=0).count()
@@ -2992,7 +3048,7 @@ def stock_management(request):
     )["val"] or Decimal("0.00")
 
     stock_logs = StockLog.objects.filter(product__in=all_active).select_related("product", "invoice").order_by("-created_at")[:100]
-    categories = Product.objects.filter(c_filter, is_active=True).values_list("category", flat=True).distinct()
+    categories = Product.objects.filter(c_filter, is_active=True, is_deleted=False).values_list("category", flat=True).distinct()
 
     return render(request, "billing/stock_management.html", {
         "products": products_qs,
@@ -3028,7 +3084,7 @@ def stock_add_inward(request):
                 messages.error(request, "Inward quantity must be greater than zero.")
                 return redirect("billing:stock_management")
 
-            product = get_object_or_404(Product.objects.filter(c_filter), pk=product_id)
+            product = get_object_or_404(Product.objects.filter(c_filter, is_deleted=False), pk=product_id)
             old_qty = product.stock_quantity
             new_qty = old_qty + qty
             product.stock_quantity = new_qty
@@ -3080,7 +3136,7 @@ def stock_adjust_quantity(request, product_id):
     Supports set, add, or subtract.
     """
     c_filter = get_client_filter(request)
-    product = get_object_or_404(Product.objects.filter(c_filter), pk=product_id)
+    product = get_object_or_404(Product.objects.filter(c_filter, is_deleted=False), pk=product_id)
 
     if request.method == "POST":
         action = request.POST.get("adjustment_type", "set")
@@ -3133,7 +3189,7 @@ def stock_adjust_quantity(request, product_id):
 def stock_export_csv(request):
     """Exports active inventory list as a CSV file"""
     c_filter = get_client_filter(request)
-    products = Product.objects.filter(c_filter, is_active=True).order_by("name_tamil", "name")
+    products = Product.objects.filter(c_filter, is_active=True, is_deleted=False).order_by("name_tamil", "name")
 
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     now_str = timezone.now().strftime("%Y%m%d_%H%M%S")
@@ -3207,11 +3263,11 @@ def customer_list(request):
     search = request.GET.get("search", "").strip()
     pending_only = request.GET.get("pending_only") == "1"
 
-    customers_qs = Customer.objects.filter(c_filter).annotate(
-        calc_billed=Sum("invoices__grand_total"),
-        calc_paid=Sum("invoices__paid_amount"),
-        calc_pending=Sum("invoices__balance_amount"),
-        invoices_count=Count("invoices")
+    customers_qs = Customer.objects.filter(c_filter, is_deleted=False).annotate(
+        calc_billed=Sum("invoices__grand_total", filter=Q(invoices__is_deleted=False)),
+        calc_paid=Sum("invoices__paid_amount", filter=Q(invoices__is_deleted=False)),
+        calc_pending=Sum("invoices__balance_amount", filter=Q(invoices__is_deleted=False)),
+        invoices_count=Count("invoices", filter=Q(invoices__is_deleted=False))
     ).order_by("name")
 
     if search:
@@ -3226,10 +3282,12 @@ def customer_list(request):
     if pending_only:
         customers_qs = customers_qs.filter(calc_pending__gt=0)
 
-    all_custs = Customer.objects.filter(c_filter).annotate(calc_pending=Sum("invoices__balance_amount"))
+    all_custs = Customer.objects.filter(c_filter, is_deleted=False).annotate(
+        calc_pending=Sum("invoices__balance_amount", filter=Q(invoices__is_deleted=False))
+    )
     total_customers_count = all_custs.count()
     pending_custs_count = all_custs.filter(calc_pending__gt=0).count()
-    total_pending_all = Invoice.objects.filter(c_filter).aggregate(Sum("balance_amount"))["balance_amount__sum"] or Decimal("0.00")
+    total_pending_all = Invoice.objects.filter(c_filter, is_deleted=False).aggregate(Sum("balance_amount"))["balance_amount__sum"] or Decimal("0.00")
 
     return render(request, "billing/customer_list.html", {
         "customers": customers_qs,
@@ -3243,27 +3301,29 @@ def customer_list(request):
 
 def customer_delete(request, customer_id):
     """
-    Deletes a customer record.
+    Moves customer to Recycle Bin / Deleted Items (3-day recovery window).
     Accessible to authenticated shop clients and administrators.
     """
     if not request.user.is_authenticated:
         return redirect("billing:login")
     if request.method == "POST":
         c_filter = get_client_filter(request)
-        customer = get_object_or_404(Customer.objects.filter(c_filter), pk=customer_id)
+        customer = get_object_or_404(Customer.objects.filter(c_filter, is_deleted=False), pk=customer_id)
         cust_name = customer.name
         cust_phone = customer.phone or "N/A"
 
-        Invoice.objects.filter(c_filter, customer=customer).update(customer=None)
-        customer.delete()
+        # Soft delete: move to Recycle Bin without wiping invoice relationships
+        customer.is_deleted = True
+        customer.deleted_at = timezone.now()
+        customer.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
 
         log_activity(
             request,
-            "CUSTOMER_DELETE",
-            f"User '{request.user.username}' deleted customer record '{cust_name}' (Phone: {cust_phone})."
+            "RECYCLE_BIN_DELETE",
+            f"User '{request.user.username}' moved customer '{cust_name}' (Phone: {cust_phone}) to Recycle Bin (3-day recovery)."
         )
         trigger_desktop_sync_safe()
-        messages.success(request, f"Customer record '{cust_name}' was deleted successfully.")
+        messages.success(request, f"Customer record '{cust_name}' moved to Recycle Bin (Deleted Items). Recoverable for 3 days.")
 
     return redirect("billing:customer_list")
 
@@ -3271,7 +3331,7 @@ def customer_delete(request, customer_id):
 def customer_export_csv(request, customer_id):
     """Exports a single customer's transaction ledger / statement as CSV"""
     c_filter = get_client_filter(request)
-    customer = get_object_or_404(Customer.objects.filter(c_filter), pk=customer_id)
+    customer = get_object_or_404(Customer.objects.filter(c_filter, is_deleted=False), pk=customer_id)
     today = timezone.now().date()
     default_start = today - timedelta(days=90)
 
@@ -3325,11 +3385,11 @@ def customer_export_csv(request, customer_id):
 def customers_export_all_csv(request):
     """Exports ALL customers directory summary to a CSV file"""
     c_filter = get_client_filter(request)
-    customers_qs = Customer.objects.filter(c_filter).annotate(
-        calc_billed=Sum("invoices__grand_total"),
-        calc_paid=Sum("invoices__paid_amount"),
-        calc_pending=Sum("invoices__balance_amount"),
-        invoices_count=Count("invoices")
+    customers_qs = Customer.objects.filter(c_filter, is_deleted=False).annotate(
+        calc_billed=Sum("invoices__grand_total", filter=Q(invoices__is_deleted=False)),
+        calc_paid=Sum("invoices__paid_amount", filter=Q(invoices__is_deleted=False)),
+        calc_pending=Sum("invoices__balance_amount", filter=Q(invoices__is_deleted=False)),
+        invoices_count=Count("invoices", filter=Q(invoices__is_deleted=False))
     ).order_by("name")
 
     response = HttpResponse(content_type="text/csv; charset=utf-8")
@@ -3531,6 +3591,7 @@ def _get_filtered_report_data(request):
     c_filter = get_client_filter(request)
     bills_qs = Invoice.objects.filter(
         c_filter,
+        is_deleted=False,
         created_at__date__gte=start_date,
         created_at__date__lte=end_date
     ).select_related("customer", "branch").prefetch_related("items", "payments").order_by("-created_at")
@@ -3597,22 +3658,22 @@ def _get_filtered_report_data(request):
         }
 
     # 1. Today
-    today_bills = Invoice.objects.filter(c_filter, created_at__date=today)
+    today_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date=today)
     today_footfall = _compute_customer_footfall(today_bills)
 
     # 2. This Week
     week_start = today - timedelta(days=today.weekday())
-    week_bills = Invoice.objects.filter(c_filter, created_at__date__gte=week_start, created_at__date__lte=today)
+    week_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date__gte=week_start, created_at__date__lte=today)
     week_footfall = _compute_customer_footfall(week_bills)
 
     # 3. This Month
     month_start = today.replace(day=1)
-    month_bills = Invoice.objects.filter(c_filter, created_at__date__gte=month_start, created_at__date__lte=today)
+    month_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date__gte=month_start, created_at__date__lte=today)
     month_footfall = _compute_customer_footfall(month_bills)
 
     # 4. This Year
     year_start = today.replace(month=1, day=1)
-    year_bills = Invoice.objects.filter(c_filter, created_at__date__gte=year_start, created_at__date__lte=today)
+    year_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date__gte=year_start, created_at__date__lte=today)
     year_footfall = _compute_customer_footfall(year_bills)
 
     # 5. Selected Period / Date-to-Date Range
@@ -3813,15 +3874,45 @@ def client_profile_view(request):
             except Exception:
                 pass
 
+        # Bill Paper Size & Print Configuration
+        print_paper_size = request.POST.get("print_paper_size", "").strip()
+        if print_paper_size:
+            profile.print_paper_size = print_paper_size
+            if print_paper_size == "custom":
+                profile.print_custom_width_mm = parse_decimal(request.POST.get("print_custom_width_mm", "80.0"), "80.0")
+            else:
+                preset_widths = {
+                    "58mm": Decimal("58.0"),
+                    "80mm": Decimal("80.0"),
+                    "100mm": Decimal("100.0"),
+                    "a5": Decimal("148.0"),
+                    "a4": Decimal("210.0"),
+                }
+                profile.print_custom_width_mm = preset_widths.get(print_paper_size, Decimal("80.0"))
+
+        print_paper_height_mode = request.POST.get("print_paper_height_mode", "").strip()
+        if print_paper_height_mode in ["auto", "fixed"]:
+            profile.print_paper_height_mode = print_paper_height_mode
+            if print_paper_height_mode == "fixed":
+                h_str = request.POST.get("print_custom_height_mm", "").strip()
+                profile.print_custom_height_mm = parse_decimal(h_str, "210.0") if h_str else Decimal("210.0")
+            else:
+                profile.print_custom_height_mm = None
+
+        profile.print_auto_expand_height = (request.POST.get("print_auto_expand_height") in ["on", "true", "1"])
+        print_font_scaling = request.POST.get("print_font_scaling", "").strip()
+        if print_font_scaling:
+            profile.print_font_scaling = print_font_scaling
+
         profile.save()
 
         log_activity(
             request,
-            "PROFILE_UPDATE",
-            f"User '{request.user.username}' updated business profile (Shop: {shop_name or 'N/A'}, Phone: {phone or 'N/A'}, GSTIN: {gst_number or 'N/A'}, Bank: {bank_name or 'N/A'})"
+            "PRINT_CONFIG_UPDATE",
+            f"User '{request.user.username}' updated business profile and print settings (Paper: {profile.print_paper_size}, {profile.paper_dimensions_display})"
         )
         trigger_desktop_sync_safe()
-        messages.success(request, "Shop Profile & GST details updated successfully! All bills automatically reflect this GST number.")
+        messages.success(request, f"Shop Profile & Bill Paper Size ({profile.print_paper_size.upper()} - {profile.paper_dimensions_display}) updated successfully!")
         return redirect("billing:client_profile")
 
     # Fetch branches associated with this client or default branches
@@ -3830,9 +3921,18 @@ def client_profile_view(request):
     else:
         branches = Branch.objects.filter(Q(client=request.user) | Q(is_default=True)).order_by("-is_default", "name")
 
+    c_filter = get_client_filter(request)
+    recycle_bin_count = (
+        Invoice.objects.filter(c_filter, is_deleted=True).count() +
+        Customer.objects.filter(c_filter, is_deleted=True).count() +
+        Product.objects.filter(c_filter, is_deleted=True).count() +
+        SavedReport.objects.filter(c_filter, is_deleted=True).count()
+    )
+
     return render(request, "billing/client_profile.html", {
         "profile": profile,
         "branches": branches,
+        "recycle_bin_count": recycle_bin_count,
     })
 
 
@@ -4160,7 +4260,8 @@ def admin_delete_customer_or_data(request, customer_id):
     action_type = request.POST.get("action_type", "full")
 
     if request.method == "POST":
-        invoices = Invoice.objects.filter(customer=customer)
+        now = timezone.now()
+        invoices = Invoice.objects.filter(customer=customer, is_deleted=False)
         inv_count = invoices.count()
 
         # Restore stock for invoice items
@@ -4170,26 +4271,30 @@ def admin_delete_customer_or_data(request, customer_id):
                     Product.objects.filter(pk=item.product.id).update(
                         stock_quantity=F("stock_quantity") + item.quantity
                     )
-            inv.items.all().delete()
-        invoices.delete()
+            inv.is_deleted = True
+            inv.deleted_at = now
+            inv.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
 
         if action_type == "full":
-            customer.delete()
+            customer.is_deleted = True
+            customer.deleted_at = now
+            customer.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
             log_activity(
                 request,
-                "CUSTOMER_DELETE",
-                f"Admin '{request.user.username}' permanently deleted customer '{cust_name}' and {inv_count} bills."
+                "RECYCLE_BIN_DELETE",
+                f"Admin '{request.user.username}' moved customer '{cust_name}' and {inv_count} bills to Recycle Bin (3-day recovery)."
             )
-            messages.success(request, f"Customer '{cust_name}' and all {inv_count} bills deleted permanently.")
+            messages.success(request, f"Customer '{cust_name}' and all {inv_count} bills moved to Recycle Bin (3-day recovery).")
         else:
             log_activity(
                 request,
-                "DATA_CLEANUP",
-                f"Admin '{request.user.username}' cleared all {inv_count} bills for customer '{cust_name}'."
+                "RECYCLE_BIN_DELETE",
+                f"Admin '{request.user.username}' moved all {inv_count} bills for customer '{cust_name}' to Recycle Bin (3-day recovery)."
             )
-            messages.success(request, f"All {inv_count} bills for customer '{cust_name}' cleared successfully (Profile retained).")
+            messages.success(request, f"All {inv_count} bills for customer '{cust_name}' moved to Recycle Bin (Profile retained, recoverable for 3 days).")
 
-    return redirect("billing:admin_panel")
+        trigger_desktop_sync_safe()
+        return redirect("billing:admin_panel")
 
 
 def sync_status_view(request):
@@ -4276,4 +4381,252 @@ def sync_server_config_view(request):
 
     cfg = get_desktop_pos_config()
     return JsonResponse({"server_url": cfg.get("server_url", "")})
+
+
+# ======================================================
+# DELETED ITEMS / RECYCLE BIN (3-DAY RECOVERY LIFECYCLE)
+# ======================================================
+
+def _format_time_left(deleted_at):
+    if not deleted_at:
+        return "Expired"
+    expires_at = deleted_at + timedelta(days=3)
+    remaining = expires_at - timezone.now()
+    total_seconds = int(remaining.total_seconds())
+    if total_seconds <= 0:
+        return "Expired (Pending cleanup)"
+    hours = total_seconds // 3600
+    days = hours // 24
+    rem_hours = hours % 24
+    if days > 0:
+        return f"{days}d {rem_hours}h remaining"
+    mins = (total_seconds % 3600) // 60
+    if hours > 0:
+        return f"{hours}h {mins}m remaining"
+    return f"{mins}m remaining"
+
+
+def recycle_bin_view(request):
+    """
+    Deleted Items / Recycle Bin:
+    Displays customer data, bills, products, and reports soft-deleted within the last 3 days.
+    Purges any expired records (>3 days old) automatically on load.
+    Multi-tenant isolation: clients see only their own deleted items.
+    """
+    if not request.user.is_authenticated:
+        return redirect("billing:login")
+
+    # 1. Trigger automated 3-day cleanup routine
+    purge_expired_deleted_items()
+
+    c_filter = get_client_filter(request)
+    active_tab = request.GET.get("tab", "all").strip().lower()
+    if active_tab not in ["all", "invoices", "customers", "products", "reports"]:
+        active_tab = "all"
+
+    # Query soft-deleted items
+    deleted_invoices = list(Invoice.objects.filter(c_filter, is_deleted=True).prefetch_related("items").order_by("-deleted_at"))
+    for inv in deleted_invoices:
+        inv.time_left_str = _format_time_left(inv.deleted_at)
+
+    deleted_customers = list(Customer.objects.filter(c_filter, is_deleted=True).order_by("-deleted_at"))
+    for cust in deleted_customers:
+        cust.time_left_str = _format_time_left(cust.deleted_at)
+
+    deleted_products = list(Product.objects.filter(c_filter, is_deleted=True).order_by("-deleted_at"))
+    for prod in deleted_products:
+        prod.time_left_str = _format_time_left(prod.deleted_at)
+
+    deleted_reports = list(SavedReport.objects.filter(c_filter, is_deleted=True).order_by("-deleted_at"))
+    for rep in deleted_reports:
+        rep.time_left_str = _format_time_left(rep.deleted_at)
+
+    invoices_count = len(deleted_invoices)
+    customers_count = len(deleted_customers)
+    products_count = len(deleted_products)
+    reports_count = len(deleted_reports)
+    total_deleted = invoices_count + customers_count + products_count + reports_count
+
+    return render(request, "billing/recycle_bin.html", {
+        "active_tab": active_tab,
+        "deleted_invoices": deleted_invoices,
+        "deleted_customers": deleted_customers,
+        "deleted_products": deleted_products,
+        "deleted_reports": deleted_reports,
+        "invoices_count": invoices_count,
+        "customers_count": customers_count,
+        "products_count": products_count,
+        "reports_count": reports_count,
+        "total_deleted": total_deleted,
+    })
+
+
+def recycle_bin_restore(request, item_type, item_id):
+    """
+    Restores a soft-deleted item back to active records.
+    """
+    if not request.user.is_authenticated:
+        return redirect("billing:login")
+
+    item_type = str(item_type).lower().strip()
+    if request.method == "POST":
+        c_filter = get_client_filter(request)
+
+        if item_type == "invoice":
+            inv = get_object_or_404(Invoice.objects.filter(c_filter, is_deleted=True).prefetch_related("items"), pk=item_id)
+            # Re-deduct catalog stock upon restoration
+            for item in inv.items.all():
+                if item.product:
+                    Product.objects.filter(pk=item.product.id).update(
+                        stock_quantity=F("stock_quantity") - item.quantity
+                    )
+            inv.is_deleted = False
+            inv.deleted_at = None
+            inv.save(update_fields=["is_deleted", "deleted_at"])
+
+            log_activity(
+                request,
+                "RECYCLE_BIN_RESTORE",
+                f"User '{request.user.username}' restored Invoice #{inv.invoice_number} from Recycle Bin."
+            )
+            trigger_desktop_sync_safe()
+            messages.success(request, f"Invoice #{inv.invoice_number} was restored successfully to active bills.")
+
+        elif item_type == "customer":
+            cust = get_object_or_404(Customer.objects.filter(c_filter, is_deleted=True), pk=item_id)
+            cust.is_deleted = False
+            cust.deleted_at = None
+            cust.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+
+            log_activity(
+                request,
+                "RECYCLE_BIN_RESTORE",
+                f"User '{request.user.username}' restored Customer '{cust.name}' from Recycle Bin."
+            )
+            trigger_desktop_sync_safe()
+            messages.success(request, f"Customer '{cust.name}' was restored successfully to active customers.")
+
+        elif item_type == "product":
+            prod = get_object_or_404(Product.objects.filter(c_filter, is_deleted=True), pk=item_id)
+            prod.is_deleted = False
+            prod.is_active = True
+            prod.deleted_at = None
+            prod.save(update_fields=["is_deleted", "is_active", "deleted_at", "updated_at"])
+
+            log_activity(
+                request,
+                "RECYCLE_BIN_RESTORE",
+                f"User '{request.user.username}' restored Product '{prod.display_name}' from Recycle Bin."
+            )
+            trigger_desktop_sync_safe()
+            messages.success(request, f"Product '{prod.display_name}' was restored successfully to inventory.")
+
+        elif item_type == "report":
+            rep = get_object_or_404(SavedReport.objects.filter(c_filter, is_deleted=True), pk=item_id)
+            rep.is_deleted = False
+            rep.deleted_at = None
+            rep.save(update_fields=["is_deleted", "deleted_at"])
+
+            log_activity(
+                request,
+                "RECYCLE_BIN_RESTORE",
+                f"User '{request.user.username}' restored Report '{rep.report_name}' from Recycle Bin."
+            )
+            messages.success(request, f"Report '{rep.report_name}' was restored successfully.")
+
+    tab = "invoices" if item_type == "invoice" else ("customers" if item_type == "customer" else ("products" if item_type == "product" else "reports"))
+    return redirect(f"/recycle-bin/?tab={tab}")
+
+
+def recycle_bin_permanent_delete(request, item_type, item_id):
+    """
+    Permanently and immediately deletes a single item from the Recycle Bin before the 3-day expiry.
+    """
+    if not request.user.is_authenticated:
+        return redirect("billing:login")
+
+    if request.method == "POST":
+        c_filter = get_client_filter(request)
+        item_type = str(item_type).lower().strip()
+
+        if item_type == "invoice":
+            inv = get_object_or_404(Invoice.objects.filter(c_filter, is_deleted=True), pk=item_id)
+            inv_number = inv.invoice_number
+            inv.items.all().delete()
+            inv.payments.all().delete()
+            inv.delete()
+            log_activity(
+                request,
+                "RECYCLE_BIN_PURGE",
+                f"User '{request.user.username}' permanently deleted Invoice #{inv_number}."
+            )
+            messages.success(request, f"Invoice #{inv_number} was permanently deleted.")
+
+        elif item_type == "customer":
+            cust = get_object_or_404(Customer.objects.filter(c_filter, is_deleted=True), pk=item_id)
+            name = cust.name
+            cust.delete()
+            log_activity(
+                request,
+                "RECYCLE_BIN_PURGE",
+                f"User '{request.user.username}' permanently deleted Customer record '{name}'."
+            )
+            messages.success(request, f"Customer record '{name}' was permanently deleted.")
+
+        elif item_type == "product":
+            prod = get_object_or_404(Product.objects.filter(c_filter, is_deleted=True), pk=item_id)
+            name = prod.display_name
+            prod.delete()
+            log_activity(
+                request,
+                "RECYCLE_BIN_PURGE",
+                f"User '{request.user.username}' permanently deleted Product '{name}'."
+            )
+            messages.success(request, f"Product '{name}' was permanently deleted.")
+
+        elif item_type == "report":
+            rep = get_object_or_404(SavedReport.objects.filter(c_filter, is_deleted=True), pk=item_id)
+            name = rep.report_name
+            rep.delete()
+            log_activity(
+                request,
+                "RECYCLE_BIN_PURGE",
+                f"User '{request.user.username}' permanently deleted Report '{name}'."
+            )
+            messages.success(request, f"Report '{name}' was permanently deleted.")
+
+        trigger_desktop_sync_safe()
+
+    return redirect("billing:recycle_bin")
+
+
+def recycle_bin_empty(request):
+    """
+    Permanently purges ALL soft-deleted items currently in the Recycle Bin for the client.
+    """
+    if not request.user.is_authenticated:
+        return redirect("billing:login")
+
+    if request.method == "POST":
+        c_filter = get_client_filter(request)
+        invs = Invoice.objects.filter(c_filter, is_deleted=True)
+        for inv in invs:
+            inv.items.all().delete()
+            inv.payments.all().delete()
+        invs.delete()
+
+        Customer.objects.filter(c_filter, is_deleted=True).delete()
+        Product.objects.filter(c_filter, is_deleted=True).delete()
+        SavedReport.objects.filter(c_filter, is_deleted=True).delete()
+
+        log_activity(
+            request,
+            "RECYCLE_BIN_PURGE",
+            f"User '{request.user.username}' emptied the Recycle Bin permanently."
+        )
+        trigger_desktop_sync_safe()
+        messages.success(request, "Recycle Bin was emptied successfully. All deleted records permanently purged.")
+
+    return redirect("billing:recycle_bin")
+
 

@@ -32,6 +32,12 @@ urlpatterns = [
     path("invoices/<int:invoice_id>/pay/", views.invoice_update_payment, name="invoice_update_payment"),
     path("invoices/<int:invoice_id>/discount/", views.invoice_apply_discount, name="invoice_apply_discount"),
 
+    # Recycle Bin / Deleted Items (3-Day Recovery Lifecycle)
+    path("recycle-bin/", views.recycle_bin_view, name="recycle_bin"),
+    path("recycle-bin/restore/<str:item_type>/<int:item_id>/", views.recycle_bin_restore, name="recycle_bin_restore"),
+    path("recycle-bin/permanent-delete/<str:item_type>/<int:item_id>/", views.recycle_bin_permanent_delete, name="recycle_bin_permanent_delete"),
+    path("recycle-bin/empty/", views.recycle_bin_empty, name="recycle_bin_empty"),
+
     # Customer Account Statements (Selected Date Range)
     path("customers/<int:customer_id>/statement/", views.customer_statement_view, name="customer_statement"),
     path("customers/<int:customer_id>/statement/pdf/", views.customer_statement_pdf, name="customer_statement_pdf"),

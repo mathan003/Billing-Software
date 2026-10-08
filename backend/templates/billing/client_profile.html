@@ -116,10 +116,127 @@
                         </div>
                     </div>
 
+                    <hr class="text-muted opacity-25 my-4">
+
+                    <!-- Bill Paper Size & Print Configuration -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="fw-bold text-dark mb-0">
+                            <i class="fa-solid fa-print text-primary me-2"></i> Bill Paper Size & Print Configuration (பில் அச்சு அமைப்பு)
+                        </h6>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill">
+                            Current: {{ profile.print_paper_size|upper }} ({{ profile.paper_dimensions_display }})
+                        </span>
+                    </div>
+
+                    <div class="alert alert-light border small text-muted mb-3 py-2">
+                        <i class="fa-solid fa-circle-info text-primary me-1"></i> Configure receipt roll width, paper height, and auto-fit rules. Settings apply instantly to thermal printing, browser bills, and PDF downloads.
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <!-- Paper Width Selection -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-secondary small">Paper Width Preset (காகித அகலம்) *</label>
+                            <select name="print_paper_size" id="printPaperSizeSelect" class="form-select rounded-3" onchange="toggleCustomPaperInputs()">
+                                <option value="80mm" {% if profile.print_paper_size == '80mm' or not profile.print_paper_size %}selected{% endif %}>80mm (3" Thermal Standard - Recommended)</option>
+                                <option value="58mm" {% if profile.print_paper_size == '58mm' %}selected{% endif %}>58mm (2" Thermal Mini - Portable POS)</option>
+                                <option value="100mm" {% if profile.print_paper_size == '100mm' %}selected{% endif %}>100mm (4" Wide Thermal Receipt)</option>
+                                <option value="a5" {% if profile.print_paper_size == 'a5' %}selected{% endif %}>A5 Sheet (148mm × 210mm - Half Page)</option>
+                                <option value="a4" {% if profile.print_paper_size == 'a4' %}selected{% endif %}>A4 Sheet (210mm × 297mm - Full Page)</option>
+                                <option value="custom" {% if profile.print_paper_size == 'custom' %}selected{% endif %}>Custom Paper Dimensions (தனிப்பயன் அளவு)</option>
+                            </select>
+                        </div>
+
+                        <!-- Custom Width (if selected) -->
+                        <div class="col-md-6" id="customWidthCol">
+                            <label class="form-label fw-semibold text-secondary small">Custom Width in mm (அகலம் மி.மீ)</label>
+                            <div class="input-group">
+                                <input type="number" step="0.5" min="40" max="300" name="print_custom_width_mm" id="printCustomWidthInput" class="form-control rounded-start-3" value="{{ profile.print_custom_width_mm|default:80.0 }}" oninput="updatePaperPreview()">
+                                <span class="input-group-text rounded-end-3 bg-light">mm</span>
+                            </div>
+                        </div>
+
+                        <!-- Paper Height Mode -->
+                        <div class="col-12">
+                            <label class="form-label fw-semibold text-secondary small">Paper Height Mode (காகித உயரம் அமைப்பு) *</label>
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <div class="p-3 border rounded-3 bg-light d-flex align-items-start gap-2">
+                                        <input class="form-check-input mt-1" type="radio" name="print_paper_height_mode" id="heightModeAuto" value="auto" {% if profile.print_paper_height_mode == 'auto' or not profile.print_paper_height_mode %}checked{% endif %} onchange="toggleCustomPaperInputs()">
+                                        <label class="form-check-label small" for="heightModeAuto">
+                                            <strong class="d-block text-dark">Auto-Fit / Continuous Roll (பரிந்துரைக்கப்படுகிறது)</strong>
+                                            <span class="text-muted">Height automatically adjusts based on the bill content. No unnecessary blank space, cuts off zero information.</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-3 border rounded-3 bg-light d-flex align-items-start gap-2">
+                                        <input class="form-check-input mt-1" type="radio" name="print_paper_height_mode" id="heightModeFixed" value="fixed" {% if profile.print_paper_height_mode == 'fixed' %}checked{% endif %} onchange="toggleCustomPaperInputs()">
+                                        <label class="form-check-label small" for="heightModeFixed">
+                                            <strong class="d-block text-dark">Fixed Page Height (நிலையான உயரம்)</strong>
+                                            <span class="text-muted">Set specific sheet height (e.g. 210mm for A5, 297mm for A4, or custom cut receipts).</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Fixed Height Input & Auto-Expand Checkbox -->
+                        <div class="col-12" id="fixedHeightOptions" style="{% if profile.print_paper_height_mode != 'fixed' %}display: none;{% endif %}">
+                            <div class="p-3 border rounded-3 bg-white">
+                                <div class="row g-3 align-items-center">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold text-secondary small">Fixed Paper Height in mm (உயரம் மி.மீ)</label>
+                                        <div class="input-group">
+                                            <input type="number" step="1" min="50" max="1000" name="print_custom_height_mm" id="printCustomHeightInput" class="form-control rounded-start-3" value="{{ profile.print_custom_height_mm|default:210 }}" oninput="updatePaperPreview()">
+                                            <span class="input-group-text rounded-end-3 bg-light">mm</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check mt-md-4">
+                                            <input class="form-check-input" type="checkbox" name="print_auto_expand_height" id="printAutoExpandCheck" {% if profile.print_auto_expand_height %}checked{% endif %}>
+                                            <label class="form-check-label small text-dark fw-semibold" for="printAutoExpandCheck">
+                                                Auto-expand height for longer bills (அதிக பொருட்கள் இருந்தால் தானாக விரிவடையும்)
+                                            </label>
+                                            <div class="text-muted" style="font-size: 0.78rem;">If a bill contains more items than fits within the fixed height, automatically expand the paper size so no items or bank details are cut off.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Font Size Scaling -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-secondary small">Print Text Font Size (எழுத்து அளவு)</label>
+                            <select name="print_font_scaling" class="form-select rounded-3">
+                                <option value="auto" {% if profile.print_font_scaling == 'auto' or not profile.print_font_scaling %}selected{% endif %}>Auto Scale to Paper Width (தானாக பொருத்த)</option>
+                                <option value="compact" {% if profile.print_font_scaling == 'compact' %}selected{% endif %}>Compact (சிறிய எழுத்து - fits more items)</option>
+                                <option value="standard" {% if profile.print_font_scaling == 'standard' %}selected{% endif %}>Standard (இயல்பான எழுத்து)</option>
+                                <option value="large" {% if profile.print_font_scaling == 'large' %}selected{% endif %}>Large & High Contrast (பெரிய எழுத்து)</option>
+                            </select>
+                        </div>
+
+                        <!-- Live Visual Preview of Receipt Size -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-secondary small">Paper Preview Simulation</label>
+                            <div class="p-2 border rounded-3 bg-light text-center">
+                                <div id="paperPreviewBox" class="bg-white border rounded shadow-sm mx-auto p-2 text-start transition-all" style="width: 140px; font-size: 8px; line-height: 1.2;">
+                                    <div class="fw-bold text-center border-bottom pb-1 mb-1">{{ profile.shop_name|default:"MathanHub" }}</div>
+                                    <div class="text-muted" style="font-size: 7px;">Bill #POS-20261008-0001</div>
+                                    <div class="d-flex justify-content-between border-top pt-1 mt-1"><span>Rice 5kg</span><span>₹300</span></div>
+                                    <div class="d-flex justify-content-between"><span>Oil 1L</span><span>₹150</span></div>
+                                    <div class="d-flex justify-content-between border-top fw-bold mt-1"><span>TOTAL</span><span>₹450</span></div>
+                                </div>
+                                <div class="small text-muted mt-1" id="previewDimensionLabel" style="font-size: 0.75rem;">
+                                    {{ profile.paper_dimensions_display }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Submit Button -->
                     <div class="d-flex justify-content-end mt-4">
                         <button type="submit" class="btn btn-primary-custom px-4 py-2 shadow-sm">
-                            <i class="fa-solid fa-floppy-disk me-2"></i> Save Profile & Bank Details
+                            <i class="fa-solid fa-floppy-disk me-2"></i> Save Profile & Print Configuration
                         </button>
                     </div>
                 </form>
@@ -127,8 +244,30 @@
         </div>
     </div>
 
-    <!-- Right Column: Logo Preview & Branches Management -->
+    <!-- Right Column: Logo Preview, Recycle Bin & Branches Management -->
     <div class="col-lg-5">
+        <!-- Deleted Items / Recycle Bin Card -->
+        <div class="card border-0 shadow-sm rounded-4 mb-4">
+            <div class="card-header bg-white border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center">
+                <h6 class="fw-bold mb-0 text-dark">
+                    <i class="fa-solid fa-trash-can text-danger me-2"></i> Deleted Items / Recycle Bin
+                </h6>
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill">
+                    {{ recycle_bin_count|default:0 }} items
+                </span>
+            </div>
+            <div class="card-body p-4">
+                <p class="small text-muted mb-3">
+                    Customer records, bills, and reports deleted by you or admin remain recoverable in the Recycle Bin for <strong>3 days (72 hours)</strong>. Expired items are permanently purged.
+                </p>
+                <div class="d-flex gap-2">
+                    <a href="{% url 'billing:recycle_bin' %}" class="btn btn-outline-danger btn-sm rounded-pill px-3 fw-semibold">
+                        <i class="fa-solid fa-trash-arrow-up me-1"></i> Open Recycle Bin ({{ recycle_bin_count|default:0 }})
+                    </a>
+                </div>
+            </div>
+        </div>
+
         <!-- Logo Preview Card -->
         <div class="card border-0 shadow-sm rounded-4 mb-4">
             <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
@@ -291,4 +430,72 @@
         </div>
     </div>
 </div>
+
+<script>
+function toggleCustomPaperInputs() {
+    const sizeSelect = document.getElementById('printPaperSizeSelect');
+    const customWidthCol = document.getElementById('customWidthCol');
+    const customWidthInput = document.getElementById('printCustomWidthInput');
+    const heightFixedRadio = document.getElementById('heightModeFixed');
+    const fixedHeightOptions = document.getElementById('fixedHeightOptions');
+
+    if (!sizeSelect) return;
+
+    const val = sizeSelect.value;
+    if (val === 'custom') {
+        if (customWidthCol) customWidthCol.style.display = 'block';
+    } else {
+        const presetWidths = { '58mm': 58, '80mm': 80, '100mm': 100, 'a5': 148, 'a4': 210 };
+        if (customWidthInput && presetWidths[val]) {
+            customWidthInput.value = presetWidths[val];
+        }
+    }
+
+    if (fixedHeightOptions && heightFixedRadio) {
+        fixedHeightOptions.style.display = heightFixedRadio.checked ? 'block' : 'none';
+    }
+
+    updatePaperPreview();
+}
+
+function updatePaperPreview() {
+    const sizeSelect = document.getElementById('printPaperSizeSelect');
+    const customWidthInput = document.getElementById('printCustomWidthInput');
+    const heightFixedRadio = document.getElementById('heightModeFixed');
+    const customHeightInput = document.getElementById('printCustomHeightInput');
+    const previewBox = document.getElementById('paperPreviewBox');
+    const label = document.getElementById('previewDimensionLabel');
+
+    if (!previewBox || !sizeSelect) return;
+
+    let width = 80;
+    const val = sizeSelect.value;
+    if (val === 'custom' && customWidthInput) {
+        width = parseFloat(customWidthInput.value) || 80;
+    } else {
+        const presetWidths = { '58mm': 58, '80mm': 80, '100mm': 100, 'a5': 148, 'a4': 210 };
+        width = presetWidths[val] || 80;
+    }
+
+    // Scale visual preview box
+    let boxWidthPx = Math.min(260, Math.max(90, width * 1.3));
+    previewBox.style.width = boxWidthPx + 'px';
+
+    const isFixed = heightFixedRadio && heightFixedRadio.checked;
+    let heightStr = 'Auto-Fit (Continuous)';
+    if (isFixed && customHeightInput) {
+        const heightVal = parseFloat(customHeightInput.value) || 210;
+        heightStr = heightVal + 'mm (Fixed)';
+    }
+
+    if (label) {
+        label.innerText = width + 'mm × ' + heightStr;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    toggleCustomPaperInputs();
+});
+</script>
 {% endblock %}
+

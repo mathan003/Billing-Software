@@ -180,6 +180,14 @@
                             <i class="fa-solid fa-boxes-stacked me-1"></i> Products (பொருட்கள்)
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'recycle_bin' %}active fw-semibold text-danger{% endif %}" href="{% url 'billing:recycle_bin' %}" title="Deleted Items / Recycle Bin (3-day recovery)">
+                            <i class="fa-solid fa-trash-can me-1 text-danger"></i> Recycle Bin
+                            {% if recycle_bin_count > 0 %}
+                                <span class="badge bg-danger rounded-pill px-1.5 py-0.5" style="font-size: 0.65rem;">{{ recycle_bin_count }}</span>
+                            {% endif %}
+                        </a>
+                    </li>
                     {% if is_admin_user %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'admin_panel' %}active fw-bold text-danger{% endif %}" href="{% url 'billing:admin_panel' %}{{ sec_param }}">
@@ -242,6 +250,14 @@
                                 <li>
                                     <a class="dropdown-item small fw-semibold text-dark rounded-2 py-2" href="{% url 'billing:reports_dashboard' %}{{ sec_param }}">
                                         <i class="fa-solid fa-chart-line me-2 text-success"></i> Statements & Reports
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item small fw-semibold text-dark rounded-2 py-2 d-flex align-items-center justify-content-between" href="{% url 'billing:recycle_bin' %}">
+                                        <span><i class="fa-solid fa-trash-can me-2 text-danger"></i> Deleted Items / Recycle Bin</span>
+                                        {% if recycle_bin_count > 0 %}
+                                            <span class="badge bg-danger rounded-pill px-2 py-0" style="font-size: 0.65rem;">{{ recycle_bin_count }}</span>
+                                        {% endif %}
                                     </a>
                                 </li>
                                 <li>

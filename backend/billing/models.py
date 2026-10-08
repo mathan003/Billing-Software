@@ -30,6 +30,8 @@ class Product(models.Model):
     stock_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default="KG")
     is_active = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -68,6 +70,8 @@ class Customer(models.Model):
     address = models.TextField(blank=True, null=True)
     gst_number = models.CharField(max_length=30, blank=True, null=True)
     notes = models.TextField(blank=True, default="")
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -79,15 +83,15 @@ class Customer(models.Model):
 
     @property
     def total_billed(self):
-        return self.invoices.aggregate(total=models.Sum("grand_total"))["total"] or Decimal("0.00")
+        return self.invoices.filter(is_deleted=False).aggregate(total=models.Sum("grand_total"))["total"] or Decimal("0.00")
 
     @property
     def total_paid(self):
-        return self.invoices.aggregate(total=models.Sum("paid_amount"))["total"] or Decimal("0.00")
+        return self.invoices.filter(is_deleted=False).aggregate(total=models.Sum("paid_amount"))["total"] or Decimal("0.00")
 
     @property
     def total_pending(self):
-        return self.invoices.aggregate(total=models.Sum("balance_amount"))["total"] or Decimal("0.00")
+        return self.invoices.filter(is_deleted=False).aggregate(total=models.Sum("balance_amount"))["total"] or Decimal("0.00")
 
 
 class Branch(models.Model):
@@ -140,6 +144,8 @@ class Purchase(models.Model):
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     payment_status = models.CharField(max_length=20, default="Paid")
     notes = models.TextField(blank=True, default="")
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -190,6 +196,8 @@ class Invoice(models.Model):
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS, default="Paid")
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="windows_app")
     notes = models.TextField(blank=True, default="")
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(default=timezone.now)
     synced_at = models.DateTimeField(auto_now=True)
 
@@ -412,6 +420,29 @@ class UserProfile(models.Model):
     shop_logo_base64 = models.TextField(blank=True, default="", help_text="Base64 encoded shop logo")
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="client")
     initial_password = models.CharField(max_length=128, blank=True, default="", help_text="Client login password set by Admin")
+
+    # Bill Paper Size & Print Configuration
+    PAPER_SIZE_CHOICES = (
+        ("80mm", "80mm (3 Inch Thermal Standard - Recommended)"),
+        ("58mm", "58mm (2 Inch Thermal Mini)"),
+        ("100mm", "100mm (4 Inch Wide Thermal)"),
+        ("a5", "A5 Sheet (148mm × 210mm)"),
+        ("a4", "A4 Sheet (210mm × 297mm)"),
+        ("custom", "Custom Width & Height (தனிப்பயன் அளவு)"),
+    )
+
+    PAPER_HEIGHT_MODES = (
+        ("auto", "Auto-Fit / Continuous Roll (உள்ளடக்கத்திற்கு ஏற்ப தானாக)"),
+        ("fixed", "Fixed Height (நிலையான உயரம்)"),
+    )
+
+    print_paper_size = models.CharField(max_length=20, choices=PAPER_SIZE_CHOICES, default="80mm", help_text="Bill paper size")
+    print_custom_width_mm = models.DecimalField(max_digits=6, decimal_places=1, default=Decimal("80.0"), help_text="Custom width in mm")
+    print_paper_height_mode = models.CharField(max_length=20, choices=PAPER_HEIGHT_MODES, default="auto", help_text="Height mode: auto or fixed")
+    print_custom_height_mm = models.DecimalField(max_digits=6, decimal_places=1, null=True, blank=True, help_text="Custom height in mm")
+    print_auto_expand_height = models.BooleanField(default=True, help_text="Auto-expand height for longer bills so nothing is cut off")
+    print_font_scaling = models.CharField(max_length=20, default="auto", help_text="Font scaling mode")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -454,6 +485,40 @@ class UserProfile(models.Model):
                 pass
         return self.avatar_url
 
+    @property
+    def effective_paper_width_mm(self):
+        preset_widths = {
+            "58mm": Decimal("58.0"),
+            "80mm": Decimal("80.0"),
+            "100mm": Decimal("100.0"),
+            "a5": Decimal("148.0"),
+            "a4": Decimal("210.0"),
+        }
+        if self.print_paper_size == "custom" and self.print_custom_width_mm:
+            return self.print_custom_width_mm
+        return preset_widths.get(self.print_paper_size, Decimal("80.0"))
+
+    @property
+    def effective_paper_height_mm(self):
+        preset_heights = {
+            "a5": Decimal("210.0"),
+            "a4": Decimal("297.0"),
+        }
+        if self.print_paper_height_mode == "fixed":
+            if self.print_custom_height_mm:
+                return self.print_custom_height_mm
+            return preset_heights.get(self.print_paper_size, Decimal("210.0"))
+        return None
+
+    @property
+    def paper_dimensions_display(self):
+        w = f"{self.effective_paper_width_mm}mm"
+        if self.print_paper_height_mode == "auto":
+            return f"{w} × Auto-Fit (Continuous)"
+        h = f"{self.effective_paper_height_mm or 210}mm"
+        expand = " + Auto-Expand" if self.print_auto_expand_height else ""
+        return f"{w} × {h}{expand}"
+
 
 class ActivityLog(models.Model):
     """
@@ -494,6 +559,10 @@ class ActivityLog(models.Model):
         ("DEVICE_LIMIT_BLOCKED", "Device Quota Exceeded Blocked"),
         ("DEVICE_OTP", "New Device Verification OTP"),
         ("DEVICE_VERIFY", "Device OTP Verified & Approved"),
+        ("RECYCLE_BIN_DELETE", "Item Moved to Recycle Bin"),
+        ("RECYCLE_BIN_RESTORE", "Item Restored from Recycle Bin"),
+        ("RECYCLE_BIN_PURGE", "Item Permanently Deleted"),
+        ("PRINT_CONFIG_UPDATE", "Bill Paper Size & Print Configuration Updated"),
     )
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="activity_logs")
@@ -673,4 +742,89 @@ class SoftwareUpdate(models.Model):
             return latest
         except Exception:
             return cls.objects.filter(is_published=True).order_by("-created_at").first()
+
+
+class SavedReport(models.Model):
+    """
+    Generated / Exported business reports with Recycle Bin (3-day recovery) support.
+    """
+    REPORT_TYPES = (
+        ("sales", "Sales Report"),
+        ("gst", "GST Tax Report"),
+        ("customer", "Customer Outstanding Statement"),
+        ("inventory", "Inventory & Stock Report"),
+        ("profit_loss", "Profit & Loss Statement"),
+    )
+
+    client = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="saved_reports")
+    report_name = models.CharField(max_length=200)
+    report_type = models.CharField(max_length=50, choices=REPORT_TYPES, default="sales")
+    date_range_label = models.CharField(max_length=150, default="")
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    records_count = models.IntegerField(default=0)
+    parameters_json = models.TextField(blank=True, default="{}")
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.report_name} ({self.created_at.strftime('%Y-%m-%d')})"
+
+
+def purge_expired_deleted_items(days=3):
+    """
+    Automatically and permanently deletes soft-deleted records (Invoices, Customers, Products, Purchases, SavedReports)
+    whose deleted_at is older than 3 days (72 hours).
+    Expired items are permanently removed from the database for both admin and client.
+    """
+    cutoff = timezone.now() - timedelta(days=days)
+    purged_counts = {
+        "invoices": 0,
+        "customers": 0,
+        "products": 0,
+        "purchases": 0,
+        "saved_reports": 0,
+    }
+
+    try:
+        # 1. Expired Invoices (>3 days)
+        expired_invoices = Invoice.objects.filter(is_deleted=True, deleted_at__lte=cutoff)
+        purged_counts["invoices"] = expired_invoices.count()
+        if purged_counts["invoices"] > 0:
+            for inv in expired_invoices:
+                inv.items.all().delete()
+                inv.payments.all().delete()
+            expired_invoices.delete()
+
+        # 2. Expired Customers (>3 days)
+        expired_customers = Customer.objects.filter(is_deleted=True, deleted_at__lte=cutoff)
+        purged_counts["customers"] = expired_customers.count()
+        if purged_counts["customers"] > 0:
+            expired_customers.delete()
+
+        # 3. Expired Products (>3 days)
+        expired_products = Product.objects.filter(is_deleted=True, deleted_at__lte=cutoff)
+        purged_counts["products"] = expired_products.count()
+        if purged_counts["products"] > 0:
+            expired_products.delete()
+
+        # 4. Expired Purchases (>3 days)
+        expired_purchases = Purchase.objects.filter(is_deleted=True, deleted_at__lte=cutoff)
+        purged_counts["purchases"] = expired_purchases.count()
+        if purged_counts["purchases"] > 0:
+            expired_purchases.delete()
+
+        # 5. Expired SavedReports (>3 days)
+        expired_reports = SavedReport.objects.filter(is_deleted=True, deleted_at__lte=cutoff)
+        purged_counts["saved_reports"] = expired_reports.count()
+        if purged_counts["saved_reports"] > 0:
+            expired_reports.delete()
+    except Exception:
+        pass
+
+    return purged_counts
+
 

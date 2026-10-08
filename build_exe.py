@@ -64,6 +64,7 @@ def build():
         "--hidden-import=billing.migrations.0011_alter_companysettings_gst_number_productcategory",
         "--hidden-import=billing.migrations.0012_registereddevice_is_verified_and_more",
         "--hidden-import=billing.migrations.0013_invoice_customer_address_alter_product_sku_and_more",
+        "--hidden-import=billing.migrations.0014_customer_deleted_at_customer_is_deleted_and_more",
         # Hidden imports for Django dynamic loading
         "--hidden-import=billing",
         "--hidden-import=billing.models",

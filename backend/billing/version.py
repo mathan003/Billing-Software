@@ -3,13 +3,14 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.5.6"
-APP_TITLE = "Customer Address, Manual Pricing, Other Product & Isolated Multi-Tenant POS"
+APP_VERSION = "v2.5.7"
+APP_TITLE = "Bill Paper Size Customization, 3-Day Recycle Bin & Multi-Tenant Isolation"
 APP_RELEASE_NOTES = (
-    "• Added Customer Address field to billing terminal, invoice records, and PDF printouts\n"
-    "• Enabled manual unit price adjustments during billing for pre-priced items\n"
-    "• Added 'Other Product' button for billing custom uncataloged products\n"
-    "• Fixed 'Remove Category' functionality with live UI refresh and fallback reassignments\n"
-    "• Enforced strict multi-tenant isolation: categories and products are private to each client"
+    "• Configurable Bill Paper Size in Client Profile (58mm, 80mm, 100mm, A5, A4, Custom width/height)\n"
+    "• Continuous auto-fit paper roll & auto-expanding height for long bills\n"
+    "• Responsive on-screen and downloadable PDF receipts adapted to configured dimensions\n"
+    "• 3-Day Deleted Items / Recycle Bin: soft-deleted bills, customers, products, and reports are recoverable for 3 days\n"
+    "• Automated background purge of expired items older than 3 days across admin & client databases\n"
+    "• Complete multi-tenant data isolation: client customers, bills, reports, and products remain strictly partitioned"
 )
 

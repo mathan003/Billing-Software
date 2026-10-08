@@ -3,12 +3,13 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.5.3"
-APP_TITLE = "MathanHub Multi-Terminal Device Management & Multi-Admin Sync"
+APP_VERSION = "v2.5.4"
+APP_TITLE = "MathanHub EXE Admin Panel Direct Access & Terminal Switch"
 APP_RELEASE_NOTES = (
-    "• Multi-device access enabled for Mathan003 Admin (2 active terminals simultaneously)\n"
-    "• Safe Admin Panel device revocation with instant remote client terminal disconnection\n"
-    "• Resolved 404 error on device slot deletion and active session disconnects\n"
-    "• Real-time client device quota (+/-) synchronization without overwrite bugs\n"
-    "• Zero data-loss guarantees: Client settings, bills, and databases preserved 100%"
+    "• Direct Admin Panel access enabled in Desktop POS (EXE) top navigation bar\n"
+    "• Fast Admin Unlock Modal: Open Admin Panel from client terminal using admin credentials\n"
+    "• One-click Admin Login & Panel button on desktop login screen\n"
+    "• 1-Click POS Billing return button from Admin Panel\n"
+    "• Fixed client data wipe bug when administrator logs in or unlocks terminal\n"
+    "• Full multi-terminal synchronization & 2 active admin devices for Mathan003"
 )

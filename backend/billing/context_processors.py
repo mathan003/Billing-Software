@@ -1,20 +1,24 @@
+import os
 import uuid
 from .models import ActiveUserSession, SoftwareUpdate, CompanySettings, RegisteredDevice
 from .version import APP_VERSION, APP_TITLE, APP_RELEASE_NOTES
+from .device_utils import is_desktop_environment
 
 
 def session_security_context(request):
     """
     Context processor providing dynamic session security tokens, user session metadata,
-    device limits, client shop branding, and software update notifications.
+    device limits, client shop branding, desktop environment detection, and software update notifications.
     """
     company = CompanySettings.get_settings()
     latest_update = SoftwareUpdate.get_latest_update()
+    is_desktop = (os.environ.get("IS_DESKTOP_APP") == "True") or is_desktop_environment(request)
 
     if not hasattr(request, "user") or not request.user.is_authenticated:
         return {
             "sec_token": "",
             "sec_param": "",
+            "is_desktop_app": is_desktop,
             "user_profile": None,
             "is_admin_user": False,
             "active_devices_count": 0,
@@ -134,6 +138,7 @@ def session_security_context(request):
     return {
         "sec_token": sec_token,
         "sec_param": f"?sec={sec_token}",
+        "is_desktop_app": is_desktop,
         "user_profile": profile,
         "is_admin_user": is_admin,
         "active_devices_count": active_count,

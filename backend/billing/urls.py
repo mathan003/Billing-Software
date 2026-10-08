@@ -38,6 +38,7 @@ urlpatterns = [
 
     # Admin Panel (Users Management, Company Profile/Branding & Activity Logs - Strict Admin Only)
     path("admin-panel/", views.admin_panel, name="admin_panel"),
+    path("admin-quick-unlock/", views.admin_quick_unlock, name="admin_quick_unlock"),
     path("admin-panel/company/", views.company_settings_update, name="company_settings_update"),
     path("admin-panel/purge-45-days/", views.run_45day_purge, name="run_45day_purge"),
     path("admin-panel/users/create/", views.admin_user_create, name="admin_user_create"),

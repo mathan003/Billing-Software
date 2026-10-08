@@ -177,8 +177,12 @@
                     <i class="fa-solid fa-lock-open me-2"></i> Unlock & Sign In to POS
                 </button>
 
-                <div class="text-center mt-3">
-                    <a href="?switch_user=1" class="text-muted small text-decoration-none">
+                <div class="d-flex flex-column gap-2 mt-3">
+                    <a href="?switch_user=1&login_admin=1" class="btn btn-outline-danger btn-sm rounded-pill py-2 fw-bold text-decoration-none shadow-xs d-flex align-items-center justify-content-center gap-2">
+                        <i class="fa-solid fa-shield-halved text-danger"></i>
+                        <span>Admin Login & Panel (Mathan003) &bull; நிர்வாகி உள்நுழைவு</span>
+                    </a>
+                    <a href="?switch_user=1" class="btn btn-light btn-sm rounded-pill py-1 text-muted text-decoration-none border">
                         <i class="fa-solid fa-arrow-right-arrow-left me-1"></i> Switch Account / வேறு பயனர் கணக்கு
                     </a>
                 </div>
@@ -207,6 +211,12 @@
                 <button type="submit" class="btn btn-login w-100">
                     <i class="fa-solid fa-right-to-bracket me-2"></i> {% if is_desktop_app %}{% if is_first_time_desktop %}Register Device & Sign In{% else %}Sign In to POS{% endif %}{% else %}Sign In to Store{% endif %}
                 </button>
+
+                <div class="text-center mt-3">
+                    <a href="?switch_user=1&login_admin=1" class="text-danger small text-decoration-none fw-semibold">
+                        <i class="fa-solid fa-shield-halved me-1"></i> Admin Login & Panel (Mathan003) &bull; நிர்வாகி
+                    </a>
+                </div>
             {% endif %}
             <input type="hidden" name="device_id" id="loginDeviceId" value="{{ device_id }}">
         </form>

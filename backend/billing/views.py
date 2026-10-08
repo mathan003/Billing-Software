@@ -37,7 +37,7 @@ def admin_required(view_func):
             hasattr(request.user, "profile") and request.user.profile.role == "admin"
         )
         if not is_admin:
-            messages.error(request, "Access Denied: You do not have administrator privileges to access the Admin Panel.")
+            messages.warning(request, "Access Denied: You are in Client/Cashier mode. Please click 'Admin Panel (நிர்வாகம்)' on the navigation bar to unlock using the Administrator password.")
             return redirect("billing:dashboard")
         return view_func(request, *args, **kwargs)
     return _wrapped
@@ -160,12 +160,15 @@ def login_view(request):
     is_desktop = is_desktop_environment(request)
     pos_cfg = get_desktop_pos_config() if is_desktop else {}
     switch_user = request.GET.get("switch_user") == "1"
+    login_admin = request.GET.get("login_admin") == "1"
 
-    if switch_user and is_desktop:
+    if (switch_user or login_admin) and is_desktop:
         clear_desktop_remembered_user()
         pos_cfg = get_desktop_pos_config()
 
     remembered_username = pos_cfg.get("remembered_username", "") if is_desktop else ""
+    if login_admin:
+        remembered_username = "Mathan003"
     is_first_time_desktop = is_desktop and not bool(pos_cfg.get("is_activated"))
     device_id = get_hardware_device_id() if is_desktop else (
         request.POST.get("device_id") or request.COOKIES.get("billing_device_id") or f"WEB-{uuid.uuid4().hex[:12].upper()}"
@@ -541,28 +544,36 @@ def login_view(request):
 
         # 4. Save persistent local configuration & Erase previous client data if switching client
         if is_desktop or os.environ.get("USE_SQLITE") == "True":
+            is_user_admin = user.is_superuser or (getattr(user, "profile", None) and user.profile.role == "admin")
             last_client = pos_cfg.get("last_logged_in_client", "")
-            if last_client and last_client != user.username:
-                # User switched clients! Erase previous client's cached local records so new client has a clean slate
-                try:
-                    InvoiceItem.objects.all().delete()
-                    Invoice.objects.all().delete()
-                    PaymentRecord.objects.all().delete()
-                    StockLog.objects.all().delete()
-                    Customer.objects.all().delete()
-                    Product.objects.all().delete()
-                    ProductCategory.objects.all().delete()
-                    Branch.objects.exclude(branch_code="MAIN-01").delete()
-                except Exception:
-                    pass
+            if not is_user_admin:
+                if last_client and last_client != user.username:
+                    # User switched clients! Erase previous client's cached local records so new client has a clean slate
+                    try:
+                        InvoiceItem.objects.all().delete()
+                        Invoice.objects.all().delete()
+                        PaymentRecord.objects.all().delete()
+                        StockLog.objects.all().delete()
+                        Customer.objects.all().delete()
+                        Product.objects.all().delete()
+                        ProductCategory.objects.all().delete()
+                        Branch.objects.exclude(branch_code="MAIN-01").delete()
+                    except Exception:
+                        pass
 
-            save_desktop_pos_config({
-                "device_id": device_id,
-                "remembered_username": user.username,
-                "last_logged_in_client": user.username,
-                "shop_name": getattr(profile, "shop_name", ""),
-                "is_activated": True,
-            })
+                save_desktop_pos_config({
+                    "device_id": device_id,
+                    "remembered_username": user.username,
+                    "last_logged_in_client": user.username,
+                    "shop_name": getattr(profile, "shop_name", ""),
+                    "is_activated": True,
+                })
+            else:
+                # When Admin logs in, preserve client data on terminal
+                save_desktop_pos_config({
+                    "device_id": device_id,
+                    "is_activated": True,
+                })
 
             # Trigger immediate background sync to pull latest data for this client from cloud
             try:
@@ -597,7 +608,14 @@ def login_view(request):
         )
 
         messages.success(request, f"Welcome back, {user.username}!")
-        response = redirect(f"/?sec={sec_token}")
+        next_url = request.GET.get("next") or request.POST.get("next")
+        if next_url and next_url.startswith("/"):
+            target_url = f"{next_url}{'&' if '?' in next_url else '?'}sec={sec_token}"
+        elif login_admin or (is_admin_user and not is_desktop):
+            target_url = f"/admin-panel/?sec={sec_token}"
+        else:
+            target_url = f"/?sec={sec_token}"
+        response = redirect(target_url)
         response.set_cookie("billing_device_id", device_id, max_age=365*24*3600*5)
         if is_desktop:
             response.set_cookie("is_desktop_pos", "true", max_age=365*24*3600*5)
@@ -1823,6 +1841,69 @@ def customer_edit(request, customer_id):
         messages.success(request, f"Customer '{customer.name}' updated successfully!")
 
     return redirect(request.META.get("HTTP_REFERER", "billing:dashboard"))
+
+
+def admin_quick_unlock(request):
+    """
+    Allows Administrator (e.g. Mathan003) to instantly unlock and open the Admin Panel
+    from any active POS terminal or client session.
+    """
+    if request.method != "POST":
+        return redirect("billing:admin_panel")
+
+    admin_username = request.POST.get("admin_username", "Mathan003").strip()
+    admin_password = request.POST.get("admin_password", "")
+
+    if not admin_password:
+        messages.error(request, "Admin password is required to unlock the Admin Panel.")
+        return redirect(request.META.get("HTTP_REFERER", "billing:dashboard"))
+
+    user = authenticate(request, username=admin_username, password=admin_password)
+    if not user:
+        admin_obj = User.objects.filter(username=admin_username).first()
+        if admin_obj and admin_obj.check_password(admin_password):
+            user = admin_obj
+
+    if not user:
+        messages.error(request, "Invalid administrator password or username. Admin panel access denied.")
+        return redirect(request.META.get("HTTP_REFERER", "billing:dashboard"))
+
+    is_admin = user.is_superuser or (hasattr(user, "profile") and user.profile.role == "admin")
+    if not is_admin:
+        messages.error(request, f"User '{admin_username}' does not have Administrator privileges.")
+        return redirect(request.META.get("HTTP_REFERER", "billing:dashboard"))
+
+    # Switch session to administrator
+    login(request, user)
+    if not request.session.session_key:
+        request.session.save()
+
+    session_key = request.session.session_key
+    sec_token = uuid.uuid4().hex[:12]
+    request.session["sec_token"] = sec_token
+
+    device_id = get_hardware_device_id() if is_desktop_environment(request) else (
+        request.COOKIES.get("billing_device_id") or f"WEB-{uuid.uuid4().hex[:12].upper()}"
+    )
+
+    ActiveUserSession.objects.update_or_create(
+        session_key=session_key[:40],
+        defaults={
+            "user": user,
+            "device_info": f"Admin Direct Terminal ({device_id[:12]})",
+            "ip_address": request.META.get("REMOTE_ADDR", "127.0.0.1"),
+        }
+    )
+
+    log_activity(
+        request,
+        "LOGIN",
+        f"Administrator '{user.username}' unlocked Admin Panel from active terminal session."
+    )
+    messages.success(request, f"Administrator unlocked successfully! Welcome, {user.username}.")
+    response = redirect(f"/admin-panel/?sec={sec_token}")
+    response.set_cookie("billing_device_id", device_id, max_age=365*24*3600*5)
+    return response
 
 
 # ==========================================

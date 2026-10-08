@@ -50,7 +50,7 @@ class SessionSecurityMiddleware:
                 hasattr(request.user, "profile") and request.user.profile.role == "admin"
             )
             if not is_admin:
-                messages.error(request, "Access Denied: You do not have administrator privileges to access the Admin Panel.")
+                messages.warning(request, "Access Denied: You are in Client/Cashier mode. Please click 'Admin Panel (நிர்வாகம்)' on the navigation bar to unlock using the Administrator password.")
                 return redirect("billing:dashboard")
 
         # 4. Device Session Verification & Limit Enforcement

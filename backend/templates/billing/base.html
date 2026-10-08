@@ -180,6 +180,20 @@
                             <i class="fa-solid fa-boxes-stacked me-1"></i> Products (பொருட்கள்)
                         </a>
                     </li>
+                    {% if is_admin_user %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'admin_panel' %}active fw-bold text-danger{% endif %}" href="{% url 'billing:admin_panel' %}{{ sec_param }}">
+                            <i class="fa-solid fa-screwdriver-wrench me-1 text-danger"></i> Admin Panel (நிர்வாகம்)
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="nav-item d-flex align-items-center">
+                        <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-2 py-1 ms-1 d-flex align-items-center gap-1 shadow-sm mt-1" data-bs-toggle="modal" data-bs-target="#adminUnlockModal" title="Unlock Admin Panel using Admin Password">
+                            <i class="fa-solid fa-lock text-danger"></i>
+                            <span class="fw-semibold small">Admin Panel (நிர்வாகம்)</span>
+                        </button>
+                    </li>
+                    {% endif %}
                 </ul>
 
                 <div class="d-flex align-items-center gap-2">
@@ -246,9 +260,16 @@
                                 {% if is_admin_user %}
                                     <li><hr class="dropdown-divider my-1"></li>
                                     <li>
-                                        <a class="dropdown-item small fw-semibold text-primary rounded-2 py-2" href="{% url 'billing:admin_panel' %}{{ sec_param }}">
-                                            <i class="fa-solid fa-screwdriver-wrench me-2"></i> Admin Panel & Logs
+                                        <a class="dropdown-item small fw-bold text-danger rounded-2 py-2" href="{% url 'billing:admin_panel' %}{{ sec_param }}">
+                                            <i class="fa-solid fa-screwdriver-wrench me-2"></i> Admin Panel & Logs (நிர்வாகம்)
                                         </a>
+                                    </li>
+                                {% else %}
+                                    <li><hr class="dropdown-divider my-1"></li>
+                                    <li>
+                                        <button type="button" class="dropdown-item small fw-bold text-danger rounded-2 py-2 d-flex align-items-center" data-bs-toggle="modal" data-bs-target="#adminUnlockModal">
+                                            <i class="fa-solid fa-lock-open me-2"></i> Unlock Admin Panel (நிர்வாகி அனுமதி)
+                                        </button>
                                     </li>
                                 {% endif %}
                                 <li><hr class="dropdown-divider my-1"></li>
@@ -429,7 +450,70 @@
         </div>
     </div>
 
+    <!-- Admin Panel Direct Unlock Modal (Accessible from any page / terminal) -->
+    <div class="modal fade" id="adminUnlockModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0 bg-danger-subtle rounded-top-4 p-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="rounded-circle bg-danger text-white d-flex align-items-center justify-content-center shadow-sm" style="width: 36px; height: 36px;">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold text-danger mb-0">Admin Panel Access (நிர்வாக பலகை)</h5>
+                            <small class="text-secondary">Administrator Authentication Required</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post" action="{% url 'billing:admin_quick_unlock' %}">
+                    {% csrf_token %}
+                    <div class="modal-body p-4">
+                        <div class="alert alert-info border-0 rounded-3 py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+                            <i class="fa-solid fa-circle-info text-primary fs-5"></i>
+                            <span>You are currently on terminal <strong>{{ user.username|default:"Client POS" }}</strong>. Enter administrator credentials to open the <strong>Admin Panel</strong>.</span>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold text-secondary">Administrator Username</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-user-shield text-danger"></i></span>
+                                <input type="text" name="admin_username" class="form-control bg-light border-start-0 fw-bold" value="Mathan003" required>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold text-secondary">Administrator Password (கடவுச்சொல்)</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-lock text-danger"></i></span>
+                                <input type="password" name="admin_password" id="adminModalPassword" class="form-control bg-light border-start-0 border-end-0" required autofocus placeholder="Enter Admin Password">
+                                <button class="btn btn-light border border-start-0 text-secondary" type="button" onclick="togglePassVisibility('adminModalPassword', this)" title="Toggle Password">
+                                    <i class="fa-solid fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 pt-0 px-4 pb-4 justify-content-between">
+                        <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger rounded-pill px-4 fw-bold shadow-sm d-inline-flex align-items-center gap-2">
+                            <i class="fa-solid fa-unlock-keyhole"></i> Unlock & Open Admin Panel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
+    function togglePassVisibility(inputId, btn) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        if (input.type === "password") {
+            input.type = "text";
+            btn.innerHTML = '<i class="fa-solid fa-eye-slash text-secondary"></i>';
+        } else {
+            input.type = "password";
+            btn.innerHTML = '<i class="fa-solid fa-eye text-secondary"></i>';
+        }
+    }
     function rejectSoftwareUpdateAjax() {
         const btn1 = document.getElementById('btnRejectUpdate');
         const btn2 = document.getElementById('btnModalRejectUpdate');

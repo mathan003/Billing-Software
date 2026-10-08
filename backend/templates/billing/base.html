@@ -312,9 +312,16 @@
                 <button type="button" class="btn btn-sm btn-outline-light px-3" data-bs-toggle="modal" data-bs-target="#updateNotesModal">
                     <i class="fa-solid fa-list-check me-1"></i> Release Notes
                 </button>
-                <button type="button" class="btn btn-sm btn-primary-custom px-4 d-flex align-items-center gap-2 shadow" id="btnApplyUpdate" onclick="applySoftwareUpdateAjax()">
+                <button type="button" class="btn btn-sm btn-danger px-3 d-flex align-items-center gap-1 shadow-sm fw-semibold" id="btnRejectUpdate" onclick="rejectSoftwareUpdateAjax()" title="Reject or postpone this update">
+                    <i class="fa-solid fa-xmark me-1"></i>
+                    <span>Reject (வேண்டாம்)</span>
+                </button>
+                <button type="button" class="btn btn-sm btn-primary-custom px-4 d-flex align-items-center gap-2 shadow fw-bold" id="btnApplyUpdate" onclick="applySoftwareUpdateAjax()">
                     <i class="fa-solid fa-arrows-rotate"></i>
                     <span>Update (புதுப்பிக்கவும்)</span>
+                </button>
+                <button type="button" class="btn btn-sm btn-link text-white-50 p-1 ms-1 text-decoration-none" onclick="rejectSoftwareUpdateAjax()" title="Dismiss update banner">
+                    <i class="fa-solid fa-xmark fs-5"></i>
                 </button>
             </div>
         </div>
@@ -340,17 +347,73 @@
                         <span>Applying will register the update in background without clearing your billing screen.</span>
                     </div>
                 </div>
-                <div class="modal-footer bg-light rounded-bottom-4">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Later</button>
-                    <button type="button" class="btn btn-primary-custom btn-sm" onclick="applySoftwareUpdateAjax()">
-                        <i class="fa-solid fa-arrows-rotate me-1"></i> Apply Update Now
+                <div class="modal-footer bg-light rounded-bottom-4 justify-content-between">
+                    <button type="button" class="btn btn-danger btn-sm px-3 fw-semibold" onclick="rejectSoftwareUpdateAjax()">
+                        <i class="fa-solid fa-xmark me-1"></i> Reject (வேண்டாம்)
                     </button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Later</button>
+                        <button type="button" class="btn btn-primary-custom btn-sm px-3 fw-bold shadow-sm" onclick="applySoftwareUpdateAjax()">
+                            <i class="fa-solid fa-arrows-rotate me-1"></i> Update (புதுப்பிக்கவும்)
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
+    function rejectSoftwareUpdateAjax() {
+        const btn = document.getElementById('btnRejectUpdate');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Rejecting...';
+        }
+        fetch('{% url "billing:client_reject_software_update" %}?format=json', {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            const banner = document.getElementById('softwareUpdateBanner');
+            if (banner) {
+                banner.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+                banner.style.opacity = '0';
+                banner.style.transform = 'translateY(20px)';
+                setTimeout(() => banner.remove(), 400);
+            }
+            const modalEl = document.getElementById('updateNotesModal');
+            if (modalEl) {
+                const notesModal = bootstrap.Modal.getInstance(modalEl);
+                if (notesModal) notesModal.hide();
+            }
+
+            const msg = data.message || "Software update postponed. You can update anytime later.";
+            const toast = document.createElement('div');
+            toast.className = 'position-fixed bottom-0 end-0 p-3';
+            toast.style.zIndex = '1100';
+            toast.innerHTML = `
+                <div class="toast show align-items-center text-white bg-dark border-0 shadow-lg rounded-3" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body small fw-semibold">
+                            <i class="fa-solid fa-circle-info text-warning me-2"></i> ${msg}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        })
+        .catch(err => {
+            console.error(err);
+            const banner = document.getElementById('softwareUpdateBanner');
+            if (banner) banner.remove();
+        });
+    }
+
     function applySoftwareUpdateAjax() {
         const btn = document.getElementById('btnApplyUpdate');
         if (btn) {
@@ -370,6 +433,7 @@
             if (banner) {
                 banner.style.transition = 'opacity 0.4s ease';
                 banner.style.opacity = '0';
+                banner.style.transform = 'translateY(20px)';
                 setTimeout(() => banner.remove(), 400);
             }
             const modalEl = document.getElementById('updateNotesModal');

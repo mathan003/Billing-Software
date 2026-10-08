@@ -3809,6 +3809,34 @@ def client_apply_software_update(request):
     return redirect(request.META.get("HTTP_REFERER", "/"))
 
 
+def client_reject_software_update(request):
+    """
+    Client rejects / postpones software update:
+    - Sets rejected_update_version in session and cookie so update banner is dismissed.
+    - Does NOT force update or interrupt active billing session.
+    - Returns JSON for AJAX calls or redirects back.
+    """
+    latest = SoftwareUpdate.get_latest_update()
+    version = latest.version if latest else "v2.5.0"
+    request.session["rejected_update_version"] = version
+
+    msg = f"Update {version} postponed. You can update later from Settings."
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest" or request.GET.get("format") == "json":
+        response = JsonResponse({
+            "status": "rejected",
+            "message": msg,
+            "version": version,
+        })
+        response.set_cookie(f"rejected_update_{version}", "1", max_age=86400 * 7)
+        return response
+
+    messages.info(request, msg)
+    response = redirect(request.META.get("HTTP_REFERER", "/"))
+    response.set_cookie(f"rejected_update_{version}", "1", max_age=86400 * 7)
+    return response
+
+
 @admin_required
 def admin_download_all_data(request):
     """

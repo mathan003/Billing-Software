@@ -49,8 +49,12 @@ def session_security_context(request):
 
     # Check for software updates published by admin
     applied_ver = request.session.get("applied_update_version")
+    rejected_ver = request.session.get("rejected_update_version")
+    cookie_rejected = False
+    if latest_update:
+        cookie_rejected = request.COOKIES.get(f"rejected_update_{latest_update.version}") == "1"
     available_software_update = None
-    if latest_update and latest_update.version != applied_ver:
+    if latest_update and latest_update.version != applied_ver and latest_update.version != rejected_ver and not cookie_rejected:
         available_software_update = latest_update
 
     # Client-specific shop profile with fallback to company settings

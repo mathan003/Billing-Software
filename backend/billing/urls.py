@@ -84,9 +84,10 @@ urlpatterns = [
     path("profile/branches/<int:branch_id>/edit/", views.client_branch_edit, name="client_branch_edit"),
     path("profile/branches/<int:branch_id>/delete/", views.client_branch_delete, name="client_branch_delete"),
 
-    # Software Updates (Admin Publish & Client Apply)
+    # Software Updates (Admin Publish & Client Apply / Reject)
     path("admin-panel/updates/publish/", views.admin_publish_software_update, name="admin_publish_software_update"),
     path("software-update/apply/", views.client_apply_software_update, name="client_apply_software_update"),
+    path("software-update/reject/", views.client_reject_software_update, name="client_reject_software_update"),
 
     # Customers (Directory, Ledger, Statement, Manual Delete, CSV Exports)
     path("customers/", views.customer_list, name="customer_list"),

@@ -148,7 +148,7 @@ class ClientAuthVerifyView(views.APIView):
 
             # Create or update active session in cloud DB so Admin can monitor and disconnect
             ActiveUserSession.objects.update_or_create(
-                session_key=f"EXE-{device_id}",
+                session_key=f"EXE-{device_id}"[:40],
                 defaults={
                     "user": user,
                     "device_info": f"Desktop POS (EXE): {device_name} ({device_id[:12]})",
@@ -531,7 +531,7 @@ class SyncPullView(views.APIView):
         session_revoked = False
 
         if client_user and device_id:
-            session_key = f"EXE-{device_id}"
+            session_key = f"EXE-{device_id}"[:40]
             reg_dev = RegisteredDevice.objects.filter(user=client_user, device_id=device_id).first()
             if reg_dev and not reg_dev.is_active:
                 session_revoked = True
@@ -562,7 +562,7 @@ class SyncPullView(views.APIView):
             active_uuids = [str(u) for u in Invoice.objects.filter(client=client_user).values_list("invoice_uuid", flat=True)]
             active_customer_phones = list(Customer.objects.filter(Q(client=client_user) | Q(client__isnull=True)).exclude(phone="").values_list("phone", flat=True))
             active_product_skus = list(Product.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_active=True).values_list("sku", flat=True))
-        else:
+        elif client_user and (client_user.is_superuser or (hasattr(client_user, "profile") and client_user.profile.role == "admin")):
             products_qs = Product.objects.all()
             customers_qs = Customer.objects.all()
             categories_qs = ProductCategory.objects.all()
@@ -571,6 +571,16 @@ class SyncPullView(views.APIView):
             active_uuids = [str(u) for u in Invoice.objects.values_list("invoice_uuid", flat=True)]
             active_customer_phones = list(Customer.objects.exclude(phone="").values_list("phone", flat=True))
             active_product_skus = list(Product.objects.filter(is_active=True).values_list("sku", flat=True))
+        else:
+            # Unidentified client request: strictly return empty queries to prevent any data leak across clients!
+            products_qs = Product.objects.filter(client__isnull=True)
+            customers_qs = Customer.objects.none()
+            categories_qs = ProductCategory.objects.filter(client__isnull=True)
+            invoices_qs = Invoice.objects.none()
+            branches_qs = Branch.objects.filter(client__isnull=True, is_active=True)
+            active_uuids = []
+            active_customer_phones = []
+            active_product_skus = []
 
         if since_str:
             try:

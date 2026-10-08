@@ -193,13 +193,25 @@ def login_view(request):
                 "device_id": device_id,
             })
 
-        # 1. Desktop App First-Time Login: Mandatory Internet Verification
-        if is_first_time_desktop and not RegisteredDevice.objects.filter(device_id=device_id, is_verified=True).exists():
+        # Check whether this physical device is already verified locally for THIS user
+        is_device_verified_locally = (
+            is_desktop and
+            RegisteredDevice.objects.filter(user__username=username, device_id=device_id, is_verified=True).exists()
+        )
+        is_admin_candidate = username in ("admin", "Mathan003") or User.objects.filter(username=username, is_superuser=True).exists()
+
+        # In Desktop App:
+        # If device is NOT yet verified locally for this client OR admin_otp is supplied,
+        # authentication & OTP verification MUST be routed to Railway Cloud!
+        cloud_err_msg = ""
+        user = None
+
+        if is_desktop and not is_admin_candidate and (not is_device_verified_locally or bool(admin_otp)):
             has_internet, net_msg = check_internet_connection()
             if not has_internet:
                 messages.error(
                     request,
-                    "First-time system activation requires an active internet connection to register this computer. "
+                    "First-time system activation requires an active internet connection to register this computer with the cloud server. "
                     "முதல் முறை உள்நுழைய இணைய இணைப்பு (Internet) கட்டாயமாகும். Please connect to internet and retry."
                 )
                 return render(request, "billing/login.html", {
@@ -207,30 +219,26 @@ def login_view(request):
                     "remembered_username": "",
                     "is_first_time_desktop": True,
                     "device_id": device_id,
+                    "otp_required": bool(admin_otp),
+                    "username": username,
+                    "password": password,
                 })
 
-        user = authenticate(request, username=username, password=password)
-        if user is None:
-            # Check if credentials verify against remote Web server (Railway cloud)
             candidate_urls = []
-            try:
-                from sync_manager import get_sync_manager
-                candidate_urls = get_sync_manager().get_candidate_urls()
-            except Exception:
-                pass
-            if not candidate_urls:
-                cfg_url = pos_cfg.get("server_url", "").strip() if is_desktop else ""
-                candidate_urls = [
-                    u for u in [
-                        cfg_url,
-                        os.getenv("CLOUD_SERVER_URL", "").strip(),
-                        "https://billing-software-production-d0f2.up.railway.app",
-                        "http://127.0.0.1:8000",
-                        "http://localhost:8000",
-                    ] if u
-                ]
+            cfg_url = pos_cfg.get("server_url", "").strip() if is_desktop else ""
+            if cfg_url:
+                candidate_urls.append(cfg_url.rstrip("/"))
+            railway_url = "https://billing-software-production-d0f2.up.railway.app"
+            if railway_url not in candidate_urls:
+                candidate_urls.append(railway_url)
+            env_url = os.getenv("CLOUD_SERVER_URL", "").strip()
+            if env_url and env_url not in candidate_urls:
+                candidate_urls.append(env_url.rstrip("/"))
+            for dev_url in ["http://127.0.0.1:8000", "http://localhost:8000"]:
+                if dev_url not in candidate_urls:
+                    candidate_urls.append(dev_url)
 
-            cloud_err_msg = ""
+            cloud_success = False
             for candidate_url in candidate_urls:
                 candidate_url = candidate_url.rstrip("/")
                 try:
@@ -247,12 +255,15 @@ def login_view(request):
                     auth_resp = requests.post(
                         f"{candidate_url}/api/sync/auth/",
                         json=auth_payload,
-                        timeout=5.0
+                        timeout=7.0
                     )
                     if auth_resp.status_code == 200:
                         auth_data = auth_resp.json()
                         if auth_data.get("status") == "otp_required":
-                            messages.info(request, "New system detected. A 6-digit activation code has been generated in the Website Admin Panel. Please ask your administrator for the code.")
+                            messages.info(
+                                request,
+                                "New system detected. A 6-digit activation code has been generated in the Website Admin Panel. Please ask your administrator for the code."
+                            )
                             return render(request, "billing/login.html", {
                                 "is_desktop_app": is_desktop,
                                 "remembered_username": "",
@@ -304,11 +315,14 @@ def login_view(request):
                                 }
                             )
 
+                            cloud_success = True
                             user = authenticate(request, username=username, password=password)
-                            if user:
-                                break
+                            break
                     elif auth_resp.status_code == 400 and auth_resp.json().get("status") == "invalid_otp":
-                        messages.error(request, "Invalid or expired 6-Digit Admin Verification OTP. Please check the code in the Website Admin Panel.")
+                        messages.error(
+                            request,
+                            "Invalid or expired 6-Digit Admin Verification OTP. Please check the code in the Website Admin Panel."
+                        )
                         return render(request, "billing/login.html", {
                             "is_desktop_app": is_desktop,
                             "remembered_username": "",
@@ -318,65 +332,55 @@ def login_view(request):
                             "password": password,
                         })
                     elif auth_resp.status_code == 403:
-                        # Device quota strictly exceeded on cloud server!
                         cloud_err_msg = auth_resp.json().get("message", "Device Limit Exceeded on Cloud Server.")
                         break
                     elif auth_resp.status_code == 401:
                         cloud_err_msg = auth_resp.json().get("message", "Invalid username or password.")
                         break
-                    elif auth_resp.status_code == 404:
-                        # Fallback for earlier server deployments: verify via Railway /login/
-                        try:
-                            s = requests.Session()
-                            lr = s.get(f"{candidate_url}/login/", timeout=4.0)
-                            csrf = s.cookies.get("csrftoken")
-                            post_d = {
-                                "csrfmiddlewaretoken": csrf,
-                                "username": username,
-                                "password": password,
-                                "device_id": device_id,
-                            }
-                            pr = s.post(
-                                f"{candidate_url}/login/",
-                                data=post_d,
-                                headers={"Referer": f"{candidate_url}/login/"},
-                                allow_redirects=False,
-                                timeout=5.0
-                            )
-                            if pr.status_code == 302:
-                                # Authentication successful on Railway cloud!
-                                loc_u, _ = User.objects.get_or_create(username=username)
-                                loc_u.set_password(password)
-                                loc_u.save()
-
-                                loc_p, _ = UserProfile.objects.get_or_create(user=loc_u)
-                                loc_p.role = "client"
-                                loc_p.shop_name = "MathanHub Store"
-                                loc_p.device_limit = 5
-                                loc_p.access_mode = "online_offline"
-                                loc_p.save()
-
-                                RegisteredDevice.objects.update_or_create(
-                                    user=loc_u,
-                                    device_id=device_id,
-                                    defaults={
-                                        "device_name": device_name,
-                                        "device_type": device_type,
-                                        "ip_address": ip_addr,
-                                        "is_active": True,
-                                    }
-                                )
-
-                                user = authenticate(request, username=username, password=password)
-                                if user:
-                                    break
-                            elif "Device Limit Exceeded" in pr.text:
-                                cloud_err_msg = "Device Limit Exceeded! Admin has configured maximum allowed devices for this account."
-                                break
-                        except Exception:
-                            pass
                 except Exception:
                     continue
+
+            if not cloud_success and user is None:
+                messages.error(
+                    request,
+                    cloud_err_msg or "Failed to connect to Railway Cloud server to verify device. Please check your internet connection."
+                )
+                return render(request, "billing/login.html", {
+                    "is_desktop_app": is_desktop,
+                    "remembered_username": remembered_username,
+                    "is_first_time_desktop": is_first_time_desktop,
+                    "device_id": device_id,
+                    "otp_required": bool(admin_otp),
+                    "username": username,
+                    "password": password,
+                })
+        else:
+            # Device already verified or admin user: authenticate locally
+            user = authenticate(request, username=username, password=password)
+            if user is None and is_desktop:
+                # If credentials failed locally, check Railway Cloud in case password was updated
+                candidate_urls = []
+                cfg_url = pos_cfg.get("server_url", "").strip()
+                if cfg_url:
+                    candidate_urls.append(cfg_url.rstrip("/"))
+                candidate_urls.append("https://billing-software-production-d0f2.up.railway.app")
+                for candidate_url in candidate_urls:
+                    try:
+                        import requests
+                        auth_resp = requests.post(
+                            f"{candidate_url}/api/sync/auth/",
+                            json={"username": username, "password": password, "device_id": device_id, "device_name": device_name},
+                            timeout=5.0
+                        )
+                        if auth_resp.status_code == 200 and auth_resp.json().get("status") == "success":
+                            loc_u, _ = User.objects.get_or_create(username=username)
+                            loc_u.set_password(password)
+                            loc_u.save()
+                            user = authenticate(request, username=username, password=password)
+                            if user:
+                                break
+                    except Exception:
+                        continue
 
         if user is None:
             messages.error(request, cloud_err_msg or "Invalid username or password. Please try again.")
@@ -563,11 +567,13 @@ def login_view(request):
         sec_token = uuid.uuid4().hex[:12]
         request.session["sec_token"] = sec_token
 
-        ActiveUserSession.objects.create(
-            user=user,
-            session_key=session_key,
-            device_info=f"{device_name} ({device_id[:12]})",
-            ip_address=ip_addr,
+        ActiveUserSession.objects.update_or_create(
+            session_key=session_key[:40],
+            defaults={
+                "user": user,
+                "device_info": f"{device_name} ({device_id[:12]})",
+                "ip_address": ip_addr,
+            }
         )
 
         role_title = "Administrator (Single Device)" if is_admin_user else f"Client Operator (Max {profile.device_limit if profile else 5} Devices)"
@@ -598,11 +604,10 @@ def logout_view(request):
     if request.user.is_authenticated:
         log_activity(request, "LOGOUT", f"User '{request.user.username}' logged out.")
     if session_key:
-        ActiveUserSession.objects.filter(session_key=session_key).delete()
-    if is_desktop_environment(request):
-        clear_desktop_remembered_user()
+        ActiveUserSession.objects.filter(session_key=session_key[:40]).delete()
     logout(request)
-    messages.info(request, "You have been logged out successfully. Please enter your username and password to log in.")
+    msg = "You have been logged out successfully. Please enter your password to unlock POS." if is_desktop_environment(request) else "You have been logged out successfully. Please enter your username and password to log in."
+    messages.info(request, msg)
     return redirect("billing:login")
 
 

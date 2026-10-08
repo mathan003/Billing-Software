@@ -287,11 +287,12 @@ class SyncManager:
         try:
             from billing.models import Product, Customer, CompanySettings, Invoice, Branch
             from django.contrib.auth.models import User
-            from billing.device_utils import get_desktop_pos_config
+            from billing.device_utils import get_desktop_pos_config, save_desktop_pos_config
             from django.db import transaction
             from django.db.models import Q
 
             pos_cfg = get_desktop_pos_config()
+            client_username = pos_cfg.get("last_logged_in_client") or pos_cfg.get("remembered_username") or ""
             dev_id = pos_cfg.get("device_id") or os.environ.get("DEVICE_ID", "")
             params = {}
             if client_username:
@@ -308,9 +309,12 @@ class SyncManager:
                 logger.warning("Session has been remotely disconnected by Administrator.")
                 try:
                     from django.contrib.sessions.models import Session
-                    from billing.models import ActiveUserSession
+                    from billing.models import ActiveUserSession, RegisteredDevice
                     Session.objects.all().delete()
                     ActiveUserSession.objects.all().delete()
+                    if dev_id:
+                        RegisteredDevice.objects.filter(device_id=dev_id).update(is_active=False, is_verified=False)
+                    save_desktop_pos_config({"is_activated": False})
                 except Exception:
                     pass
 
@@ -504,9 +508,13 @@ class SyncManager:
                         if cust_phone:
                             c_match = Customer.objects.filter(phone=cust_phone).first()
 
+                        target_inv_num = inv_data.get("invoice_number")
+                        if Invoice.objects.filter(invoice_number=target_inv_num).exclude(invoice_uuid=inv_uuid).exists():
+                            target_inv_num = f"{target_inv_num}-{str(inv_uuid)[:6]}"
+
                         new_inv = Invoice.objects.create(
                             invoice_uuid=inv_uuid,
-                            invoice_number=inv_data.get("invoice_number"),
+                            invoice_number=target_inv_num,
                             client=client_user,
                             branch_name=inv_data.get("branch_name", "Main Shop Branch"),
                             customer=c_match,

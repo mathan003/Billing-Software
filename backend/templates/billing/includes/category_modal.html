@@ -162,6 +162,7 @@
         document.querySelectorAll("#openAddCategoryBtn, .open-add-cat-btn, #terminalManageCategoryBtn, #dashManageCatBtn, [data-open-category-modal]").forEach(btn => {
             btn.addEventListener("click", function(e) {
                 e.preventDefault();
+                e.stopPropagation();
                 openCategoryModalSafe();
             });
         });

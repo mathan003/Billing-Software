@@ -9,10 +9,10 @@
         <p class="text-muted small mb-0">Add, edit prices, update units (KG/Pack/Box), and remove products anytime</p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addCategoryModal" id="openAddCategoryBtn">
+        <button type="button" class="btn btn-outline-primary" id="openAddCategoryBtn">
             <i class="fa-solid fa-tags me-1"></i> Add & Remove Category (வகை சேர்க்க / நீக்க)
         </button>
-        <button type="button" class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#addProductModal" id="openAddProdBtn">
+        <button type="button" class="btn btn-primary-custom" id="openAddProdBtn">
             <i class="fa-solid fa-plus me-1"></i> Add Product (புதிய பொருள்)
         </button>
     </div>
@@ -136,16 +136,16 @@
                 <h5 class="modal-title fw-bold"><i class="fa-solid fa-plus-circle text-primary me-2"></i>Add New Product (புதிய பொருள் சேர்க்க)</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="post" action="{% url 'billing:product_add' %}">
+            <form method="post" action="{% url 'billing:product_add' %}" id="addProductForm">
                 {% csrf_token %}
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label small fw-semibold">Tamil Product Name (தமிழ் பெயர்) *</label>
-                        <input type="text" name="name_tamil" class="form-control" required>
+                        <label class="form-label small fw-semibold">Tamil Product Name (தமிழ் பெயர்)</label>
+                        <input type="text" name="name_tamil" id="addNameTamil" class="form-control" placeholder="அரிசி, பருப்பு, சர்க்கரை...">
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">English Product Name (Optional)</label>
-                        <input type="text" name="name" class="form-control">
+                        <input type="text" name="name" id="addNameEnglish" class="form-control" placeholder="Rice, Dal, Sugar...">
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
@@ -401,7 +401,34 @@
         if (addBtn && addModalEl) {
             addBtn.addEventListener("click", function(e) {
                 e.preventDefault();
+                e.stopPropagation();
                 openModalSafe(addModalEl);
+            });
+        }
+
+        // Add Category button listener
+        const catBtn = document.getElementById("openAddCategoryBtn");
+        const catModalEl = document.getElementById("addCategoryModal");
+        if (catBtn && catModalEl) {
+            catBtn.addEventListener("click", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                openModalSafe(catModalEl);
+            });
+        }
+
+        // Add Product form validation (requires either Tamil or English name)
+        const addProdForm = document.getElementById("addProductForm");
+        if (addProdForm) {
+            addProdForm.addEventListener("submit", function(e) {
+                const tName = (document.getElementById("addNameTamil")?.value || "").trim();
+                const eName = (document.getElementById("addNameEnglish")?.value || "").trim();
+                if (!tName && !eName) {
+                    e.preventDefault();
+                    alert("Please enter at least a Tamil or English product name (தமிழ் அல்லது ஆங்கிலப் பெயர் உள்ளிடவும்).");
+                    document.getElementById("addNameTamil")?.focus();
+                    return false;
+                }
             });
         }
 

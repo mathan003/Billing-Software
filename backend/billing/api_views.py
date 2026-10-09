@@ -277,14 +277,28 @@ class SyncPushView(views.APIView):
                 for del_cat in deleted_categories_data:
                     d_clean = (del_cat or "").strip()
                     if d_clean:
-                        ProductCategory.objects.filter(client=client_user, name__iexact=d_clean).update(is_deleted=True, deleted_at=timezone.now())
-                        Product.objects.filter(client=client_user, category__iexact=d_clean).update(category="General")
+                        cat_filter = Q(name__iexact=d_clean)
+                        prod_cat_filter = Q(category__iexact=d_clean)
+                        if client_user:
+                            cat_filter &= (Q(client=client_user) | Q(client__isnull=True))
+                            prod_cat_filter &= (Q(client=client_user) | Q(client__isnull=True))
+                            ProductCategory.objects.get_or_create(
+                                client=client_user,
+                                name=d_clean,
+                                defaults={"is_deleted": True, "deleted_at": timezone.now()}
+                            )
+                        ProductCategory.objects.filter(cat_filter).update(is_deleted=True, deleted_at=timezone.now())
+                        Product.objects.filter(prod_cat_filter).update(category="General")
 
                 # 0b. Sync Active Categories created offline (do NOT revive soft-deleted categories!)
+                deleted_cat_lower = {d.strip().lower() for d in deleted_categories_data if d}
                 for cat_name in categories_data:
                     c_clean = (cat_name or "").strip()
-                    if c_clean:
-                        if not ProductCategory.objects.filter(client=client_user, name__iexact=c_clean, is_deleted=True).exists():
+                    if c_clean and c_clean.lower() not in deleted_cat_lower:
+                        check_q = Q(name__iexact=c_clean, is_deleted=True)
+                        if client_user:
+                            check_q &= (Q(client=client_user) | Q(client__isnull=True))
+                        if not ProductCategory.objects.filter(check_q).exists():
                             ProductCategory.objects.get_or_create(name=c_clean, client=client_user, defaults={"is_deleted": False})
 
                 # 0c. Sync Client Account Deletions from desktop
@@ -298,11 +312,36 @@ class SyncPushView(views.APIView):
                         ActiveUserSession.objects.filter(user__username=d_c_clean).delete()
                         RegisteredDevice.objects.filter(user__username=d_c_clean).update(is_active=False, is_verified=False)
 
-                # 1. Sync Products (created, updated, or removed/deactivated offline)
+                # 0d. Sync Product Deletions from desktop
+                deleted_products_data = data.get("deleted_products", [])
+                for del_sku in deleted_products_data:
+                    d_sku_clean = (del_sku or "").strip()
+                    if d_sku_clean:
+                        del_p_q = Q(sku=d_sku_clean)
+                        if client_user:
+                            del_p_q &= (Q(client=client_user) | Q(client__isnull=True))
+                        Product.objects.filter(del_p_q).update(
+                            is_deleted=True,
+                            is_active=False,
+                            deleted_at=timezone.now(),
+                            updated_at=timezone.now()
+                        )
+
+                # 1. Sync Products (created, updated offline; strictly skip deleted products)
+                del_sku_set = {str(s).strip() for s in deleted_products_data if s}
                 for p_data in products_data:
                     sku = p_data.get("sku")
-                    if not sku:
+                    if not sku or sku in del_sku_set:
                         continue
+
+                    # If this product is already soft-deleted in cloud, do NOT revive!
+                    existing_p_q = Q(sku=sku)
+                    if client_user:
+                        existing_p_q &= (Q(client=client_user) | Q(client__isnull=True))
+                    existing_p = Product.objects.filter(existing_p_q).first()
+                    if existing_p and existing_p.is_deleted:
+                        continue
+
                     product, created = Product.objects.get_or_create(
                         sku=sku,
                         defaults={
@@ -316,16 +355,23 @@ class SyncPushView(views.APIView):
                             "tax_percent": p_data.get("tax_percent", 0.00),
                             "stock_quantity": p_data.get("stock_quantity", 0.00),
                             "is_active": p_data.get("is_active", True),
+                            "is_deleted": False,
                         }
                     )
-                    if not created:
-                        # Cloud server is the master authority for existing product catalog & pricing.
-                        # Preserve admin prices against client pushes so admin edits are not reverted.
+                    if not created and not product.is_deleted:
+                        product.name = p_data.get("name", product.name)
+                        product.name_tamil = p_data.get("name_tamil", product.name_tamil)
+                        product.category = p_data.get("category", product.category)
+                        product.unit = p_data.get("unit", product.unit)
+                        product.price = p_data.get("price", product.price)
+                        product.cost_price = p_data.get("cost_price", product.cost_price)
+                        product.tax_percent = p_data.get("tax_percent", product.tax_percent)
+                        product.stock_quantity = p_data.get("stock_quantity", product.stock_quantity)
+                        product.is_active = p_data.get("is_active", product.is_active)
                         if not product.client and client_user:
                             product.client = client_user
-                            product.save(update_fields=["client"])
-                    else:
-                        synced_products.append(sku)
+                        product.save()
+                    synced_products.append(sku)
 
                 # 2. Sync Customers (created or altered offline)
                 for c_data in customers_data:
@@ -686,28 +732,31 @@ class SyncPullView(views.APIView):
                 for c_name in ["General", "Grocery", "Fruits", "Vegetables", "Snacks", "Beverages", "Dairy", "Spices", "Stationery", "Electronics"]:
                     ProductCategory.objects.get_or_create(name=c_name, client=client_user, defaults={"is_deleted": False})
 
-            products_qs = Product.objects.filter(client=client_user)
-            customers_qs = Customer.objects.filter(client=client_user)
+            products_qs = Product.objects.filter(client=client_user, is_deleted=False, is_active=True)
+            deleted_products_qs = Product.objects.filter(client=client_user, is_deleted=True)
+            customers_qs = Customer.objects.filter(client=client_user, is_deleted=False)
             categories_qs = ProductCategory.objects.filter(client=client_user, is_deleted=False)
             deleted_categories_qs = ProductCategory.objects.filter(client=client_user, is_deleted=True)
-            invoices_qs = Invoice.objects.filter(client=client_user).prefetch_related("items").order_by("-created_at")[:100]
+            invoices_qs = Invoice.objects.filter(client=client_user, is_deleted=False).prefetch_related("items").order_by("-created_at")[:100]
             branches_qs = Branch.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_active=True)
-            active_uuids = [str(u) for u in Invoice.objects.filter(client=client_user).values_list("invoice_uuid", flat=True)]
-            active_customer_phones = list(Customer.objects.filter(client=client_user).exclude(phone="").values_list("phone", flat=True))
-            active_product_skus = list(Product.objects.filter(client=client_user, is_active=True).values_list("sku", flat=True))
+            active_uuids = [str(u) for u in Invoice.objects.filter(client=client_user, is_deleted=False).values_list("invoice_uuid", flat=True)]
+            active_customer_phones = list(Customer.objects.filter(client=client_user, is_deleted=False).exclude(phone="").values_list("phone", flat=True))
+            active_product_skus = list(products_qs.values_list("sku", flat=True))
         elif client_user and (client_user.is_superuser or (hasattr(client_user, "profile") and client_user.profile.role == "admin")):
-            products_qs = Product.objects.all()
-            customers_qs = Customer.objects.all()
+            products_qs = Product.objects.filter(is_deleted=False, is_active=True)
+            deleted_products_qs = Product.objects.filter(is_deleted=True)
+            customers_qs = Customer.objects.filter(is_deleted=False)
             categories_qs = ProductCategory.objects.filter(is_deleted=False)
             deleted_categories_qs = ProductCategory.objects.filter(is_deleted=True)
-            invoices_qs = Invoice.objects.prefetch_related("items").order_by("-created_at")[:100]
+            invoices_qs = Invoice.objects.filter(is_deleted=False).prefetch_related("items").order_by("-created_at")[:100]
             branches_qs = Branch.objects.filter(is_active=True)
-            active_uuids = [str(u) for u in Invoice.objects.values_list("invoice_uuid", flat=True)]
-            active_customer_phones = list(Customer.objects.exclude(phone="").values_list("phone", flat=True))
-            active_product_skus = list(Product.objects.filter(is_active=True).values_list("sku", flat=True))
+            active_uuids = [str(u) for u in Invoice.objects.filter(is_deleted=False).values_list("invoice_uuid", flat=True)]
+            active_customer_phones = list(Customer.objects.filter(is_deleted=False).exclude(phone="").values_list("phone", flat=True))
+            active_product_skus = list(products_qs.values_list("sku", flat=True))
         else:
             # Unidentified client request: strictly return empty queries to prevent any data leak across clients!
-            products_qs = Product.objects.filter(client__isnull=True)
+            products_qs = Product.objects.none()
+            deleted_products_qs = Product.objects.none()
             customers_qs = Customer.objects.none()
             categories_qs = ProductCategory.objects.filter(client__isnull=True, is_deleted=False)
             deleted_categories_qs = ProductCategory.objects.none()
@@ -867,13 +916,18 @@ class SyncPullView(views.APIView):
                 "is_verified": rd.is_verified,
             })
 
+        del_cat_names = list(deleted_categories_qs.values_list("name", flat=True).distinct())
+        del_cat_lower = {d.strip().lower() for d in del_cat_names if d}
+        clean_cats = [c for c in categories_qs.values_list("name", flat=True).distinct() if c and (c.lower() == "general" or c.lower() not in del_cat_lower)]
+
         return Response({
             "status": "success",
             "server_time": timezone.now().isoformat(),
             "products_count": len(products_data),
             "products": products_data,
-            "categories": list(categories_qs.values_list("name", flat=True).distinct()),
-            "deleted_categories": list(deleted_categories_qs.values_list("name", flat=True).distinct()),
+            "deleted_products": list(deleted_products_qs.values_list("sku", flat=True).distinct()),
+            "categories": clean_cats,
+            "deleted_categories": del_cat_names,
             "deleted_clients": all_deleted_clients,
             "customers_count": len(customers_data),
             "customers": customers_data,

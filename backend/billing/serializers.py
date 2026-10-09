@@ -20,6 +20,8 @@ class ProductSerializer(serializers.ModelSerializer):
             "stock_quantity",
             "unit",
             "is_active",
+            "is_deleted",
+            "deleted_at",
             "updated_at",
             "created_at",
         ]
@@ -172,6 +174,7 @@ class SyncPushRequestSerializer(serializers.Serializer):
     client_username = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
     invoices = SyncInvoicePayloadSerializer(many=True, required=False, default=list)
     products = SyncProductPayloadSerializer(many=True, required=False, default=list)
+    deleted_products = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     customers = SyncCustomerPayloadSerializer(many=True, required=False, default=list)
     payments = SyncPaymentPayloadSerializer(many=True, required=False, default=list)
     categories = serializers.ListField(child=serializers.CharField(), required=False, default=list)

@@ -124,8 +124,10 @@ def get_available_categories(request):
             for c_name in initial_cats:
                 ProductCategory.objects.get_or_create(name=c_name, client=client_user, defaults={"is_deleted": False})
 
-    # Find all deleted categories for this client
+    # Find all deleted categories for this client and globally
     deleted_names = set(ProductCategory.objects.filter(c_filter, is_deleted=True).values_list("name", flat=True))
+    if client_user:
+        deleted_names |= set(ProductCategory.objects.filter(client=client_user, is_deleted=True).values_list("name", flat=True))
     deleted_names_lower = {d.strip().lower() for d in deleted_names if d}
 
     # Active saved categories
@@ -1760,10 +1762,13 @@ def category_delete(request):
             matching_cats = ProductCategory.objects.filter(c_filter, name__iexact=clean_name)
             if matching_cats.exists():
                 matching_cats.update(is_deleted=True, deleted_at=timezone.now())
-            else:
-                ProductCategory.objects.create(
+            if client_user:
+                ProductCategory.objects.get_or_create(
                     name=clean_name,
                     client=client_user,
+                    defaults={"is_deleted": True, "deleted_at": timezone.now()}
+                )
+                ProductCategory.objects.filter(client=client_user, name__iexact=clean_name).update(
                     is_deleted=True,
                     deleted_at=timezone.now()
                 )

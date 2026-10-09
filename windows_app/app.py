@@ -89,26 +89,16 @@ def init_database():
         except Exception as pragma_err:
             logger.debug(f"SQLite PRAGMA notice: {pragma_err}")
 
-        # 1. Fast Migration Check using MigrationExecutor
-        needs_migration = False
-        if not is_fresh_db:
-            try:
-                table_names = connection.introspection.table_names()
-                if "billing_product" in table_names and "auth_user" in table_names:
-                    from django.db.migrations.executor import MigrationExecutor
-                    executor = MigrationExecutor(connection)
-                    plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
-                    needs_migration = bool(plan)
-                else:
-                    needs_migration = True
-            except Exception:
-                needs_migration = False
-        else:
-            needs_migration = True
+        # 1. Fast Migration Check using version marker
+        from billing.version import APP_VERSION
+        migration_marker = app_data_dir / f".migrated_{APP_VERSION}"
+        needs_migration = not migration_marker.exists() or is_fresh_db
 
-        if is_fresh_db or needs_migration:
+        if not needs_migration and not is_fresh_db:
+            logger.info("Database schema is already up to date. Fast-path startup.")
+        else:
             # Backup before applying migrations if DB exists
-            if not is_fresh_db:
+            if not is_fresh_db and db_file.exists():
                 try:
                     backups_dir = app_data_dir / "backups"
                     backups_dir.mkdir(parents=True, exist_ok=True)
@@ -122,6 +112,10 @@ def init_database():
 
             logger.info("Applying pending database migrations...")
             call_command("migrate", interactive=False, verbosity=0)
+            try:
+                migration_marker.touch()
+            except Exception:
+                pass
             logger.info("Database migrations complete.")
 
         # 2. Ensure default administrator account exists (one-time setup without redundant hashing)
@@ -190,6 +184,26 @@ def main():
     print("=" * 60)
     print("  MathanHub - Windows Offline/Online Edition")
     print("=" * 60)
+
+    # 0. Clean up any lingering zombie processes from previous closed runs
+    try:
+        current_pid = os.getpid()
+        for exe_name in ("SmartBillingPOS.exe", "MathanHub.exe"):
+            subprocess.run(
+                ["taskkill", "/F", "/FI", f"PID ne {current_pid}", "/IM", exe_name],
+                capture_output=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+    except Exception:
+        pass
+
+    # Ensure dedicated isolated WebView2 user cache directory
+    webview_cache_dir = app_data_dir / "webview_cache"
+    try:
+        webview_cache_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["WEBVIEW2_USER_DATA_FOLDER"] = str(webview_cache_dir)
+    except Exception:
+        pass
 
     # 1. Initialize local SQLite Database
     init_database()

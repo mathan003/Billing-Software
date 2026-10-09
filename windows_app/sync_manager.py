@@ -214,12 +214,19 @@ class SyncManager:
                 })
 
             from billing.models import ProductCategory
-            categories_payload = list(ProductCategory.objects.filter(is_deleted=False).values_list("name", flat=True).distinct())
-            deleted_categories_payload = list(ProductCategory.objects.filter(is_deleted=True).values_list("name", flat=True).distinct())
+            from django.contrib.auth.models import User
+            from django.db.models import Q
+            c_user = User.objects.filter(username=client_username).first() if client_username else None
+            c_filter = Q(client=c_user) if c_user else Q()
 
-            # Push local active products catalog
+            categories_payload = list(ProductCategory.objects.filter(c_filter, is_deleted=False).values_list("name", flat=True).distinct())
+            deleted_categories_payload = list(ProductCategory.objects.filter(c_filter, is_deleted=True).values_list("name", flat=True).distinct())
+            del_cat_lower = {d.strip().lower() for d in deleted_categories_payload if d}
+            categories_payload = [c for c in categories_payload if c and (c.lower() == "general" or c.lower() not in del_cat_lower)]
+
+            # Push local active products catalog and collect deleted products
             products_payload = []
-            for p in Product.objects.filter(is_active=True):
+            for p in Product.objects.filter(c_filter, is_active=True, is_deleted=False):
                 products_payload.append({
                     "sku": p.sku,
                     "name": p.name,
@@ -232,10 +239,11 @@ class SyncManager:
                     "stock_quantity": str(p.stock_quantity),
                     "is_active": p.is_active,
                 })
+            deleted_products_payload = list(Product.objects.filter(c_filter, is_deleted=True).values_list("sku", flat=True).distinct())
 
             # Customers modified locally
             customers_payload = []
-            for c in Customer.objects.all():
+            for c in Customer.objects.filter(c_filter):
                 customers_payload.append({
                     "name": c.name,
                     "phone": c.phone or "",
@@ -245,7 +253,6 @@ class SyncManager:
                 })
 
             # Clients created or altered locally by Admin
-            from django.contrib.auth.models import User
             from billing.models import DeletedClient, UserProfile
             deleted_clients_payload = list(DeletedClient.objects.values_list("username", flat=True))
             soft_deleted_names = list(UserProfile.objects.filter(is_deleted=True).values_list("user__username", flat=True))
@@ -282,7 +289,7 @@ class SyncManager:
                     "updated_at": p.updated_at.isoformat() if (p and p.updated_at) else "",
                 })
 
-            if not invoices_payload and not customers_payload and not products_payload and not clients_payload and not deleted_categories_payload and not all_deleted_usernames:
+            if not invoices_payload and not customers_payload and not products_payload and not clients_payload and not deleted_categories_payload and not deleted_products_payload and not all_deleted_usernames:
                 return
 
             push_data = {
@@ -290,6 +297,7 @@ class SyncManager:
                 "client_username": client_username,
                 "invoices": invoices_payload,
                 "products": products_payload,
+                "deleted_products": deleted_products_payload,
                 "customers": customers_payload,
                 "categories": categories_payload,
                 "deleted_categories": deleted_categories_payload,
@@ -586,30 +594,58 @@ class SyncManager:
                 cloud_categories = data.get("categories", [])
                 cloud_deleted_categories = data.get("deleted_categories", [])
                 from billing.models import ProductCategory
-                if client_user:
-                    # Sync deletions first
-                    for d_name in cloud_deleted_categories:
-                        if d_name and d_name.strip():
-                            ProductCategory.objects.filter(client=client_user, name__iexact=d_name.strip()).update(
-                                is_deleted=True, deleted_at=timezone.now()
-                            )
-                            Product.objects.filter(client=client_user, category__iexact=d_name.strip()).update(category="General")
+                del_cat_lower = {d.strip().lower() for d in cloud_deleted_categories if d}
 
-                    # Sync active categories
-                    for c_name in cloud_categories:
-                        if c_name and c_name.strip():
-                            c_clean = c_name.strip()
-                            cat_obj, created = ProductCategory.objects.get_or_create(name=c_clean, client=client_user)
-                            if cat_obj.is_deleted:
-                                cat_obj.is_deleted = False
-                                cat_obj.deleted_at = None
-                                cat_obj.save(update_fields=["is_deleted", "deleted_at"])
+                # Sync deletions first
+                for d_name in cloud_deleted_categories:
+                    if d_name and d_name.strip():
+                        d_clean = d_name.strip()
+                        c_p_filter = Q(client=client_user) if client_user else Q()
+                        ProductCategory.objects.filter(c_p_filter, name__iexact=d_clean).update(
+                            is_deleted=True, deleted_at=timezone.now()
+                        )
+                        if client_user:
+                            ProductCategory.objects.get_or_create(client=client_user, name=d_clean, defaults={"is_deleted": True, "deleted_at": timezone.now()})
+                        Product.objects.filter(c_p_filter, category__iexact=d_clean).update(category="General")
 
-                # 4. Update products locally without touching existing invoice records
+                # Sync active categories (never resurrect soft-deleted categories)
+                for c_name in cloud_categories:
+                    if c_name and c_name.strip():
+                        c_clean = c_name.strip()
+                        if c_clean.lower() in del_cat_lower:
+                            continue
+                        c_p_filter = Q(client=client_user) if client_user else Q()
+                        if ProductCategory.objects.filter(c_p_filter, name__iexact=c_clean, is_deleted=True).exists():
+                            continue
+                        ProductCategory.objects.get_or_create(name=c_clean, client=client_user, defaults={"is_deleted": False})
+
+                # 4. Synchronize product deletions from cloud
+                cloud_deleted_products = data.get("deleted_products", [])
+                del_sku_set = {str(s).strip() for s in cloud_deleted_products if s}
+                for d_sku in del_sku_set:
+                    prod_filter = Q(sku=d_sku)
+                    if client_user:
+                        prod_filter &= (Q(client=client_user) | Q(client__isnull=True))
+                    Product.objects.filter(prod_filter).update(
+                        is_deleted=True,
+                        is_active=False,
+                        deleted_at=timezone.now()
+                    )
+
+                # 4.1. Update products locally without touching existing invoice records
                 for p_data in products:
                     sku = p_data.get("sku")
-                    if not sku:
+                    if not sku or sku in del_sku_set:
                         continue
+
+                    # Check if locally marked as deleted
+                    prod_filter = Q(sku=sku)
+                    if client_user:
+                        prod_filter &= (Q(client=client_user) | Q(client__isnull=True))
+                    existing_local = Product.objects.filter(prod_filter).first()
+                    if existing_local and existing_local.is_deleted:
+                        continue
+
                     prod, created = Product.objects.get_or_create(
                         sku=sku,
                         client=client_user,
@@ -624,9 +660,10 @@ class SyncManager:
                             "tax_percent": Decimal(str(p_data.get("tax_percent", 0.00))),
                             "stock_quantity": Decimal(str(p_data.get("stock_quantity", 0.00))),
                             "is_active": p_data.get("is_active", True),
+                            "is_deleted": False,
                         }
                     )
-                    if not created:
+                    if not created and not prod.is_deleted:
                         prod.name = p_data.get("name", prod.name)
                         prod.name_tamil = p_data.get("name_tamil", prod.name_tamil)
                         prod.category = p_data.get("category", prod.category)

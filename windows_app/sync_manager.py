@@ -258,42 +258,57 @@ class SyncManager:
                     "gst_number": c.gst_number or "",
                 })
 
-            # Clients created or altered locally by Admin
-            from billing.models import DeletedClient, UserProfile
-            deleted_clients_payload = list(DeletedClient.objects.values_list("username", flat=True))
-            soft_deleted_names = list(UserProfile.objects.filter(is_deleted=True).values_list("user__username", flat=True))
-            all_deleted_usernames = list(set(deleted_clients_payload + soft_deleted_names))
+            # Clients created or altered locally by Admin only
+            is_admin_actor = client_username in ("admin", "Mathan003")
+            if not is_admin_actor:
+                try:
+                    from billing.models import ActiveUserSession
+                    is_admin_actor = ActiveUserSession.objects.filter(user__username__in=["admin", "Mathan003"]).exists()
+                except Exception:
+                    pass
 
             clients_payload = []
-            for u in User.objects.exclude(username__in=["admin", "Mathan003"]):
-                if u.username in all_deleted_usernames:
-                    continue
-                p = getattr(u, "profile", None)
-                if p and p.is_deleted:
-                    continue
-                clients_payload.append({
-                    "username": u.username,
-                    "first_name": u.first_name,
-                    "last_name": u.last_name,
-                    "email": u.email,
-                    "role": p.role if p else "client",
-                    "shop_name": p.shop_name if p else "",
-                    "shop_address": p.shop_address if p else "",
-                    "business_type": p.business_type if p else "grocery",
-                    "access_mode": p.access_mode if p else "online_offline",
-                    "device_limit": p.device_limit if p else 5,
-                    "phone": p.phone if p else "",
-                    "gst_number": p.gst_number if p else "",
-                    "bank_name": p.bank_name if p else "",
-                    "account_number": p.account_number if p else "",
-                    "ifsc_code": p.ifsc_code if p else "",
-                    "avatar_base64": p.avatar_base64 if p else "",
-                    "shop_logo_base64": p.shop_logo_base64 if p else "",
-                    "password_hash": u.password,
-                    "initial_password": getattr(p, "initial_password", ""),
-                    "is_active": u.is_active,
-                    "updated_at": p.updated_at.isoformat() if (p and p.updated_at) else "",
-                })
+            all_deleted_usernames = []
+
+            if is_admin_actor:
+                from billing.models import DeletedClient, UserProfile
+                deleted_clients_payload = list(DeletedClient.objects.values_list("username", flat=True))
+                soft_deleted_names = list(UserProfile.objects.filter(is_deleted=True).values_list("user__username", flat=True))
+                all_deleted_usernames = list(set(deleted_clients_payload + soft_deleted_names))
+
+                for u in User.objects.exclude(username__in=["admin", "Mathan003"]):
+                    if u.username in all_deleted_usernames:
+                        continue
+                    p = getattr(u, "profile", None)
+                    if p and p.is_deleted:
+                        continue
+                    # Keep payload lightweight to prevent SSL socket drops
+                    avatar_val = p.avatar_base64 if (p and p.avatar_base64 and len(p.avatar_base64) < 300000) else ""
+                    logo_val = p.shop_logo_base64 if (p and p.shop_logo_base64 and len(p.shop_logo_base64) < 300000) else ""
+
+                    clients_payload.append({
+                        "username": u.username,
+                        "first_name": u.first_name,
+                        "last_name": u.last_name,
+                        "email": u.email,
+                        "role": p.role if p else "client",
+                        "shop_name": p.shop_name if p else "",
+                        "shop_address": p.shop_address if p else "",
+                        "business_type": p.business_type if p else "grocery",
+                        "access_mode": p.access_mode if p else "online_offline",
+                        "device_limit": p.device_limit if p else 5,
+                        "phone": p.phone if p else "",
+                        "gst_number": p.gst_number if p else "",
+                        "bank_name": p.bank_name if p else "",
+                        "account_number": p.account_number if p else "",
+                        "ifsc_code": p.ifsc_code if p else "",
+                        "avatar_base64": avatar_val,
+                        "shop_logo_base64": logo_val,
+                        "password_hash": u.password,
+                        "initial_password": getattr(p, "initial_password", ""),
+                        "is_active": u.is_active,
+                        "updated_at": p.updated_at.isoformat() if (p and p.updated_at) else "",
+                    })
 
             if not invoices_payload and not customers_payload and not products_payload and not clients_payload and not deleted_categories_payload and not deleted_products_payload and not all_deleted_usernames:
                 return
@@ -314,7 +329,7 @@ class SyncManager:
             resp = requests.post(
                 f"{self.server_url}/api/sync/push/",
                 json=push_data,
-                timeout=12.0
+                timeout=20.0
             )
 
             if resp.status_code == 403 or (resp.status_code == 200 and resp.json().get("session_revoked")):

@@ -172,12 +172,17 @@ class SyncManager:
                 except Exception:
                     pass
 
-            push_device_id = pos_cfg.get("device_id") or get_hardware_device_id()
+            from billing.models import ProductCategory, DeletedInvoice
+            from django.contrib.auth.models import User
+            from django.db.models import Q
+            c_user = User.objects.filter(username=client_username).first() if client_username else None
+            c_filter = Q(client=c_user) if c_user else Q()
 
             # Find invoices that haven't been synced to cloud yet
             # In local SQLite, invoices created locally have source='windows_app'
             # We track cloud sync using notes or notes containing '[SYNCED]' or a local log
-            unsynced_invoices = Invoice.objects.filter(is_deleted=False).exclude(notes__contains="[CLOUD_SYNCED]").order_by("created_at")[:50]
+            inv_filter = Q(client=c_user) if c_user else Q()
+            unsynced_invoices = Invoice.objects.filter(inv_filter, is_deleted=False).exclude(notes__contains="[CLOUD_SYNCED]").order_by("created_at")[:50]
             
             invoices_payload = []
             for inv in unsynced_invoices:
@@ -214,12 +219,6 @@ class SyncManager:
                     "created_at": inv.created_at.isoformat(),
                     "items": items_data,
                 })
-
-            from billing.models import ProductCategory, DeletedInvoice
-            from django.contrib.auth.models import User
-            from django.db.models import Q
-            c_user = User.objects.filter(username=client_username).first() if client_username else None
-            c_filter = Q(client=c_user) if c_user else Q()
 
             # Collect deleted invoices to push to cloud
             tombstone_invs = set(DeletedInvoice.objects.filter(c_filter).values_list("invoice_uuid", flat=True))
@@ -666,7 +665,7 @@ class SyncManager:
                 for d_sku in del_sku_set:
                     prod_filter = Q(sku=d_sku)
                     if client_user:
-                        prod_filter &= (Q(client=client_user) | Q(client__isnull=True))
+                        prod_filter &= Q(client=client_user)
                     Product.objects.filter(prod_filter).update(
                         is_deleted=True,
                         is_active=False,
@@ -679,7 +678,7 @@ class SyncManager:
                     )
 
                 # 4.1. Update products locally without touching existing invoice records
-                tombstone_q = Q(client=client_user) | Q(client__isnull=True) if client_user else Q()
+                tombstone_q = Q(client=client_user) if client_user else Q()
                 local_deleted_skus = set(DeletedProduct.objects.filter(tombstone_q).values_list("sku", flat=True))
                 local_deleted_skus |= set(Product.objects.filter(tombstone_q, is_deleted=True).values_list("sku", flat=True))
 
@@ -691,7 +690,7 @@ class SyncManager:
                     # Check if locally marked as deleted
                     prod_filter = Q(sku=sku)
                     if client_user:
-                        prod_filter &= (Q(client=client_user) | Q(client__isnull=True))
+                        prod_filter &= Q(client=client_user)
                     if Product.objects.filter(prod_filter, is_deleted=True).exists():
                         continue
 
@@ -732,6 +731,7 @@ class SyncManager:
                     if phone:
                         cust, created = Customer.objects.get_or_create(
                             phone=phone,
+                            client=client_user,
                             defaults={
                                 "client": client_user,
                                 "name": c_data["name"],
@@ -776,7 +776,7 @@ class SyncManager:
                         cust_phone = inv_data.get("customer_phone", "").strip()
                         c_match = None
                         if cust_phone:
-                            c_match = Customer.objects.filter(phone=cust_phone).first()
+                            c_match = Customer.objects.filter(phone=cust_phone, client=inv_owner_user).first()
 
                         target_inv_num = inv_data.get("invoice_number")
                         if Invoice.objects.filter(invoice_number=target_inv_num).exclude(invoice_uuid=inv_uuid).exists():
@@ -806,7 +806,7 @@ class SyncManager:
                         from billing.models import InvoiceItem
                         for it_d in inv_data.get("items", []):
                             sku = it_d.get("product_sku", "")
-                            prod_obj = Product.objects.filter(sku=sku).first() if sku else None
+                            prod_obj = Product.objects.filter(sku=sku, client=inv_owner_user).first() if sku else None
                             InvoiceItem.objects.create(
                                 invoice=new_inv,
                                 product=prod_obj,

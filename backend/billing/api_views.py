@@ -281,7 +281,7 @@ class SyncPushView(views.APIView):
                     if d_inv_clean:
                         del_inv_q = Q(invoice_uuid=d_inv_clean)
                         if client_user:
-                            del_inv_q &= (Q(client=client_user) | Q(client__isnull=True))
+                            del_inv_q &= Q(client=client_user)
                         target_inv = Invoice.objects.filter(del_inv_q).first()
                         if target_inv:
                             target_inv.is_deleted = True
@@ -311,8 +311,8 @@ class SyncPushView(views.APIView):
                         cat_filter = Q(name__iexact=d_clean)
                         prod_cat_filter = Q(category__iexact=d_clean)
                         if client_user:
-                            cat_filter &= (Q(client=client_user) | Q(client__isnull=True))
-                            prod_cat_filter &= (Q(client=client_user) | Q(client__isnull=True))
+                            cat_filter &= Q(client=client_user)
+                            prod_cat_filter &= Q(client=client_user)
                             ProductCategory.objects.get_or_create(
                                 client=client_user,
                                 name=d_clean,
@@ -328,7 +328,7 @@ class SyncPushView(views.APIView):
                     if c_clean and c_clean.lower() not in deleted_cat_lower:
                         check_q = Q(name__iexact=c_clean, is_deleted=True)
                         if client_user:
-                            check_q &= (Q(client=client_user) | Q(client__isnull=True))
+                            check_q &= Q(client=client_user)
                         if not ProductCategory.objects.filter(check_q).exists():
                             ProductCategory.objects.get_or_create(name=c_clean, client=client_user, defaults={"is_deleted": False})
 
@@ -351,7 +351,7 @@ class SyncPushView(views.APIView):
                     if d_sku_clean:
                         del_p_q = Q(sku=d_sku_clean)
                         if client_user:
-                            del_p_q &= (Q(client=client_user) | Q(client__isnull=True))
+                            del_p_q &= Q(client=client_user)
                         Product.objects.filter(del_p_q).update(
                             is_deleted=True,
                             is_active=False,
@@ -366,7 +366,7 @@ class SyncPushView(views.APIView):
 
                 # 1. Sync Products (created, updated offline; strictly skip deleted products)
                 del_sku_set = {str(s).strip() for s in deleted_products_data if s}
-                tombstone_q = Q(client=client_user) | Q(client__isnull=True) if client_user else Q()
+                tombstone_q = Q(client=client_user) if client_user else Q()
                 known_deleted_skus = set(DeletedProduct.objects.filter(tombstone_q).values_list("sku", flat=True))
                 known_deleted_skus |= set(Product.objects.filter(tombstone_q, is_deleted=True).values_list("sku", flat=True))
 
@@ -378,7 +378,7 @@ class SyncPushView(views.APIView):
                     # If this product is already soft-deleted in cloud, do NOT revive!
                     existing_p_q = Q(sku=sku)
                     if client_user:
-                        existing_p_q &= (Q(client=client_user) | Q(client__isnull=True))
+                        existing_p_q &= Q(client=client_user)
                     existing_p = Product.objects.filter(existing_p_q).first()
                     if existing_p and existing_p.is_deleted:
                         continue
@@ -421,7 +421,7 @@ class SyncPushView(views.APIView):
                     if phone:
                         cust_filter = Q(phone=phone)
                         if client_user:
-                            cust_filter &= (Q(client=client_user) | Q(client__isnull=True))
+                            cust_filter &= Q(client=client_user)
                         cust = Customer.objects.filter(cust_filter).first()
                         if not cust:
                             cust = Customer.objects.create(
@@ -469,7 +469,7 @@ class SyncPushView(views.APIView):
                     if cust_phone:
                         cust_q = Q(phone=cust_phone)
                         if inv_owner:
-                            cust_q &= (Q(client=inv_owner) | Q(client__isnull=True))
+                            cust_q &= Q(client=inv_owner)
                         cust_obj = Customer.objects.filter(cust_q).first()
                         if not cust_obj and cust_name:
                             cust_obj = Customer.objects.create(
@@ -513,7 +513,9 @@ class SyncPushView(views.APIView):
                                 sku = item_data.get("product_sku", "").strip()
                                 product_match = None
                                 if sku:
-                                    product_match = Product.objects.filter(sku=sku).first()
+                                    product_match = Product.objects.filter(sku=sku, client=inv_owner).first()
+                                    if not product_match and is_admin_actor:
+                                        product_match = Product.objects.filter(sku=sku).first()
                                 InvoiceItem.objects.create(
                                     invoice=existing_inv,
                                     product=product_match,
@@ -563,7 +565,9 @@ class SyncPushView(views.APIView):
                         sku = item_data.get("product_sku", "").strip()
                         product_match = None
                         if sku:
-                            product_match = Product.objects.filter(sku=sku).first()
+                            product_match = Product.objects.filter(sku=sku, client=inv_owner).first()
+                            if not product_match and is_admin_actor:
+                                product_match = Product.objects.filter(sku=sku).first()
                             if product_match:
                                 qty = Decimal(str(item_data["quantity"]))
                                 product_match.stock_quantity = max(Decimal("0.00"), product_match.stock_quantity - qty)
@@ -866,18 +870,18 @@ class SyncPullView(views.APIView):
 
             from billing.models import DeletedProduct
             tombstone_skus = set(DeletedProduct.objects.filter(
-                Q(client=client_user) | Q(client__isnull=True)
+                client=client_user
             ).values_list("sku", flat=True))
             soft_del_skus = set(Product.objects.filter(client=client_user, is_deleted=True).values_list("sku", flat=True))
             all_del_prod_skus = list(tombstone_skus | soft_del_skus)
 
-            products_qs = Product.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_deleted=False, is_active=True).exclude(sku__in=all_del_prod_skus)
-            deleted_products_qs = Product.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_deleted=True)
-            customers_qs = Customer.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_deleted=False)
-            categories_qs = ProductCategory.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_deleted=False)
-            deleted_categories_qs = ProductCategory.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_deleted=True)
-            invoices_qs = Invoice.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_deleted=False).prefetch_related("items").order_by("-created_at")[:200]
-            branches_qs = Branch.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_active=True)
+            products_qs = Product.objects.filter(client=client_user, is_deleted=False, is_active=True).exclude(sku__in=all_del_prod_skus)
+            deleted_products_qs = Product.objects.filter(client=client_user, is_deleted=True)
+            customers_qs = Customer.objects.filter(client=client_user, is_deleted=False)
+            categories_qs = ProductCategory.objects.filter(client=client_user, is_deleted=False)
+            deleted_categories_qs = ProductCategory.objects.filter(client=client_user, is_deleted=True)
+            invoices_qs = Invoice.objects.filter(client=client_user, is_deleted=False).prefetch_related("items").order_by("-created_at")[:200]
+            branches_qs = Branch.objects.filter(Q(client=client_user) | Q(is_default=True, client__isnull=True), is_active=True)
             active_uuids = [str(u) for u in Invoice.objects.filter(client=client_user, is_deleted=False).values_list("invoice_uuid", flat=True)]
             active_customer_phones = list(Customer.objects.filter(client=client_user, is_deleted=False).exclude(phone="").values_list("phone", flat=True))
             active_product_skus = list(products_qs.values_list("sku", flat=True))
@@ -1067,7 +1071,7 @@ class SyncPullView(views.APIView):
         clean_cats = [c for c in categories_qs.values_list("name", flat=True).distinct() if c and (c.lower() == "general" or c.lower() not in del_cat_lower)]
 
         from billing.models import DeletedInvoice
-        del_inv_scope = Q() if is_admin_actor else (Q(client=client_user) | Q(client__isnull=True))
+        del_inv_scope = Q() if is_admin_actor else Q(client=client_user)
         deleted_invoices_list = list(set(
             list(DeletedInvoice.objects.filter(del_inv_scope).values_list("invoice_uuid", flat=True)) +
             list(Invoice.objects.filter(del_inv_scope, is_deleted=True).values_list("invoice_uuid", flat=True))

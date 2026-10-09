@@ -56,14 +56,13 @@ def get_client_filter(request):
     """
     Returns a Q filter that guarantees strict multi-tenant isolation.
     - Administrators have global overview access across all records.
-    - Client users are strictly constrained to records owned by their account,
-      plus unassigned records (client__isnull=True).
+    - Client users are strictly constrained to records owned by their account.
     """
     if not request.user.is_authenticated:
         return Q(pk__in=[])
     if is_admin_user(request.user):
         return Q()
-    return Q(client=request.user) | Q(client__isnull=True)
+    return Q(client=request.user)
 
 
 def get_client_user(request):
@@ -79,7 +78,7 @@ def get_branch_filter(request):
         return Q(is_active=True)
     if is_admin_user(request.user):
         return Q(is_active=True)
-    return Q(is_active=True) & (Q(client=request.user) | Q(client__isnull=True))
+    return Q(is_active=True) & (Q(client=request.user) | Q(is_default=True, client__isnull=True))
 
 
 def check_user_has_gst(user):
@@ -1878,9 +1877,7 @@ def product_add(request):
 
         # Clear any deletion tombstone for this SKU
         from billing.models import DeletedProduct
-        del_prod_q = Q(sku=sku)
-        if client_u:
-            del_prod_q &= (Q(client=client_u) | Q(client__isnull=True))
+        del_prod_q = Q(sku=sku, client=client_u) if client_u else Q(sku=sku)
         DeletedProduct.objects.filter(del_prod_q).delete()
 
         log_activity(
@@ -1900,8 +1897,6 @@ def product_edit(request, product_id):
     product = Product.objects.filter(c_filter, pk=product_id, is_deleted=False).first()
     if not product and is_admin_user(request.user):
         product = Product.objects.filter(pk=product_id, is_deleted=False).first()
-    elif not product:
-        product = Product.objects.filter(Q(client=request.user) | Q(client__isnull=True), pk=product_id, is_deleted=False).first()
 
     if not product:
         messages.error(request, "Product not found or has already been removed.")
@@ -1930,9 +1925,7 @@ def product_edit(request, product_id):
 
         # Clear any tombstone for this SKU
         from billing.models import DeletedProduct
-        del_prod_q = Q(sku=product.sku)
-        if product.client:
-            del_prod_q &= (Q(client=product.client) | Q(client__isnull=True))
+        del_prod_q = Q(sku=product.sku, client=product.client) if product.client else Q(sku=product.sku)
         DeletedProduct.objects.filter(del_prod_q).delete()
 
         log_activity(
@@ -1955,12 +1948,10 @@ def product_delete(request, product_id):
         c_filter = get_client_filter(request)
         client_u = get_client_user(request)
 
-        # Resilient lookup: check client filter, admin scope, or unassigned global products
+        # Resilient lookup: check client filter, admin scope
         product = Product.objects.filter(c_filter, pk=product_id).first()
         if not product and is_admin_user(request.user):
             product = Product.objects.filter(pk=product_id).first()
-        elif not product:
-            product = Product.objects.filter(Q(client=request.user) | Q(client__isnull=True), pk=product_id).first()
 
         if not product:
             messages.info(request, "Product has already been removed or does not exist.")
@@ -1988,12 +1979,12 @@ def product_delete(request, product_id):
         product.save(update_fields=["is_active", "is_deleted", "deleted_at", "updated_at"])
 
         # Also mark all matching SKU instances under this scope as deleted
-        scope_q = Q(client=owner) | Q(client__isnull=True) if owner else Q()
+        scope_q = Q(client=owner) if owner else Q()
         Product.objects.filter(sku=sku).filter(scope_q).update(
             is_active=False,
             is_deleted=True,
             deleted_at=timezone.now(),
-            updated_at=timezone.now()
+            updated_at=timezone.now(),
         )
 
         # Record persistent tombstone so background sync never revives it
@@ -4846,9 +4837,7 @@ def recycle_bin_restore(request, item_type, item_id):
             prod.save(update_fields=["is_deleted", "is_active", "deleted_at", "updated_at"])
 
             from billing.models import DeletedProduct
-            del_prod_q = Q(sku=prod.sku)
-            if prod.client:
-                del_prod_q &= (Q(client=prod.client) | Q(client__isnull=True))
+            del_prod_q = Q(sku=prod.sku, client=prod.client) if prod.client else Q(sku=prod.sku)
             DeletedProduct.objects.filter(del_prod_q).delete()
 
             log_activity(

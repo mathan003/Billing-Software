@@ -225,8 +225,15 @@ class SyncManager:
             categories_payload = [c for c in categories_payload if c and (c.lower() == "general" or c.lower() not in del_cat_lower)]
 
             # Push local active products catalog and collect deleted products
+            from billing.models import DeletedProduct
+            tombstone_skus = set(DeletedProduct.objects.filter(c_filter).values_list("sku", flat=True))
+            deleted_products_payload = list(set(
+                list(Product.objects.filter(c_filter, is_deleted=True).values_list("sku", flat=True).distinct()) +
+                list(tombstone_skus)
+            ))
+
             products_payload = []
-            for p in Product.objects.filter(c_filter, is_active=True, is_deleted=False):
+            for p in Product.objects.filter(c_filter, is_active=True, is_deleted=False).exclude(sku__in=deleted_products_payload):
                 products_payload.append({
                     "sku": p.sku,
                     "name": p.name,
@@ -239,7 +246,6 @@ class SyncManager:
                     "stock_quantity": str(p.stock_quantity),
                     "is_active": p.is_active,
                 })
-            deleted_products_payload = list(Product.objects.filter(c_filter, is_deleted=True).values_list("sku", flat=True).distinct())
 
             # Customers modified locally
             customers_payload = []
@@ -620,6 +626,7 @@ class SyncManager:
                         ProductCategory.objects.get_or_create(name=c_clean, client=client_user, defaults={"is_deleted": False})
 
                 # 4. Synchronize product deletions from cloud
+                from billing.models import DeletedProduct
                 cloud_deleted_products = data.get("deleted_products", [])
                 del_sku_set = {str(s).strip() for s in cloud_deleted_products if s}
                 for d_sku in del_sku_set:
@@ -631,19 +638,27 @@ class SyncManager:
                         is_active=False,
                         deleted_at=timezone.now()
                     )
+                    DeletedProduct.objects.update_or_create(
+                        sku=d_sku,
+                        client=client_user,
+                        defaults={"deleted_at": timezone.now()}
+                    )
 
                 # 4.1. Update products locally without touching existing invoice records
+                tombstone_q = Q(client=client_user) | Q(client__isnull=True) if client_user else Q()
+                local_deleted_skus = set(DeletedProduct.objects.filter(tombstone_q).values_list("sku", flat=True))
+                local_deleted_skus |= set(Product.objects.filter(tombstone_q, is_deleted=True).values_list("sku", flat=True))
+
                 for p_data in products:
-                    sku = p_data.get("sku")
-                    if not sku or sku in del_sku_set:
+                    sku = (p_data.get("sku") or "").strip()
+                    if not sku or sku in del_sku_set or sku in local_deleted_skus:
                         continue
 
                     # Check if locally marked as deleted
                     prod_filter = Q(sku=sku)
                     if client_user:
                         prod_filter &= (Q(client=client_user) | Q(client__isnull=True))
-                    existing_local = Product.objects.filter(prod_filter).first()
-                    if existing_local and existing_local.is_deleted:
+                    if Product.objects.filter(prod_filter, is_deleted=True).exists():
                         continue
 
                     prod, created = Product.objects.get_or_create(

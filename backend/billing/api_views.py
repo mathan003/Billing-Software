@@ -313,6 +313,7 @@ class SyncPushView(views.APIView):
                         RegisteredDevice.objects.filter(user__username=d_c_clean).update(is_active=False, is_verified=False)
 
                 # 0d. Sync Product Deletions from desktop
+                from billing.models import DeletedProduct
                 deleted_products_data = data.get("deleted_products", [])
                 for del_sku in deleted_products_data:
                     d_sku_clean = (del_sku or "").strip()
@@ -326,12 +327,21 @@ class SyncPushView(views.APIView):
                             deleted_at=timezone.now(),
                             updated_at=timezone.now()
                         )
+                        DeletedProduct.objects.update_or_create(
+                            sku=d_sku_clean,
+                            client=client_user,
+                            defaults={"deleted_at": timezone.now()}
+                        )
 
                 # 1. Sync Products (created, updated offline; strictly skip deleted products)
                 del_sku_set = {str(s).strip() for s in deleted_products_data if s}
+                tombstone_q = Q(client=client_user) | Q(client__isnull=True) if client_user else Q()
+                known_deleted_skus = set(DeletedProduct.objects.filter(tombstone_q).values_list("sku", flat=True))
+                known_deleted_skus |= set(Product.objects.filter(tombstone_q, is_deleted=True).values_list("sku", flat=True))
+
                 for p_data in products_data:
-                    sku = p_data.get("sku")
-                    if not sku or sku in del_sku_set:
+                    sku = (p_data.get("sku") or "").strip()
+                    if not sku or sku in del_sku_set or sku in known_deleted_skus:
                         continue
 
                     # If this product is already soft-deleted in cloud, do NOT revive!
@@ -344,6 +354,7 @@ class SyncPushView(views.APIView):
 
                     product, created = Product.objects.get_or_create(
                         sku=sku,
+                        client=client_user,
                         defaults={
                             "client": client_user,
                             "name": p_data.get("name", ""),
@@ -732,7 +743,14 @@ class SyncPullView(views.APIView):
                 for c_name in ["General", "Grocery", "Fruits", "Vegetables", "Snacks", "Beverages", "Dairy", "Spices", "Stationery", "Electronics"]:
                     ProductCategory.objects.get_or_create(name=c_name, client=client_user, defaults={"is_deleted": False})
 
-            products_qs = Product.objects.filter(client=client_user, is_deleted=False, is_active=True)
+            from billing.models import DeletedProduct
+            tombstone_skus = set(DeletedProduct.objects.filter(
+                Q(client=client_user) | Q(client__isnull=True)
+            ).values_list("sku", flat=True))
+            soft_del_skus = set(Product.objects.filter(client=client_user, is_deleted=True).values_list("sku", flat=True))
+            all_del_prod_skus = list(tombstone_skus | soft_del_skus)
+
+            products_qs = Product.objects.filter(client=client_user, is_deleted=False, is_active=True).exclude(sku__in=all_del_prod_skus)
             deleted_products_qs = Product.objects.filter(client=client_user, is_deleted=True)
             customers_qs = Customer.objects.filter(client=client_user, is_deleted=False)
             categories_qs = ProductCategory.objects.filter(client=client_user, is_deleted=False)
@@ -743,7 +761,12 @@ class SyncPullView(views.APIView):
             active_customer_phones = list(Customer.objects.filter(client=client_user, is_deleted=False).exclude(phone="").values_list("phone", flat=True))
             active_product_skus = list(products_qs.values_list("sku", flat=True))
         elif client_user and (client_user.is_superuser or (hasattr(client_user, "profile") and client_user.profile.role == "admin")):
-            products_qs = Product.objects.filter(is_deleted=False, is_active=True)
+            from billing.models import DeletedProduct
+            tombstone_skus = set(DeletedProduct.objects.values_list("sku", flat=True))
+            soft_del_skus = set(Product.objects.filter(is_deleted=True).values_list("sku", flat=True))
+            all_del_prod_skus = list(tombstone_skus | soft_del_skus)
+
+            products_qs = Product.objects.filter(is_deleted=False, is_active=True).exclude(sku__in=all_del_prod_skus)
             deleted_products_qs = Product.objects.filter(is_deleted=True)
             customers_qs = Customer.objects.filter(is_deleted=False)
             categories_qs = ProductCategory.objects.filter(is_deleted=False)
@@ -754,6 +777,7 @@ class SyncPullView(views.APIView):
             active_customer_phones = list(Customer.objects.filter(is_deleted=False).exclude(phone="").values_list("phone", flat=True))
             active_product_skus = list(products_qs.values_list("sku", flat=True))
         else:
+            all_del_prod_skus = []
             # Unidentified client request: strictly return empty queries to prevent any data leak across clients!
             products_qs = Product.objects.none()
             deleted_products_qs = Product.objects.none()
@@ -925,7 +949,7 @@ class SyncPullView(views.APIView):
             "server_time": timezone.now().isoformat(),
             "products_count": len(products_data),
             "products": products_data,
-            "deleted_products": list(deleted_products_qs.values_list("sku", flat=True).distinct()),
+            "deleted_products": list(set(list(deleted_products_qs.values_list("sku", flat=True)) + all_del_prod_skus)),
             "categories": clean_cats,
             "deleted_categories": del_cat_names,
             "deleted_clients": all_deleted_clients,

@@ -66,6 +66,7 @@ def build():
         "--hidden-import=billing.migrations.0014_customer_deleted_at_customer_is_deleted_and_more",
         "--hidden-import=billing.migrations.0015_productcategory_deleted_at_and_more",
         "--hidden-import=billing.migrations.0016_deletedclient_userprofile_deleted_at_userprofile_is_deleted",
+        "--hidden-import=billing.migrations.0017_deletedproduct",
         # Hidden imports for Django dynamic loading
         "--hidden-import=billing",
         "--hidden-import=billing.models",

@@ -1823,22 +1823,53 @@ def product_add(request):
             sku = f"SKU-{timezone.now().strftime('%y%m%d%H%M%S')}"
 
         c_filter = get_client_filter(request)
-        if Product.objects.filter(c_filter, sku=sku).exists():
-            messages.error(request, f"A product with SKU '{sku}' already exists.")
+        client_u = get_client_user(request)
+
+        # Check if an active product already exists with this SKU
+        if Product.objects.filter(c_filter, sku=sku, is_deleted=False).exists():
+            messages.error(request, f"An active product with SKU '{sku}' already exists.")
             return redirect("billing:product_list")
 
-        prod = Product.objects.create(
-            name_tamil=name_tamil,
-            name=name,
-            client=get_client_user(request),
-            sku=sku,
-            category=category,
-            unit=unit,
-            price=price,
-            cost_price=cost_price,
-            tax_percent=tax_percent,
-            stock_quantity=stock,
-        )
+        # If a soft-deleted product with this SKU exists, reactivate and update it
+        soft_deleted = Product.objects.filter(c_filter, sku=sku, is_deleted=True).first()
+        if soft_deleted:
+            prod = soft_deleted
+            prod.name_tamil = name_tamil
+            prod.name = name
+            prod.client = client_u
+            prod.category = category
+            prod.unit = unit
+            prod.price = price
+            prod.cost_price = cost_price
+            prod.tax_percent = tax_percent
+            prod.stock_quantity = stock
+            prod.is_active = True
+            prod.is_deleted = False
+            prod.deleted_at = None
+            prod.save()
+        else:
+            prod = Product.objects.create(
+                name_tamil=name_tamil,
+                name=name,
+                client=client_u,
+                sku=sku,
+                category=category,
+                unit=unit,
+                price=price,
+                cost_price=cost_price,
+                tax_percent=tax_percent,
+                stock_quantity=stock,
+                is_active=True,
+                is_deleted=False,
+            )
+
+        # Clear any deletion tombstone for this SKU
+        from billing.models import DeletedProduct
+        del_prod_q = Q(sku=sku)
+        if client_u:
+            del_prod_q &= (Q(client=client_u) | Q(client__isnull=True))
+        DeletedProduct.objects.filter(del_prod_q).delete()
+
         log_activity(
             request,
             "PRODUCT_ADD",
@@ -1871,7 +1902,17 @@ def product_edit(request, product_id):
         product.cost_price = parse_decimal(request.POST.get("cost_price"), str(product.cost_price))
         product.tax_percent = parse_decimal(request.POST.get("tax_percent"), str(product.tax_percent))
         product.stock_quantity = parse_decimal(request.POST.get("stock_quantity"), str(product.stock_quantity))
+        product.is_active = True
+        product.is_deleted = False
+        product.deleted_at = None
         product.save()
+
+        # Clear any tombstone for this SKU
+        from billing.models import DeletedProduct
+        del_prod_q = Q(sku=product.sku)
+        if product.client:
+            del_prod_q &= (Q(client=product.client) | Q(client__isnull=True))
+        DeletedProduct.objects.filter(del_prod_q).delete()
 
         log_activity(
             request,
@@ -1886,19 +1927,37 @@ def product_edit(request, product_id):
 
 
 def product_delete(request, product_id):
-    """Moves product to Recycle Bin (3-day recovery window)"""
+    """Moves product to Recycle Bin (3-day recovery window) and records tombstone"""
     if not request.user.is_authenticated:
         return redirect("billing:login")
     if request.method == "POST":
         c_filter = get_client_filter(request)
         product = get_object_or_404(Product.objects.filter(c_filter, is_deleted=False), pk=product_id)
         prod_name = product.display_name
+        sku = product.sku
+        client_u = product.client or get_client_user(request)
 
         # Soft delete: move to Recycle Bin
         product.is_active = False
         product.is_deleted = True
         product.deleted_at = timezone.now()
         product.save(update_fields=["is_active", "is_deleted", "deleted_at", "updated_at"])
+
+        # Also mark all matching SKU instances under this scope as deleted
+        Product.objects.filter(sku=sku).filter(c_filter).update(
+            is_active=False,
+            is_deleted=True,
+            deleted_at=timezone.now(),
+            updated_at=timezone.now()
+        )
+
+        # Record persistent tombstone so background sync never revives it
+        from billing.models import DeletedProduct
+        DeletedProduct.objects.update_or_create(
+            sku=sku,
+            client=client_u,
+            defaults={"name": prod_name, "deleted_at": timezone.now()}
+        )
 
         log_activity(
             request,
@@ -4741,6 +4800,12 @@ def recycle_bin_restore(request, item_type, item_id):
             prod.deleted_at = None
             prod.save(update_fields=["is_deleted", "is_active", "deleted_at", "updated_at"])
 
+            from billing.models import DeletedProduct
+            del_prod_q = Q(sku=prod.sku)
+            if prod.client:
+                del_prod_q &= (Q(client=prod.client) | Q(client__isnull=True))
+            DeletedProduct.objects.filter(del_prod_q).delete()
+
             log_activity(
                 request,
                 "RECYCLE_BIN_RESTORE",
@@ -4804,6 +4869,15 @@ def recycle_bin_permanent_delete(request, item_type, item_id):
         elif item_type == "product":
             prod = get_object_or_404(Product.objects.filter(c_filter, is_deleted=True), pk=item_id)
             name = prod.display_name
+            sku = prod.sku
+            client_u = prod.client
+
+            from billing.models import DeletedProduct
+            DeletedProduct.objects.update_or_create(
+                sku=sku,
+                client=client_u,
+                defaults={"name": name, "deleted_at": timezone.now()}
+            )
             prod.delete()
             log_activity(
                 request,
@@ -4842,6 +4916,14 @@ def recycle_bin_empty(request):
             inv.items.all().delete()
             inv.payments.all().delete()
         invs.delete()
+
+        from billing.models import DeletedProduct
+        for p in Product.objects.filter(c_filter, is_deleted=True):
+            DeletedProduct.objects.update_or_create(
+                sku=p.sku,
+                client=p.client,
+                defaults={"name": p.display_name, "deleted_at": timezone.now()}
+            )
 
         Customer.objects.filter(c_filter, is_deleted=True).delete()
         Product.objects.filter(c_filter, is_deleted=True).delete()

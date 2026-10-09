@@ -814,6 +814,12 @@ def purge_expired_deleted_items(days=3):
         expired_products = Product.objects.filter(is_deleted=True, deleted_at__lte=cutoff)
         purged_counts["products"] = expired_products.count()
         if purged_counts["products"] > 0:
+            for p in expired_products:
+                DeletedProduct.objects.update_or_create(
+                    sku=p.sku,
+                    client=p.client,
+                    defaults={"name": p.display_name, "deleted_at": timezone.now()}
+                )
             expired_products.delete()
 
         # 4. Expired Purchases (>3 days)
@@ -846,5 +852,23 @@ class DeletedClient(models.Model):
 
     def __str__(self):
         return f"DeletedClient: {self.username} ({self.deleted_at})"
+
+
+class DeletedProduct(models.Model):
+    """
+    Tracks deleted product SKUs and client ownership so that cloud and desktop synchronization
+    cycles never accidentally recreate or revive deleted products under any circumstances.
+    """
+    sku = models.CharField(max_length=50, db_index=True)
+    client = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="deleted_products")
+    name = models.CharField(max_length=200, blank=True, default="")
+    deleted_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-deleted_at"]
+        unique_together = [("client", "sku")]
+
+    def __str__(self):
+        return f"DeletedProduct: {self.sku} ({self.deleted_at})"
 
 

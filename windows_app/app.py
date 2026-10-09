@@ -129,10 +129,10 @@ def init_database():
             logger.info("Default administrator account created: Mathan003")
 
         # 3. Seed initial bilingual catalog only on fresh databases
-        from billing.models import Product, Customer, Branch
+        from billing.models import Product, Customer, Branch, DeletedProduct
         if is_fresh_db:
             default_br = Branch.get_default_branch()
-            if not Product.objects.exists():
+            if not Product.objects.all().exists() and not DeletedProduct.objects.all().exists():
                 Product.objects.create(name_tamil="பொன்னி அரிசி", name="Ponni Rice", sku="SKU-RICE-01", unit="KG", price=55.00, cost_price=45.00, stock_quantity=1000)
                 Product.objects.create(name_tamil="துவரம் பருப்பு", name="Toor Dal", sku="SKU-DAL-01", unit="KG", price=160.00, cost_price=140.00, stock_quantity=500)
                 Product.objects.create(name_tamil="சர்க்கரை", name="Sugar", sku="SKU-SUGAR-01", unit="KG", price=42.00, cost_price=36.00, stock_quantity=800)

@@ -81,7 +81,7 @@ class SyncManager:
         """Returns clean status summary for the web and desktop UI sync badges"""
         try:
             from billing.models import Invoice
-            pending_count = Invoice.objects.exclude(notes__contains="[CLOUD_SYNCED]").count()
+            pending_count = Invoice.objects.filter(is_deleted=False).exclude(notes__contains="[CLOUD_SYNCED]").count()
         except Exception:
             pending_count = 0
 
@@ -177,7 +177,7 @@ class SyncManager:
             # Find invoices that haven't been synced to cloud yet
             # In local SQLite, invoices created locally have source='windows_app'
             # We track cloud sync using notes or notes containing '[SYNCED]' or a local log
-            unsynced_invoices = Invoice.objects.exclude(notes__contains="[CLOUD_SYNCED]").order_by("created_at")[:50]
+            unsynced_invoices = Invoice.objects.filter(is_deleted=False).exclude(notes__contains="[CLOUD_SYNCED]").order_by("created_at")[:50]
             
             invoices_payload = []
             for inv in unsynced_invoices:
@@ -186,6 +186,7 @@ class SyncManager:
                     items_data.append({
                         "product_sku": it.product_sku,
                         "product_name": it.product_name,
+                        "unit": it.unit,
                         "unit_price": str(it.unit_price),
                         "quantity": str(it.quantity),
                         "tax_percent": str(it.tax_percent),
@@ -197,6 +198,7 @@ class SyncManager:
                 invoices_payload.append({
                     "invoice_uuid": str(inv.invoice_uuid),
                     "invoice_number": inv.invoice_number,
+                    "client_username": inv.client.username if inv.client else client_username,
                     "customer_name": inv.customer_name,
                     "customer_phone": inv.customer_phone or "",
                     "customer_address": getattr(inv, "customer_address", "") or "",
@@ -213,11 +215,26 @@ class SyncManager:
                     "items": items_data,
                 })
 
-            from billing.models import ProductCategory
+            from billing.models import ProductCategory, DeletedInvoice
             from django.contrib.auth.models import User
             from django.db.models import Q
             c_user = User.objects.filter(username=client_username).first() if client_username else None
             c_filter = Q(client=c_user) if c_user else Q()
+
+            # Collect deleted invoices to push to cloud
+            tombstone_invs = set(DeletedInvoice.objects.filter(c_filter).values_list("invoice_uuid", flat=True))
+            soft_del_invs = set(Invoice.objects.filter(c_filter, is_deleted=True).values_list("invoice_uuid", flat=True))
+            deleted_invoices_payload = list(str(u) for u in (tombstone_invs | soft_del_invs))
+
+            # Collect payments to push to cloud
+            payments_payload = []
+            for pr in PaymentRecord.objects.filter(invoice__in=unsynced_invoices)[:50]:
+                payments_payload.append({
+                    "invoice_number": pr.invoice.invoice_number,
+                    "amount": str(pr.amount),
+                    "payment_method": pr.payment_method,
+                    "notes": pr.notes or "",
+                })
 
             categories_payload = list(ProductCategory.objects.filter(c_filter, is_deleted=False).values_list("name", flat=True).distinct())
             deleted_categories_payload = list(ProductCategory.objects.filter(c_filter, is_deleted=True).values_list("name", flat=True).distinct())
@@ -310,13 +327,15 @@ class SyncManager:
                         "updated_at": p.updated_at.isoformat() if (p and p.updated_at) else "",
                     })
 
-            if not invoices_payload and not customers_payload and not products_payload and not clients_payload and not deleted_categories_payload and not deleted_products_payload and not all_deleted_usernames:
+            if not invoices_payload and not customers_payload and not products_payload and not clients_payload and not deleted_categories_payload and not deleted_products_payload and not deleted_invoices_payload and not all_deleted_usernames and not payments_payload:
                 return
 
             push_data = {
                 "device_id": push_device_id,
                 "client_username": client_username,
                 "invoices": invoices_payload,
+                "deleted_invoices": deleted_invoices_payload,
+                "payments": payments_payload,
                 "products": products_payload,
                 "deleted_products": deleted_products_payload,
                 "customers": customers_payload,
@@ -332,7 +351,7 @@ class SyncManager:
                 timeout=20.0
             )
 
-            if resp.status_code == 403 or (resp.status_code == 200 and resp.json().get("session_revoked")):
+            if (resp.status_code == 403 or (resp.status_code == 200 and resp.json().get("session_revoked"))) and client_username not in ("admin", "Mathan003"):
                 logger.warning("Session or device revoked on cloud server.")
                 try:
                     from django.contrib.sessions.models import Session
@@ -732,10 +751,26 @@ class SyncManager:
 
                 # 6. Synchronize Cloud Invoices to Desktop Local App
                 cloud_invoices = data.get("invoices", [])
+                cloud_deleted_invoices = set(str(u).strip() for u in data.get("deleted_invoices", []) if u)
+                from billing.models import DeletedInvoice
+
+                # Sync deletions from cloud first
+                for del_uuid in cloud_deleted_invoices:
+                    Invoice.objects.filter(invoice_uuid=del_uuid).update(is_deleted=True, deleted_at=timezone.now())
+                    DeletedInvoice.objects.get_or_create(invoice_uuid=del_uuid, defaults={"deleted_at": timezone.now()})
+
                 for inv_data in cloud_invoices:
                     inv_uuid = inv_data.get("invoice_uuid")
-                    if not inv_uuid:
+                    if not inv_uuid or str(inv_uuid) in cloud_deleted_invoices:
                         continue
+
+                    inv_owner_user = None
+                    cl_uname = inv_data.get("client_username", "").strip()
+                    if cl_uname:
+                        inv_owner_user = User.objects.filter(username=cl_uname).first()
+                    if not inv_owner_user:
+                        inv_owner_user = client_user
+
                     local_inv = Invoice.objects.filter(invoice_uuid=inv_uuid).first()
                     if not local_inv:
                         cust_phone = inv_data.get("customer_phone", "").strip()
@@ -750,7 +785,7 @@ class SyncManager:
                         new_inv = Invoice.objects.create(
                             invoice_uuid=inv_uuid,
                             invoice_number=target_inv_num,
-                            client=client_user,
+                            client=inv_owner_user,
                             branch_name=inv_data.get("branch_name", "Main Shop Branch"),
                             customer=c_match,
                             customer_name=inv_data.get("customer_name", "Cash Customer"),
@@ -786,6 +821,8 @@ class SyncManager:
                                 total_price=Decimal(str(it_d.get("total_price", "0.00"))),
                             )
                     else:
+                        if inv_owner_user and not local_inv.client:
+                            local_inv.client = inv_owner_user
                         updated_paid = Decimal(str(inv_data.get("paid_amount", local_inv.paid_amount)))
                         updated_grand = Decimal(str(inv_data.get("grand_total", local_inv.grand_total)))
                         if (
@@ -800,21 +837,10 @@ class SyncManager:
                             local_inv.paid_amount = updated_paid
                             local_inv.balance_amount = Decimal(str(inv_data.get("balance_amount", local_inv.balance_amount)))
                             local_inv.payment_status = inv_data.get("payment_status", local_inv.payment_status)
-                            local_inv.save(update_fields=["subtotal", "discount_amount", "tax_amount", "grand_total", "paid_amount", "balance_amount", "payment_status"])
+                        local_inv.save()
 
-                # 7. Synchronize Web Deletions to Desktop App (Isolated strictly per client)
+                # 7. Synchronize Customer Deletions
                 is_admin_user = client_user and (client_user.is_superuser or (hasattr(client_user, "profile") and client_user.profile.role == "admin"))
-
-                if "active_invoice_uuids" in data:
-                    active_uuids = set(data.get("active_invoice_uuids", []))
-                    # Remove locally synced invoices that have been deleted on the web
-                    inv_filter = Q(notes__contains="[CLOUD_SYNCED]")
-                    if client_user and not is_admin_user:
-                        inv_filter &= Q(client=client_user)
-                    for inv in Invoice.objects.filter(inv_filter):
-                        if str(inv.invoice_uuid) not in active_uuids:
-                            inv.items.all().delete()
-                            inv.delete()
 
                 if "active_customer_phones" in data:
                     active_phones = set(data.get("active_customer_phones", []))

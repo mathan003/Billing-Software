@@ -3,13 +3,14 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.7.5"
-APP_TITLE = "Product Delete 404 Fix, Sync Constraint Resolution & Live Status Indicator"
+APP_VERSION = "v2.7.6"
+APP_TITLE = "Complete Reports, Invoices & Dashboard Bidirectional Sync Resolution"
 APP_RELEASE_NOTES = (
-    "• Product Deletion 404 Resolution: Replaced rigid get_object_or_404 with multi-tenant resilient lookups to completely prevent 404 Page Not Found errors during product deletion and edits\n"
-    "• Sync Constraint Resolution: Fixed customer address constraint in cloud sync push, allowing pending offline invoices to synchronize cleanly\n"
-    "• Accurate Sync Status Indicator: Live sync indicator clearly distinguishes 'Pending Sync' with item count from 'Online • Synced' when fully up to date\n"
-    "• Clean Product Form: All input fields display clean, label-focused controls without distracting placeholders\n"
+    "• Reports, Invoices & Dashboard Synchronization: Full bidirectional sync ensures all bills, sales totals, customer payments, and dues sync seamlessly between desktop and web\n"
+    "• Invoice Edit & Payment Sync: Editing invoices or recording payments immediately triggers cloud sync and updates financial figures in real time\n"
+    "• Safe Tombstone Deletion: Replaced destructive invoice wiping with safe DeletedInvoice tombstones, preventing accidental bill loss across all devices\n"
+    "• Multi-Tenant Scoping: Client-level and unassigned bills are correctly attributed and aggregated across Dashboard, Invoices, and Reports\n"
+    "• Asia/Kolkata Business Day Alignment: Dashboard and Reports date calculations accurately reflect the local business day\n"
     "• 100% Data Protection: All client databases, bills, invoices, customer records, and active products preserved untouched"
 )
 

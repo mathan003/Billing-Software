@@ -56,13 +56,14 @@ def get_client_filter(request):
     """
     Returns a Q filter that guarantees strict multi-tenant isolation.
     - Administrators have global overview access across all records.
-    - Client users are strictly constrained to records owned by their account.
+    - Client users are strictly constrained to records owned by their account,
+      plus unassigned records (client__isnull=True).
     """
     if not request.user.is_authenticated:
         return Q(pk__in=[])
     if is_admin_user(request.user):
         return Q()
-    return Q(client=request.user)
+    return Q(client=request.user) | Q(client__isnull=True)
 
 
 def get_client_user(request):
@@ -1317,6 +1318,16 @@ def invoice_delete(request, invoice_id):
         invoice.deleted_at = timezone.now()
         invoice.save(update_fields=["is_deleted", "deleted_at"])
 
+        from billing.models import DeletedInvoice
+        DeletedInvoice.objects.update_or_create(
+            invoice_uuid=inv_uuid,
+            defaults={
+                "invoice_number": inv_number,
+                "client": invoice.client,
+                "deleted_at": timezone.now()
+            }
+        )
+
         log_activity(
             request,
             "RECYCLE_BIN_DELETE",
@@ -1480,6 +1491,7 @@ def invoice_edit(request, invoice_id):
         if invoice.discount_amount > max_discount:
             invoice.discount_amount = max_discount
 
+        invoice.notes = (invoice.notes or "").replace("[CLOUD_SYNCED]", "").strip()
         invoice.save()  # Auto updates grand_total, balance_amount, and payment_status
 
         log_activity(
@@ -1540,6 +1552,7 @@ def invoice_update_payment(request, invoice_id):
             # Update paid amount on invoice
             invoice.paid_amount += pay_amt
             invoice.payment_method = pay_mode
+            invoice.notes = (invoice.notes or "").replace("[CLOUD_SYNCED]", "").strip()
             invoice.save()  # Auto updates balance_amount and payment_status
 
             # Record audit transaction

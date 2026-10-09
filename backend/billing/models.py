@@ -807,6 +807,10 @@ def purge_expired_deleted_items(days=3):
         purged_counts["invoices"] = expired_invoices.count()
         if purged_counts["invoices"] > 0:
             for inv in expired_invoices:
+                DeletedInvoice.objects.update_or_create(
+                    invoice_uuid=str(inv.invoice_uuid),
+                    defaults={"invoice_number": inv.invoice_number, "client": inv.client, "deleted_at": timezone.now()}
+                )
                 inv.items.all().delete()
                 inv.payments.all().delete()
             expired_invoices.delete()
@@ -877,5 +881,23 @@ class DeletedProduct(models.Model):
 
     def __str__(self):
         return f"DeletedProduct: {self.sku} ({self.deleted_at})"
+
+
+class DeletedInvoice(models.Model):
+    """
+    Tracks deleted invoice UUIDs and client ownership so that cloud and desktop synchronization
+    cycles accurately reflect invoice deletions across all devices without accidental resurrection or data loss.
+    """
+    invoice_uuid = models.CharField(max_length=64, db_index=True)
+    invoice_number = models.CharField(max_length=50, blank=True, default="")
+    client = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="deleted_invoices")
+    deleted_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-deleted_at"]
+        unique_together = [("client", "invoice_uuid")]
+
+    def __str__(self):
+        return f"DeletedInvoice: {self.invoice_number} ({self.invoice_uuid})"
 
 

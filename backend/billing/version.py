@@ -3,12 +3,14 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.7.4"
-APP_TITLE = "Clean Product Form & Permanent Product Deletion Persistence"
+APP_VERSION = "v2.7.5"
+APP_TITLE = "Product Delete 404 Fix, Sync Constraint Resolution & Live Status Indicator"
 APP_RELEASE_NOTES = (
-    "• Clean Product Addition Form: Removed all placeholder text from product name and unit fields for a clean, label-focused input experience\n"
-    "• Permanent Product Deletion: Introduced persistent DeletedProduct tombstones across web and desktop POS to ensure deleted products stay permanently deleted across page refreshes and sync cycles\n"
-    "• Anti-Resurrection Guard: Cloud and desktop bidirectional sync strictly ignores and tombstones soft-deleted and purged products\n"
+    "• Product Deletion 404 Resolution: Replaced rigid get_object_or_404 with multi-tenant resilient lookups to completely prevent 404 Page Not Found errors during product deletion and edits\n"
+    "• Sync Constraint Resolution: Fixed customer address constraint in cloud sync push, allowing pending offline invoices to synchronize cleanly\n"
+    "• Accurate Sync Status Indicator: Live sync indicator clearly distinguishes 'Pending Sync' with item count from 'Online • Synced' when fully up to date\n"
+    "• Clean Product Form: All input fields display clean, label-focused controls without distracting placeholders\n"
     "• 100% Data Protection: All client databases, bills, invoices, customer records, and active products preserved untouched"
 )
+
 

@@ -971,21 +971,26 @@
             if (spinner) spinner.classList.add("d-none");
 
             if (status.is_online) {
-                icon.className = "fa-solid fa-cloud-check text-success";
-                text.innerText = status.is_desktop ? "Online • Synced" : "Connected";
-                btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-success-subtle bg-success-subtle text-success d-inline-flex align-items-center gap-1 shadow-sm";
-                if (badge) {
-                    if (status.pending_count > 0) {
+                if (status.pending_count > 0) {
+                    icon.className = "fa-solid fa-arrows-rotate text-warning";
+                    text.innerText = "Pending Sync";
+                    btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-warning-subtle bg-warning-subtle text-dark d-inline-flex align-items-center gap-1 shadow-sm";
+                    if (badge) {
                         badge.classList.remove("d-none");
                         badge.innerText = `${status.pending_count} pending`;
-                    } else {
+                    }
+                } else {
+                    icon.className = "fa-solid fa-cloud-check text-success";
+                    text.innerText = status.is_desktop ? "Online • Synced" : "Connected";
+                    btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-success-subtle bg-success-subtle text-success d-inline-flex align-items-center gap-1 shadow-sm";
+                    if (badge) {
                         badge.classList.add("d-none");
                     }
                 }
             } else {
-                icon.className = "fa-solid fa-cloud-slash text-warning";
+                icon.className = "fa-solid fa-cloud-slash text-danger";
                 text.innerText = "Offline Mode";
-                btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-warning-subtle bg-warning-subtle text-dark d-inline-flex align-items-center gap-1 shadow-sm";
+                btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-danger-subtle bg-danger-subtle text-danger d-inline-flex align-items-center gap-1 shadow-sm";
                 if (badge) {
                     if (status.pending_count > 0) {
                         badge.classList.remove("d-none");

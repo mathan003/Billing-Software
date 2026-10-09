@@ -1884,7 +1884,15 @@ def product_add(request):
 def product_edit(request, product_id):
     """Edit / Update product details (Price, Stock, Unit, Names) anytime"""
     c_filter = get_client_filter(request)
-    product = get_object_or_404(Product.objects.filter(c_filter, is_deleted=False), pk=product_id)
+    product = Product.objects.filter(c_filter, pk=product_id, is_deleted=False).first()
+    if not product and is_admin_user(request.user):
+        product = Product.objects.filter(pk=product_id, is_deleted=False).first()
+    elif not product:
+        product = Product.objects.filter(Q(client=request.user) | Q(client__isnull=True), pk=product_id, is_deleted=False).first()
+
+    if not product:
+        messages.error(request, "Product not found or has already been removed.")
+        return redirect("billing:product_list")
 
     if request.method == "POST":
         product.name_tamil = request.POST.get("name_tamil", product.name_tamil).strip()
@@ -1927,15 +1935,38 @@ def product_edit(request, product_id):
 
 
 def product_delete(request, product_id):
-    """Moves product to Recycle Bin (3-day recovery window) and records tombstone"""
+    """Moves product to Recycle Bin (3-day recovery window) and records tombstone without 404 crashes"""
     if not request.user.is_authenticated:
         return redirect("billing:login")
     if request.method == "POST":
         c_filter = get_client_filter(request)
-        product = get_object_or_404(Product.objects.filter(c_filter, is_deleted=False), pk=product_id)
+        client_u = get_client_user(request)
+
+        # Resilient lookup: check client filter, admin scope, or unassigned global products
+        product = Product.objects.filter(c_filter, pk=product_id).first()
+        if not product and is_admin_user(request.user):
+            product = Product.objects.filter(pk=product_id).first()
+        elif not product:
+            product = Product.objects.filter(Q(client=request.user) | Q(client__isnull=True), pk=product_id).first()
+
+        if not product:
+            messages.info(request, "Product has already been removed or does not exist.")
+            return redirect("billing:product_list")
+
+        if product.is_deleted:
+            # Already deleted! Ensure tombstone is recorded and return cleanly
+            from billing.models import DeletedProduct
+            DeletedProduct.objects.update_or_create(
+                sku=product.sku,
+                client=product.client or client_u,
+                defaults={"name": product.display_name, "deleted_at": timezone.now()}
+            )
+            messages.info(request, f"Product '{product.display_name}' is already in the Recycle Bin.")
+            return redirect("billing:product_list")
+
         prod_name = product.display_name
         sku = product.sku
-        client_u = product.client or get_client_user(request)
+        owner = product.client or client_u
 
         # Soft delete: move to Recycle Bin
         product.is_active = False
@@ -1944,7 +1975,8 @@ def product_delete(request, product_id):
         product.save(update_fields=["is_active", "is_deleted", "deleted_at", "updated_at"])
 
         # Also mark all matching SKU instances under this scope as deleted
-        Product.objects.filter(sku=sku).filter(c_filter).update(
+        scope_q = Q(client=owner) | Q(client__isnull=True) if owner else Q()
+        Product.objects.filter(sku=sku).filter(scope_q).update(
             is_active=False,
             is_deleted=True,
             deleted_at=timezone.now(),
@@ -1955,14 +1987,14 @@ def product_delete(request, product_id):
         from billing.models import DeletedProduct
         DeletedProduct.objects.update_or_create(
             sku=sku,
-            client=client_u,
+            client=owner,
             defaults={"name": prod_name, "deleted_at": timezone.now()}
         )
 
         log_activity(
             request,
             "RECYCLE_BIN_DELETE",
-            f"User '{request.user.username}' moved product '{prod_name}' (SKU: {product.sku}) to Recycle Bin (3-day recovery)."
+            f"User '{request.user.username}' moved product '{prod_name}' (SKU: {sku}) to Recycle Bin (3-day recovery)."
         )
         trigger_desktop_sync_safe()
         messages.success(request, f"Product '{prod_name}' moved to Recycle Bin (Deleted Items). Recoverable for 3 days.")

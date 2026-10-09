@@ -207,6 +207,13 @@ class Invoice(models.Model):
         ordering = ["-created_at"]
 
     def save(self, *args, **kwargs):
+        if self.customer_address is None:
+            self.customer_address = ""
+        if self.customer_phone is None:
+            self.customer_phone = ""
+        if self.notes is None:
+            self.notes = ""
+
         # Auto-compute grand total and balance with discounts/offers
         if self.subtotal is None:
             self.subtotal = Decimal("0.00")

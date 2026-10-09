@@ -452,6 +452,12 @@ class SyncPushView(views.APIView):
                     # Create Invoice record
                     paid_amt = inv_data.get("paid_amount", inv_data["grand_total"])
                     bal_amt = inv_data.get("balance_amount", Decimal("0.00"))
+                    # Ensure customer_address is strictly a string, never None
+                    cust_addr = inv_data.get("customer_address")
+                    if not cust_addr and cust_obj and cust_obj.address:
+                        cust_addr = cust_obj.address
+                    cust_addr = str(cust_addr or "").strip()
+
                     invoice = Invoice.objects.create(
                         invoice_uuid=inv_uuid,
                         invoice_number=inv_num,
@@ -459,7 +465,7 @@ class SyncPushView(views.APIView):
                         customer=cust_obj,
                         customer_name=cust_name or "Cash Customer",
                         customer_phone=cust_phone,
-                        customer_address=inv_data.get("customer_address", "") or (cust_obj.address if cust_obj else ""),
+                        customer_address=cust_addr,
                         subtotal=inv_data["subtotal"],
                         tax_amount=inv_data["tax_amount"],
                         discount_amount=inv_data["discount_amount"],

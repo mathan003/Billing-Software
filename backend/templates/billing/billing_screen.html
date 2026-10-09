@@ -430,6 +430,7 @@
                     <option value="Set">Set (செட்)</option>
                     <option value="Nos">Nos (எண்கள்)</option>
                     <option value="Unit">Unit (யூனிட்)</option>
+                    <option value="Other">+ Other / மற்றவை...</option>
                 </select>
             </td>
             <td>
@@ -506,9 +507,21 @@
                 qtyInput.focus();
                 qtyInput.select();
             }
+        unitSelect.addEventListener("change", function() {
+            unitSelect.dataset.modified = "true";
+            if (this.value === "Other") {
+                const custom = prompt("Enter Custom Unit Name (e.g. Roll, Bundle, Metre, Tin):");
+                if (custom && custom.trim()) {
+                    const opt = document.createElement("option");
+                    opt.value = custom.trim();
+                    opt.text = custom.trim();
+                    opt.selected = true;
+                    this.appendChild(opt);
+                } else {
+                    this.value = "Pcs";
+                }
+            }
         });
-
-        unitSelect.addEventListener("change", function() { unitSelect.dataset.modified = "true"; });
         priceInput.addEventListener("input", function() { priceInput.dataset.modified = "true"; updateRow(); });
         qtyInput.addEventListener("input", updateRow);
 
@@ -550,6 +563,7 @@
                     <option value="Box">Box (பெட்டி)</option>
                     <option value="Ltr">Liter (லிட்டர்)</option>
                     <option value="Set">Set (செட்)</option>
+                    <option value="Other">+ Other / மற்றவை...</option>
                 </select>
             </td>
             <td>
@@ -576,10 +590,28 @@
         itemsBody.appendChild(tr);
 
         const nameInput = tr.querySelector(".custom-prod-name");
+        const unitSelect = tr.querySelector(".unit-select");
         const priceInput = tr.querySelector(".price-input");
         const qtyInput = tr.querySelector(".qty-input");
         const totalInput = tr.querySelector(".total-input");
         const removeBtn = tr.querySelector(".remove-row-btn");
+
+        if (unitSelect) {
+            unitSelect.addEventListener("change", function() {
+                if (this.value === "Other") {
+                    const custom = prompt("Enter Custom Unit Name (e.g. Roll, Bundle, Metre, Tin):");
+                    if (custom && custom.trim()) {
+                        const opt = document.createElement("option");
+                        opt.value = custom.trim();
+                        opt.text = custom.trim();
+                        opt.selected = true;
+                        this.appendChild(opt);
+                    } else {
+                        this.value = "Pcs";
+                    }
+                }
+            });
+        }
 
         function updateRow() {
             const price = parseFloat(priceInput.value || 0);

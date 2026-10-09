@@ -178,7 +178,41 @@ def session_security_context(request):
         except Exception:
             pass
 
+    client_active_sessions = []
+    if hasattr(request, "user") and request.user.is_authenticated:
+        sess_obj = getattr(request, "session", None)
+        curr_session_key = str(getattr(sess_obj, "session_key", "") or (sess_obj.get("session_key", "") if hasattr(sess_obj, "get") else ""))[:40]
+        curr_device_id = request.COOKIES.get("billing_device_id", "")
+        for s in ActiveUserSession.objects.filter(user=request.user).order_by("-last_activity"):
+            is_curr = False
+            if curr_session_key and s.session_key == curr_session_key:
+                is_curr = True
+            elif curr_device_id and (curr_device_id[:12] in s.device_info or curr_device_id[:12] in s.session_key):
+                is_curr = True
+
+            clean_device_name = s.device_info
+            if "(" in clean_device_name:
+                parts = clean_device_name.split("(")
+                display_title = parts[0].strip()
+                device_extra = "(" + parts[1]
+            else:
+                display_title = clean_device_name
+                device_extra = ""
+
+            client_active_sessions.append({
+                "id": s.id,
+                "session_key": s.session_key,
+                "device_info": s.device_info,
+                "display_title": display_title,
+                "device_extra": device_extra,
+                "ip_address": s.ip_address,
+                "last_activity": s.last_activity,
+                "is_current": is_curr,
+                "is_desktop": "EXE" in s.device_info or "Desktop" in s.device_info or s.session_key.startswith("EXE-"),
+            })
+
     return {
+        "client_active_sessions": client_active_sessions,
         "sec_token": sec_token,
         "sec_param": f"?sec={sec_token}",
         "is_desktop_app": is_desktop,

@@ -3,11 +3,11 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.5.9"
-APP_TITLE = "Responsive Login Alignment, Safe Updates & Zero Data Loss Architecture"
+APP_VERSION = "v2.6.0"
+APP_TITLE = "Active Devices Remote Logout, Custom Unit Types & Clean Login Interface"
 APP_RELEASE_NOTES = (
-    "• Responsive Login Page Alignment: Completely restructured layout with balanced spacing, responsive update cards, and unclipped touch-friendly action buttons\n"
-    "• Zero Data Loss Guarantee: Safe update mechanism with automatic pre-update database backups and detached rollback support\n"
-    "• Strict Multi-Tenant Data Protection: Client customer records, bills, invoices, products, and categories remain 100% isolated and preserved across updates\n"
-    "• Seamless Database Migration Handling: Safe database snapshotting prior to migrations preventing SQLite schema corruption"
+    "• Active Devices Management: Clients can view all currently active systems and manually log out other terminals anytime\n"
+    "• Custom Unit Type: Added 'Other' option to create and assign custom units (e.g., Roll, Bundle, Metre, Tin) when adding or editing products\n"
+    "• Unified Password Display: Suppressed duplicate browser password icons ensuring a single clean toggle button\n"
+    "• Streamlined OTP Verification: Removed WhatsApp card and direct contact button from the OTP screen for clean security verification"
 )

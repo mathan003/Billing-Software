@@ -10,8 +10,9 @@ from django.utils import timezone
 from django.db.models import Sum, Count, Q, F
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, HttpResponseForbidden
 from .models import (
     Product, ProductCategory, Customer, Invoice, InvoiceItem, Purchase,
     PaymentRecord, ActiveUserSession, RegisteredDevice, UserProfile, ActivityLog,
@@ -1798,6 +1799,12 @@ def product_add(request):
         sku = request.POST.get("sku", "").strip()
         category = request.POST.get("category", "General").strip() or "General"
         unit = request.POST.get("unit", "KG").strip() or "KG"
+        custom_unit = request.POST.get("custom_unit", "").strip()
+        if unit == "Other" and custom_unit:
+            unit = custom_unit[:20]
+        elif unit == "Other":
+            unit = "Unit"
+
         price = parse_decimal(request.POST.get("price"), "0.00")
         cost_price = parse_decimal(request.POST.get("cost_price"), "0.00")
         tax_percent = parse_decimal(request.POST.get("tax_percent"), "0.00")
@@ -1847,7 +1854,14 @@ def product_edit(request, product_id):
         product.name_tamil = request.POST.get("name_tamil", product.name_tamil).strip()
         product.name = request.POST.get("name", "").strip()
         product.category = request.POST.get("category", product.category).strip() or product.category
-        product.unit = request.POST.get("unit", product.unit).strip() or product.unit
+        
+        unit = request.POST.get("unit", product.unit).strip() or product.unit
+        custom_unit = request.POST.get("custom_unit", "").strip()
+        if unit == "Other" and custom_unit:
+            unit = custom_unit[:20]
+        elif unit == "Other":
+            unit = product.unit or "Unit"
+        product.unit = unit
         product.price = parse_decimal(request.POST.get("price"), str(product.price))
         product.cost_price = parse_decimal(request.POST.get("cost_price"), str(product.cost_price))
         product.tax_percent = parse_decimal(request.POST.get("tax_percent"), str(product.tax_percent))
@@ -2349,6 +2363,153 @@ def admin_revoke_device_session(request, session_id):
         messages.success(request, f"Disconnected active device session for '{u_name}'. That terminal will be logged out immediately.")
 
     return redirect("billing:admin_panel")
+
+
+@login_required
+def client_logout_device(request, session_id):
+    """
+    Allows a client to manually terminate/disconnect another active device/system from their account.
+    Terminates the live session immediately so the other client terminal or browser is logged out.
+    """
+    if request.method == "POST":
+        target_session = ActiveUserSession.objects.filter(pk=session_id).first()
+        if not target_session:
+            msg = "Device session already disconnected or expired."
+            if request.headers.get("x-requested-with") == "XMLHttpRequest" or request.GET.get("format") == "json":
+                return JsonResponse({"status": "not_found", "message": msg})
+            messages.warning(request, msg)
+            return redirect(request.META.get("HTTP_REFERER", "/"))
+
+        is_admin = request.user.is_superuser or (hasattr(request.user, "profile") and request.user.profile.role == "admin")
+        if target_session.user != request.user and not is_admin:
+            return HttpResponseForbidden("Permission denied.")
+
+        d_info = target_session.device_info
+        s_key = target_session.session_key
+        ip_addr = target_session.ip_address
+        target_user = target_session.user
+
+        # Expire Django web session
+        try:
+            from django.contrib.sessions.models import Session
+            Session.objects.filter(session_key=s_key).delete()
+        except Exception:
+            pass
+
+        # Deactivate matching RegisteredDevice so it cannot immediately pull or push
+        matching_devices = RegisteredDevice.objects.filter(user=target_user)
+        for md in matching_devices:
+            if (md.device_id[:12] in d_info) or (md.device_id[:12] in s_key) or (md.device_name in d_info):
+                md.is_active = False
+                md.save(update_fields=["is_active"])
+
+        target_session.delete()
+        trigger_desktop_sync_safe()
+
+        log_activity(
+            request,
+            "DEVICE_LOGOUT",
+            f"User '{request.user.username}' manually disconnected session ({d_info[:35]} | IP: {ip_addr})"
+        )
+
+        remaining = ActiveUserSession.objects.filter(user=request.user).count()
+        clean_name = d_info.split("(")[0].strip() or "Device"
+        msg = f"Device '{clean_name}' has been disconnected and logged out successfully. Slot freed!"
+
+        if request.headers.get("x-requested-with") == "XMLHttpRequest" or request.GET.get("format") == "json":
+            return JsonResponse({
+                "status": "success",
+                "message": msg,
+                "remaining_active": remaining,
+            })
+
+        messages.success(request, msg)
+
+    return redirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def client_logout_all_other_devices(request):
+    """
+    Disconnects all other active devices/systems for this user except the current one.
+    """
+    if request.method == "POST":
+        sess_obj = getattr(request, "session", None)
+        curr_key = str(getattr(sess_obj, "session_key", "") or (sess_obj.get("session_key", "") if hasattr(sess_obj, "get") else ""))[:40]
+        curr_device_id = request.COOKIES.get("billing_device_id", "")
+        
+        all_user_sessions = ActiveUserSession.objects.filter(user=request.user)
+        other_sessions = []
+        for s in all_user_sessions:
+            if curr_key and s.session_key == curr_key:
+                continue
+            if curr_device_id and (curr_device_id[:12] in s.device_info or curr_device_id[:12] in s.session_key):
+                continue
+            other_sessions.append(s)
+
+        count = len(other_sessions)
+        try:
+            from django.contrib.sessions.models import Session
+            for s in other_sessions:
+                Session.objects.filter(session_key=s.session_key).delete()
+                for md in RegisteredDevice.objects.filter(user=request.user):
+                    if (md.device_id[:12] in s.device_info) or (md.device_id[:12] in s.session_key):
+                        md.is_active = False
+                        md.save(update_fields=["is_active"])
+                s.delete()
+        except Exception:
+            pass
+
+        trigger_desktop_sync_safe()
+
+        log_activity(
+            request,
+            "DEVICE_LOGOUT_ALL",
+            f"User '{request.user.username}' logged out {count} other system(s)."
+        )
+
+        msg = f"Successfully logged out {count} other active device(s)!" if count > 0 else "No other active devices found."
+        if request.headers.get("x-requested-with") == "XMLHttpRequest" or request.GET.get("format") == "json":
+            return JsonResponse({"status": "success", "message": msg, "logged_out_count": count})
+
+        messages.success(request, msg)
+
+    return redirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def api_client_devices(request):
+    """
+    Returns active devices for the current logged-in client in JSON format.
+    """
+    sess_obj = getattr(request, "session", None)
+    curr_session_key = str(getattr(sess_obj, "session_key", "") or (sess_obj.get("session_key", "") if hasattr(sess_obj, "get") else ""))[:40]
+    curr_device_id = request.COOKIES.get("billing_device_id", "")
+    devices = []
+    for s in ActiveUserSession.objects.filter(user=request.user).order_by("-last_activity"):
+        is_curr = False
+        if curr_session_key and s.session_key == curr_session_key:
+            is_curr = True
+        elif curr_device_id and (curr_device_id[:12] in s.device_info or curr_device_id[:12] in s.session_key):
+            is_curr = True
+
+        devices.append({
+            "id": s.id,
+            "device_info": s.device_info,
+            "ip_address": s.ip_address,
+            "last_activity": s.last_activity.strftime("%d-%m-%Y %H:%M"),
+            "is_current": is_curr,
+            "is_desktop": "EXE" in s.device_info or "Desktop" in s.device_info or s.session_key.startswith("EXE-"),
+        })
+
+    profile = getattr(request.user, "profile", None)
+    max_devices = profile.device_limit if (profile and profile.device_limit) else 5
+    return JsonResponse({
+        "status": "success",
+        "devices": devices,
+        "active_count": len(devices),
+        "max_allowed": max_devices,
+    })
 
 
 @admin_required

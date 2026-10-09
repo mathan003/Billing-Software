@@ -27,6 +27,16 @@
             background-color: #f8fafc;
             color: #1e293b;
         }
+        /* Hide browser-native duplicate password reveal/clear buttons (Edge, IE, Chromium) */
+        input[type="password"]::-ms-reveal,
+        input[type="password"]::-ms-clear,
+        input::-ms-reveal,
+        input::-ms-clear {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            pointer-events: none !important;
+        }
         .navbar-custom {
             background: #ffffff;
             border-bottom: 1px solid #e2e8f0;
@@ -231,16 +241,29 @@
                                     {% if user.profile.shop_name %}
                                         <div class="text-primary small fw-semibold"><i class="fa-solid fa-store me-1"></i>{{ user.profile.shop_name }}</div>
                                     {% endif %}
-                                    <div class="text-muted small mt-1" id="clientDeviceDropdownText">
-                                        {% if is_admin_user %}
-                                            <i class="fa-solid fa-shield-halved text-primary me-1"></i><strong>Admin:</strong> {{ active_devices_count }}/{{ max_allowed_devices }} Devices Active
-                                        {% else %}
-                                            <i class="fa-solid fa-users text-success me-1"></i><strong>Client:</strong> {{ active_devices_count }}/{{ max_allowed_devices }} Active Devices
-                                        {% endif %}
+                                    <div class="mt-2" id="clientDeviceDropdownText">
+                                        <button type="button" class="btn btn-outline-success btn-sm w-100 text-start d-flex align-items-center justify-content-between py-1.5 px-2 rounded-2 shadow-sm bg-success-subtle border-success-subtle text-dark" data-bs-toggle="modal" data-bs-target="#activeDevicesModal" title="Click to view connected devices and logout other systems">
+                                            <span class="small fw-semibold">
+                                                {% if is_admin_user %}
+                                                    <i class="fa-solid fa-shield-halved text-primary me-1"></i><strong>Admin:</strong> {{ active_devices_count }}/{{ max_allowed_devices }} Active
+                                                {% else %}
+                                                    <i class="fa-solid fa-users text-success me-1"></i><strong>Client:</strong> {{ active_devices_count }}/{{ max_allowed_devices }} Active Devices
+                                                {% endif %}
+                                            </span>
+                                            <span class="badge bg-success text-white rounded-pill px-2 py-0.5" style="font-size: 10px;">
+                                                Manage <i class="fa-solid fa-chevron-right ms-0.5"></i>
+                                            </span>
+                                        </button>
                                     </div>
-                                    <div class="small text-secondary mt-1">
+                                    <div class="small text-secondary mt-2">
                                         <i class="fa-solid fa-tag me-1"></i>Type: <strong>{{ user.profile.get_business_type_display|default:"Grocery Shop" }}</strong>
                                     </div>
+                                </li>
+                                <li>
+                                    <button type="button" class="dropdown-item small fw-semibold text-dark rounded-2 py-2 d-flex align-items-center justify-content-between" data-bs-toggle="modal" data-bs-target="#activeDevicesModal">
+                                        <span><i class="fa-solid fa-laptop text-success me-2"></i> Active Devices & Logout Systems</span>
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-0" style="font-size: 0.65rem;">{{ active_devices_count }}/{{ max_allowed_devices }}</span>
+                                    </button>
                                 </li>
                                 <li>
                                     <a class="dropdown-item small fw-semibold text-dark rounded-2 py-2" href="{% url 'billing:client_profile' %}{{ sec_param }}">
@@ -589,6 +612,107 @@
     <!-- Shared Global Add & Remove Category Modal -->
     {% include "billing/includes/category_modal.html" %}
 
+    <!-- ======================================================== -->
+    <!-- MODAL: ACTIVE DEVICES & LOGOUT OTHER CLIENT SYSTEMS       -->
+    <!-- ======================================================== -->
+    <div class="modal fade" id="activeDevicesModal" tabindex="-1" aria-labelledby="activeDevicesModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <div>
+                        <h5 class="modal-title fw-bold" id="activeDevicesModalLabel">
+                            <i class="fa-solid fa-laptop-medical text-primary me-2"></i>Active Devices & Terminals (இயங்கும் சாதனங்கள்)
+                        </h5>
+                        <p class="text-secondary small mb-0">
+                            View all systems currently logged into your account. You can manually log out other systems anytime.
+                        </p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body pt-3">
+                    <!-- Quota & Action Bar -->
+                    <div class="p-3 bg-light rounded-3 mb-3 border d-flex align-items-center justify-content-between flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center shadow-sm" style="width: 36px; height: 36px;">
+                                <i class="fa-solid fa-shield-halved"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold small text-dark">Active Device Quota: {{ active_devices_count }} / {{ max_allowed_devices }} Systems Active</div>
+                                <small class="text-muted">Admin quota limit allows up to {{ max_allowed_devices }} concurrent terminals.</small>
+                            </div>
+                        </div>
+                        {% if client_active_sessions|length > 1 %}
+                            <button type="button" class="btn btn-sm btn-outline-danger fw-bold d-inline-flex align-items-center gap-1 shadow-sm rounded-pill px-3" onclick="logoutAllOtherDevices()">
+                                <i class="fa-solid fa-power-off"></i> Logout All Other Systems (அனைத்தையும் வெளியேற்று)
+                            </button>
+                        {% endif %}
+                    </div>
+
+                    <div id="activeDevicesAlertBox"></div>
+
+                    <!-- Active Device Table -->
+                    <div class="table-responsive rounded-3 border">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light small">
+                                <tr>
+                                    <th>Device / Terminal (சாதனம்)</th>
+                                    <th>IP Address</th>
+                                    <th>Last Activity (கடைசி நேரம்)</th>
+                                    <th class="text-end">Status / Action (செயல்)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="activeDevicesTableBody">
+                                {% if client_active_sessions %}
+                                    {% for sess in client_active_sessions %}
+                                        <tr id="sessionRow{{ sess.id }}">
+                                            <td>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <div class="rounded-circle d-flex align-items-center justify-content-center {% if sess.is_desktop %}bg-primary-subtle text-primary{% else %}bg-info-subtle text-info{% endif %}" style="width: 36px; height: 36px; flex-shrink: 0;">
+                                                        {% if sess.is_desktop %}
+                                                            <i class="fa-solid fa-desktop fa-lg"></i>
+                                                        {% else %}
+                                                            <i class="fa-solid fa-globe fa-lg"></i>
+                                                        {% endif %}
+                                                    </div>
+                                                    <div>
+                                                        <div class="fw-bold text-dark small">{{ sess.display_title }}</div>
+                                                        <div class="text-muted" style="font-size: 11px;">
+                                                            {% if sess.is_desktop %}Windows Desktop POS (EXE){% else %}Web Browser / Mobile{% endif %} {{ sess.device_extra }}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="small text-secondary">{{ sess.ip_address }}</td>
+                                            <td class="small text-secondary">{{ sess.last_activity|timesince }} ago</td>
+                                            <td class="text-end">
+                                                {% if sess.is_current %}
+                                                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 rounded-pill fw-bold" style="font-size: 11px;">
+                                                        <i class="fa-solid fa-circle-check me-1"></i> This System (Current)
+                                                    </span>
+                                                {% else %}
+                                                    <button type="button" class="btn btn-sm btn-outline-danger fw-bold d-inline-flex align-items-center gap-1 shadow-sm px-2.5 py-1 rounded-2" onclick="logoutSingleDevice({{ sess.id }}, '{{ sess.display_title|escapejs }}')">
+                                                        <i class="fa-solid fa-right-from-bracket"></i> Logout / வெளியேற்று
+                                                    </button>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="4" class="text-center text-muted py-4">No active device sessions found.</td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary px-4 rounded-3" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Bottom Navigation Bar -->
     <div class="mobile-bottom-bar">
         <a href="{% url 'billing:dashboard' %}{{ sec_param }}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
@@ -710,7 +834,15 @@
                 const devDropdown = document.getElementById("clientDeviceDropdownText");
                 if (devDropdown) {
                     const icon = status.is_admin ? '<i class="fa-solid fa-shield-halved text-primary me-1"></i><strong>Admin:</strong>' : '<i class="fa-solid fa-users text-success me-1"></i><strong>Client:</strong>';
-                    devDropdown.innerHTML = `${icon} ${status.active_devices_count}/${status.max_allowed_devices} Active Devices`;
+                    devDropdown.innerHTML = `
+                        <button type="button" class="btn btn-outline-success btn-sm w-100 text-start d-flex align-items-center justify-content-between py-1.5 px-2 rounded-2 shadow-sm bg-success-subtle border-success-subtle text-dark" data-bs-toggle="modal" data-bs-target="#activeDevicesModal" title="Click to view connected devices and logout other systems">
+                            <span class="small fw-semibold">
+                                ${icon} ${status.active_devices_count}/${status.max_allowed_devices} Active Devices
+                            </span>
+                            <span class="badge bg-success text-white rounded-pill px-2 py-0.5" style="font-size: 10px;">
+                                Manage <i class="fa-solid fa-chevron-right ms-0.5"></i>
+                            </span>
+                        </button>`;
                 }
                 const profileDevBadge = document.getElementById("clientProfileDevicesBadge");
                 if (profileDevBadge) {
@@ -790,6 +922,82 @@
             checkSyncStatus();
             setInterval(checkSyncStatus, 10000);
         });
+
+        function logoutSingleDevice(sessionId, deviceName) {
+            if (!confirm(`Are you sure you want to log out '${deviceName}' from another system? That terminal will be disconnected immediately.`)) {
+                return;
+            }
+            const alertBox = document.getElementById("activeDevicesAlertBox");
+            const row = document.getElementById(`sessionRow${sessionId}`);
+
+            fetch(`/client/devices/logout/${sessionId}/`, {
+                method: "POST",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRFToken": getCsrfTokenSafe(),
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "success") {
+                    if (row) {
+                        row.style.transition = "opacity 0.3s ease, transform 0.3s ease";
+                        row.style.opacity = "0";
+                        row.style.transform = "translateX(20px)";
+                        setTimeout(() => row.remove(), 300);
+                    }
+                    if (alertBox) {
+                        alertBox.innerHTML = `
+                            <div class="alert alert-success alert-dismissible fade show rounded-3 small py-2 px-3 mb-3">
+                                <i class="fa-solid fa-circle-check me-1"></i> ${data.message}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>`;
+                    }
+                    const badge = document.getElementById("clientDeviceBadge");
+                    if (badge && data.remaining_active !== undefined) {
+                        const parts = badge.innerText.split("(");
+                        const role = parts[0].trim();
+                        const maxPart = badge.innerText.split("/")[1] || "5)";
+                        badge.innerText = `${role} (${data.remaining_active}/${maxPart}`;
+                    }
+                } else {
+                    alert(data.message || "Failed to disconnect device.");
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                window.location.reload();
+            });
+        }
+
+        function logoutAllOtherDevices() {
+            if (!confirm("Are you sure you want to log out all other systems connected to your account? Only this current device will stay logged in.")) {
+                return;
+            }
+            fetch("/client/devices/logout-all-others/", {
+                method: "POST",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRFToken": getCsrfTokenSafe(),
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message || "All other devices logged out successfully!");
+                window.location.reload();
+            })
+            .catch(err => {
+                console.error(err);
+                window.location.reload();
+            });
+        }
+
+        function getCsrfTokenSafe() {
+            const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+            if (input) return input.value;
+            const cookie = document.cookie.split("; ").find(r => r.startsWith("csrftoken="));
+            return cookie ? cookie.split("=")[1] : "";
+        }
     </script>
 
     {% block extra_js %}{% endblock %}

@@ -150,7 +150,7 @@
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Unit Type (அளவீடு) *</label>
-                            <select name="unit" class="form-select">
+                            <select name="unit" id="addProdUnitSelect" class="form-select" onchange="toggleCustomUnitField('addProdUnitSelect', 'addCustomUnitContainer')">
                                 <option value="KG">KG (கிலோ)</option>
                                 <option value="Gram">Gram (கிராம்)</option>
                                 <option value="Pack">Pack / Bag (பேக்)</option>
@@ -160,7 +160,11 @@
                                 <option value="Set">Set (செட்)</option>
                                 <option value="Nos">Nos (எண்கள்)</option>
                                 <option value="Unit">Unit (யூனிட்)</option>
+                                <option value="Other">+ Other / மற்றவை (Add New Unit)...</option>
                             </select>
+                            <div id="addCustomUnitContainer" class="mt-1" style="display: none;">
+                                <input type="text" name="custom_unit" id="addCustomUnitInput" class="form-control form-control-sm border-primary" placeholder="Enter new unit (e.g. Roll, Bundle, Metre, Tin)...">
+                            </div>
                         </div>
                         <div class="col-6">
                             <div class="d-flex justify-content-between align-items-center mb-1">
@@ -230,7 +234,7 @@
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Unit Type *</label>
-                            <select name="unit" id="editUnit" class="form-select">
+                            <select name="unit" id="editUnit" class="form-select" onchange="toggleCustomUnitField('editUnit', 'editCustomUnitContainer')">
                                 <option value="KG">KG (கிலோ)</option>
                                 <option value="Gram">Gram (கிராம்)</option>
                                 <option value="Pack">Pack / Bag (பேக்)</option>
@@ -240,7 +244,11 @@
                                 <option value="Set">Set (செட்)</option>
                                 <option value="Nos">Nos (எண்கள்)</option>
                                 <option value="Unit">Unit (யூனிட்)</option>
+                                <option value="Other">+ Other / மற்றவை (Add New Unit)...</option>
                             </select>
+                            <div id="editCustomUnitContainer" class="mt-1" style="display: none;">
+                                <input type="text" name="custom_unit" id="editCustomUnitInput" class="form-control form-control-sm border-primary" placeholder="Enter new unit (e.g. Roll, Bundle, Metre, Tin)...">
+                            </div>
                         </div>
                         <div class="col-6">
                             <div class="d-flex justify-content-between align-items-center mb-1">
@@ -365,6 +373,28 @@
             });
         };
 
+        // Toggle custom unit input box when "Other" is chosen
+        window.toggleCustomUnitField = function(selectId, containerId) {
+            const sel = document.getElementById(selectId);
+            const cont = document.getElementById(containerId);
+            if (!sel || !cont) return;
+            if (sel.value === "Other") {
+                cont.style.display = "block";
+                const inp = cont.querySelector("input");
+                if (inp) {
+                    inp.focus();
+                    inp.required = true;
+                }
+            } else {
+                cont.style.display = "none";
+                const inp = cont.querySelector("input");
+                if (inp) {
+                    inp.value = "";
+                    inp.required = false;
+                }
+            }
+        };
+
         // Add Product button listener
         const addBtn = document.getElementById("openAddProdBtn");
         const addModalEl = document.getElementById("addProductModal");
@@ -384,7 +414,29 @@
                 document.getElementById("editProductForm").action = `/products/${id}/edit/`;
                 document.getElementById("editNameTamil").value = this.getAttribute("data-name-tamil") || "";
                 document.getElementById("editName").value = this.getAttribute("data-name") || "";
-                document.getElementById("editUnit").value = this.getAttribute("data-unit") || "KG";
+                
+                const unitVal = this.getAttribute("data-unit") || "KG";
+                const editUnitSelect = document.getElementById("editUnit");
+                const editCustomCont = document.getElementById("editCustomUnitContainer");
+                const editCustomInp = document.getElementById("editCustomUnitInput");
+                let unitFound = false;
+                if (editUnitSelect) {
+                    for (let i = 0; i < editUnitSelect.options.length; i++) {
+                        if (editUnitSelect.options[i].value.toLowerCase() === unitVal.toLowerCase()) {
+                            editUnitSelect.selectedIndex = i;
+                            unitFound = true;
+                            break;
+                        }
+                    }
+                    if (!unitFound && unitVal) {
+                        editUnitSelect.value = "Other";
+                        if (editCustomCont) editCustomCont.style.display = "block";
+                        if (editCustomInp) editCustomInp.value = unitVal;
+                    } else {
+                        if (editCustomCont) editCustomCont.style.display = "none";
+                        if (editCustomInp) editCustomInp.value = "";
+                    }
+                }
                 
                 const catVal = this.getAttribute("data-category") || "General";
                 const editCatSelect = document.getElementById("editCategorySelect");

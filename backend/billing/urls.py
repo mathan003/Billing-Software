@@ -96,6 +96,11 @@ urlpatterns = [
     path("software-update/apply/", views.client_apply_software_update, name="client_apply_software_update"),
     path("software-update/reject/", views.client_reject_software_update, name="client_reject_software_update"),
 
+    # Client Active Devices Management & Manual Remote Logout
+    path("client/devices/logout/<int:session_id>/", views.client_logout_device, name="client_logout_device"),
+    path("client/devices/logout-all-others/", views.client_logout_all_other_devices, name="client_logout_all_other_devices"),
+    path("api/client/devices/", views.api_client_devices, name="api_client_devices"),
+
     # Customers (Directory, Ledger, Statement, Manual Delete, CSV Exports)
     path("customers/", views.customer_list, name="customer_list"),
     path("customers/add/", views.customer_add, name="customer_add"),

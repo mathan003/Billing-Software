@@ -137,6 +137,15 @@
             box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.15);
             margin-bottom: 1.5rem;
             overflow: hidden;
+        /* Hide browser-native duplicate password reveal/clear buttons (Edge, IE, Chromium) */
+        input[type="password"]::-ms-reveal,
+        input[type="password"]::-ms-clear,
+        input::-ms-reveal,
+        input::-ms-clear {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            pointer-events: none !important;
         }
     </style>
 </head>
@@ -252,18 +261,6 @@
                         <span class="input-icon-box text-warning"><i class="fa-solid fa-key"></i></span>
                         <input type="text" name="admin_otp" id="loginAdminOtp" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" class="form-control text-center fw-bold fs-4" required autofocus style="letter-spacing: 8px;">
                     </div>
-
-                    <!-- WhatsApp Verification Notice & Action Button (Admin WhatsApp: 9384098304) -->
-                    <div class="alert alert-success border border-success-subtle rounded-3 py-2 px-3 mt-3 mb-2 small text-dark d-flex align-items-start gap-2" style="background-color: #f0fdf4;">
-                        <i class="fa-brands fa-whatsapp text-success fa-xl mt-1"></i>
-                        <div style="font-size: 12px; line-height: 1.45;">
-                            OTP verification is managed by <strong>Administrator (+91 9384098304)</strong>. The 6-digit code has been sent via WhatsApp to your registered phone number.
-                        </div>
-                    </div>
-
-                    <a href="https://wa.me/919384098304?text=Hello%20Administrator,%20please%20send%20my%20SmartBilling%20POS%20Verification%20OTP%20for%20account:%20{{ username|urlencode }}%20(Device:%20{{ device_id|urlencode }})" target="_blank" class="btn btn-outline-success fw-bold w-100 py-2.5 mb-2 d-inline-flex align-items-center justify-content-center gap-2 rounded-3 shadow-sm">
-                        <i class="fa-brands fa-whatsapp fa-lg"></i> Contact Admin on WhatsApp (+91 9384098304)
-                    </a>
                 </div>
 
                 <button type="submit" class="btn btn-warning text-dark fw-bold w-100 py-2.5 shadow-sm rounded-3">

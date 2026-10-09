@@ -14,6 +14,15 @@ def session_security_context(request):
     latest_update = SoftwareUpdate.get_latest_update()
     is_desktop = (os.environ.get("IS_DESKTOP_APP") == "True") or is_desktop_environment(request)
 
+    applied_ver = request.session.get("applied_update_version") if hasattr(request, "session") else None
+    rejected_ver = request.session.get("rejected_update_version") if hasattr(request, "session") else None
+    cookie_rejected = False
+    if latest_update:
+        cookie_rejected = request.COOKIES.get(f"rejected_update_{latest_update.version}") == "1"
+    available_software_update = None
+    if latest_update and latest_update.version != applied_ver and latest_update.version != rejected_ver and not cookie_rejected:
+        available_software_update = latest_update
+
     if not hasattr(request, "user") or not request.user.is_authenticated:
         return {
             "sec_token": "",
@@ -23,7 +32,7 @@ def session_security_context(request):
             "is_admin_user": False,
             "active_devices_count": 0,
             "max_allowed_devices": 5,
-            "available_software_update": None,
+            "available_software_update": available_software_update,
             "company": company,
             "active_shop_name": (company.company_name.replace("Supermarket", "").replace("supermarket", "").strip() or "MathanHub") if company else "MathanHub",
             "active_shop_address": company.address,
@@ -108,14 +117,16 @@ def session_security_context(request):
     c_filter = Q(client=request.user) if not is_admin else Q()
     if request.user.is_authenticated and not is_admin:
         try:
-            if not ProductCategory.objects.filter(client=request.user).exists():
+            has_any_cat = ProductCategory.objects.filter(client=request.user).exists()
+            has_any_prod = Product.objects.filter(client=request.user).exists()
+            if not has_any_cat and not has_any_prod:
                 initial_cats = [
                     "General", "Grocery", "Fruits", "Vegetables",
                     "Snacks", "Beverages", "Dairy", "Spices",
                     "Stationery", "Electronics"
                 ]
                 for c_name in initial_cats:
-                    ProductCategory.objects.get_or_create(name=c_name, client=request.user)
+                    ProductCategory.objects.get_or_create(name=c_name, client=request.user, defaults={"is_deleted": False})
         except Exception:
             pass
     try:
@@ -126,10 +137,17 @@ def session_security_context(request):
     global_categories = []
     global_category_list_data = []
     try:
+        deleted_names = set(ProductCategory.objects.filter(c_filter, is_deleted=True).values_list("name", flat=True))
+        deleted_names_lower = {d.strip().lower() for d in deleted_names if d}
+
+        saved_cats = set(ProductCategory.objects.filter(c_filter, is_deleted=False).exclude(name="").values_list("name", flat=True))
         prod_cats = set(Product.objects.filter(c_filter, is_active=True, is_deleted=False).exclude(category="").values_list("category", flat=True))
-        saved_cats = set(ProductCategory.objects.filter(c_filter).exclude(name="").values_list("name", flat=True))
-        all_cats = {"General"} | prod_cats | saved_cats
-        global_categories = sorted([c.strip() for c in all_cats if c and c.strip()])
+
+        active_saved = {c.strip() for c in saved_cats if c and c.strip().lower() not in deleted_names_lower}
+        active_prod = {c.strip() for c in prod_cats if c and c.strip().lower() not in deleted_names_lower}
+
+        all_cats = {"General"} | active_saved | active_prod
+        global_categories = sorted([c for c in all_cats if c and (c.lower() == "general" or c.lower() not in deleted_names_lower)])
         cat_counts_map = dict(
             Product.objects.filter(c_filter, is_active=True, is_deleted=False)
             .values("category")

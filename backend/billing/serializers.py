@@ -174,4 +174,5 @@ class SyncPushRequestSerializer(serializers.Serializer):
     customers = SyncCustomerPayloadSerializer(many=True, required=False, default=list)
     payments = SyncPaymentPayloadSerializer(many=True, required=False, default=list)
     categories = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    deleted_categories = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     clients = SyncClientPayloadSerializer(many=True, required=False, default=list)

@@ -852,6 +852,7 @@
                     <thead class="table-warning small">
                         <tr>
                             <th>Client / User</th>
+                            <th>Registered Phone (WhatsApp)</th>
                             <th>6-Digit Verification OTP</th>
                             <th>Hardware Device ID</th>
                             <th>Platform / PC Name</th>
@@ -866,6 +867,14 @@
                             <td>
                                 <div class="fw-bold text-dark">{{ d.user.username }}</div>
                                 <div class="text-muted small">{{ d.user.profile.shop_name|default:"Client Store" }}</div>
+                            </td>
+                            <td>
+                                {% if d.user.profile.phone %}
+                                    <div class="fw-bold text-dark font-monospace"><i class="fa-solid fa-phone small text-muted me-1"></i>{{ d.user.profile.phone }}</div>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle small"><i class="fa-brands fa-whatsapp me-1"></i>Registered</span>
+                                {% else %}
+                                    <span class="text-muted small fst-italic">No Phone Listed</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <div class="d-flex align-items-center gap-2">
@@ -893,11 +902,18 @@
                             <td class="small font-monospace text-secondary">{{ d.ip_address }}</td>
                             <td class="small text-muted">{{ d.otp_created_at|timesince }} ago</td>
                             <td class="text-end">
-                                <div class="d-flex justify-content-end gap-2">
+                                <div class="d-flex justify-content-end gap-2 flex-wrap">
+                                    <!-- Send OTP via WhatsApp Button (Admin: 9384098304) -->
+                                    <a href="https://api.whatsapp.com/send?phone={% if d.user.profile.phone %}{{ d.user.profile.phone|cut:' '|cut:'-'|cut:'+' }}{% else %}9384098304{% endif %}&text=Hello%20{{ d.user.username|urlencode }},%20your%20MathanHub%20SmartBilling%20POS%20Activation%20OTP%20is%20*{{ d.otp_code }}*.%20Authorized%20by%20Administrator%20(+91%209384098304)."
+                                       target="_blank"
+                                       class="btn btn-sm btn-success fw-bold px-2 py-1 shadow-sm d-inline-flex align-items-center gap-1"
+                                       title="Send OTP directly to Client's registered WhatsApp (Admin: 9384098304)">
+                                        <i class="fa-brands fa-whatsapp fa-lg"></i> Send OTP
+                                    </a>
                                     <!-- Accept Button (Approve Client EXE) -->
                                     <form method="post" action="{% url 'billing:admin_approve_device_otp' d.id %}">
                                         {% csrf_token %}
-                                        <button type="submit" class="btn btn-sm btn-success fw-bold px-3 shadow-sm d-inline-flex align-items-center gap-1" title="Accept and authorize client EXE system">
+                                        <button type="submit" class="btn btn-sm btn-primary fw-bold px-3 shadow-sm d-inline-flex align-items-center gap-1" title="Accept and authorize client EXE system">
                                             <i class="fa-solid fa-circle-check"></i> Accept
                                         </button>
                                     </form>

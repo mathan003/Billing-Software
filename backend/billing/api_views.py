@@ -267,16 +267,25 @@ class SyncPushView(views.APIView):
 
         synced_uuids = []
         synced_products = []
+        deleted_categories_data = data.get("deleted_categories", [])
         synced_customers = []
         synced_payments = []
 
         try:
             with transaction.atomic():
-                # 0. Sync Categories created offline
+                # 0a. Sync Category Deletions from desktop
+                for del_cat in deleted_categories_data:
+                    d_clean = (del_cat or "").strip()
+                    if d_clean:
+                        ProductCategory.objects.filter(client=client_user, name__iexact=d_clean).update(is_deleted=True, deleted_at=timezone.now())
+                        Product.objects.filter(client=client_user, category__iexact=d_clean).update(category="General")
+
+                # 0b. Sync Active Categories created offline (do NOT revive soft-deleted categories!)
                 for cat_name in categories_data:
                     c_clean = (cat_name or "").strip()
                     if c_clean:
-                        ProductCategory.objects.get_or_create(name=c_clean, client=client_user)
+                        if not ProductCategory.objects.filter(client=client_user, name__iexact=c_clean, is_deleted=True).exists():
+                            ProductCategory.objects.get_or_create(name=c_clean, client=client_user, defaults={"is_deleted": False})
 
                 # 1. Sync Products (created, updated, or removed/deactivated offline)
                 for p_data in products_data:
@@ -635,13 +644,16 @@ class SyncPullView(views.APIView):
             active_devices_count = min(active_devices_count, max_allowed_devices)
 
         if is_client_only:
-            if not ProductCategory.objects.filter(client=client_user).exists():
+            has_any_cat = ProductCategory.objects.filter(client=client_user).exists()
+            has_any_prod = Product.objects.filter(client=client_user).exists()
+            if not has_any_cat and not has_any_prod:
                 for c_name in ["General", "Grocery", "Fruits", "Vegetables", "Snacks", "Beverages", "Dairy", "Spices", "Stationery", "Electronics"]:
-                    ProductCategory.objects.get_or_create(name=c_name, client=client_user)
+                    ProductCategory.objects.get_or_create(name=c_name, client=client_user, defaults={"is_deleted": False})
 
             products_qs = Product.objects.filter(client=client_user)
             customers_qs = Customer.objects.filter(client=client_user)
-            categories_qs = ProductCategory.objects.filter(client=client_user)
+            categories_qs = ProductCategory.objects.filter(client=client_user, is_deleted=False)
+            deleted_categories_qs = ProductCategory.objects.filter(client=client_user, is_deleted=True)
             invoices_qs = Invoice.objects.filter(client=client_user).prefetch_related("items").order_by("-created_at")[:100]
             branches_qs = Branch.objects.filter(Q(client=client_user) | Q(client__isnull=True), is_active=True)
             active_uuids = [str(u) for u in Invoice.objects.filter(client=client_user).values_list("invoice_uuid", flat=True)]
@@ -650,7 +662,8 @@ class SyncPullView(views.APIView):
         elif client_user and (client_user.is_superuser or (hasattr(client_user, "profile") and client_user.profile.role == "admin")):
             products_qs = Product.objects.all()
             customers_qs = Customer.objects.all()
-            categories_qs = ProductCategory.objects.all()
+            categories_qs = ProductCategory.objects.filter(is_deleted=False)
+            deleted_categories_qs = ProductCategory.objects.filter(is_deleted=True)
             invoices_qs = Invoice.objects.prefetch_related("items").order_by("-created_at")[:100]
             branches_qs = Branch.objects.filter(is_active=True)
             active_uuids = [str(u) for u in Invoice.objects.values_list("invoice_uuid", flat=True)]
@@ -660,7 +673,8 @@ class SyncPullView(views.APIView):
             # Unidentified client request: strictly return empty queries to prevent any data leak across clients!
             products_qs = Product.objects.filter(client__isnull=True)
             customers_qs = Customer.objects.none()
-            categories_qs = ProductCategory.objects.filter(client__isnull=True)
+            categories_qs = ProductCategory.objects.filter(client__isnull=True, is_deleted=False)
+            deleted_categories_qs = ProductCategory.objects.none()
             invoices_qs = Invoice.objects.none()
             branches_qs = Branch.objects.filter(client__isnull=True, is_active=True)
             active_uuids = []
@@ -814,6 +828,7 @@ class SyncPullView(views.APIView):
             "products_count": len(products_data),
             "products": products_data,
             "categories": list(categories_qs.values_list("name", flat=True).distinct()),
+            "deleted_categories": list(deleted_categories_qs.values_list("name", flat=True).distinct()),
             "customers_count": len(customers_data),
             "customers": customers_data,
             "invoices_count": len(invoices_data),

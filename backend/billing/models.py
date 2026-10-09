@@ -53,6 +53,8 @@ class ProductCategory(models.Model):
     """Product Categories created by shop admin / client"""
     name = models.CharField(max_length=100)
     client = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="product_categories")
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

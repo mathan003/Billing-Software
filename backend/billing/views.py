@@ -101,7 +101,7 @@ def get_available_categories(request):
     """
     Returns a sorted distinct list of categories combining ProductCategory records,
     distinct Product categories, and default retail departments for the active client/admin.
-    Guarantees strict multi-tenant isolation.
+    Guarantees strict multi-tenant isolation and persistent category deletion across page refreshes.
     """
     if not request.user.is_authenticated:
         return ["General"]
@@ -109,21 +109,36 @@ def get_available_categories(request):
     c_filter = get_client_filter(request)
     client_user = get_client_user(request)
 
-    # If this client has no categories yet, initialize their own default set
+    # Initial seeding: ONLY if this client has zero categories (neither active nor deleted)
+    # AND zero products created. Once initialized or if any categories/tombstones exist, never re-seed!
     if not is_admin_user(request.user) and client_user:
-        if not ProductCategory.objects.filter(client=client_user).exists():
+        has_any_cat = ProductCategory.objects.filter(client=client_user).exists()
+        has_any_prod = Product.objects.filter(client=client_user).exists()
+        if not has_any_cat and not has_any_prod:
             initial_cats = [
                 "General", "Grocery", "Fruits", "Vegetables",
                 "Snacks", "Beverages", "Dairy", "Spices",
                 "Stationery", "Electronics"
             ]
             for c_name in initial_cats:
-                ProductCategory.objects.get_or_create(name=c_name, client=client_user)
+                ProductCategory.objects.get_or_create(name=c_name, client=client_user, defaults={"is_deleted": False})
 
+    # Find all deleted categories for this client
+    deleted_names = set(ProductCategory.objects.filter(c_filter, is_deleted=True).values_list("name", flat=True))
+    deleted_names_lower = {d.strip().lower() for d in deleted_names if d}
+
+    # Active saved categories
+    saved_cats = set(ProductCategory.objects.filter(c_filter, is_deleted=False).exclude(name="").values_list("name", flat=True))
+
+    # Product categories from active products
     prod_cats = set(Product.objects.filter(c_filter, is_active=True, is_deleted=False).exclude(category="").values_list("category", flat=True))
-    saved_cats = set(ProductCategory.objects.filter(c_filter).exclude(name="").values_list("name", flat=True))
-    all_cats = {"General"} | prod_cats | saved_cats
-    return sorted([c.strip() for c in all_cats if c and c.strip()])
+
+    # Exclude deleted categories from both saved_cats and prod_cats
+    active_saved = {c.strip() for c in saved_cats if c and c.strip().lower() not in deleted_names_lower}
+    active_prod = {c.strip() for c in prod_cats if c and c.strip().lower() not in deleted_names_lower}
+
+    all_cats = {"General"} | active_saved | active_prod
+    return sorted([c for c in all_cats if c and (c.lower() == "general" or c.lower() not in deleted_names_lower)])
 
 
 
@@ -1673,7 +1688,7 @@ def product_list(request):
 
 
 def category_add(request):
-    """Add a new product category"""
+    """Add or restore a product category with persistent state"""
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         is_ajax = (
@@ -1687,16 +1702,28 @@ def category_add(request):
         else:
             client_user = get_client_user(request)
             c_filter = get_client_filter(request)
-            exists = (
-                ProductCategory.objects.filter(c_filter, name__iexact=name).exists()
-                or Product.objects.filter(c_filter, is_deleted=False, category__iexact=name).exists()
-            )
-            if exists:
-                if is_ajax:
-                    return JsonResponse({"status": "info", "message": f"Category '{name}' already exists.", "name": name})
-                messages.info(request, f"Category '{name}' already exists.")
+            existing_cat = ProductCategory.objects.filter(c_filter, name__iexact=name).first()
+            if existing_cat:
+                if existing_cat.is_deleted:
+                    existing_cat.is_deleted = False
+                    existing_cat.deleted_at = None
+                    existing_cat.save(update_fields=["is_deleted", "deleted_at"])
+                    log_activity(
+                        request,
+                        "PRODUCT_ADD",
+                        f"Restored product category '{name}'"
+                    )
+                    trigger_desktop_sync_safe()
+                    msg = f"Category '{name}' restored successfully!"
+                    if is_ajax:
+                        return JsonResponse({"status": "success", "message": msg, "name": name, "id": existing_cat.id})
+                    messages.success(request, msg)
+                else:
+                    if is_ajax:
+                        return JsonResponse({"status": "info", "message": f"Category '{name}' already exists.", "name": name})
+                    messages.info(request, f"Category '{name}' already exists.")
             else:
-                cat = ProductCategory.objects.create(name=name, client=client_user)
+                cat = ProductCategory.objects.create(name=name, client=client_user, is_deleted=False)
                 log_activity(
                     request,
                     "PRODUCT_ADD",
@@ -1715,7 +1742,7 @@ def category_add(request):
 
 
 def category_delete(request):
-    """Remove / delete a product category and safely reassign its products to 'General'"""
+    """Permanently delete / tombstone a product category so it never resurrects, and reassign its products to 'General'"""
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         is_ajax = (
@@ -1733,31 +1760,37 @@ def category_delete(request):
             messages.warning(request, msg)
         else:
             c_filter = get_client_filter(request)
-            # Reassign all affected products under this scope to 'General'
-            affected_count = Product.objects.filter(c_filter, category__iexact=name).update(category="General")
+            client_user = get_client_user(request)
+            clean_name = name.strip()
 
-            # Remove from ProductCategory table
-            if is_admin_user(request.user):
-                ProductCategory.objects.filter(name__iexact=name).delete()
+            # Reassign all affected products under this scope to 'General'
+            affected_count = Product.objects.filter(c_filter, category__iexact=clean_name).update(category="General")
+
+            # Persistent tombstone soft-deletion in ProductCategory table
+            matching_cats = ProductCategory.objects.filter(c_filter, name__iexact=clean_name)
+            if matching_cats.exists():
+                matching_cats.update(is_deleted=True, deleted_at=timezone.now())
             else:
-                ProductCategory.objects.filter(
-                    client=request.user,
-                    name__iexact=name
-                ).delete()
+                ProductCategory.objects.create(
+                    name=clean_name,
+                    client=client_user,
+                    is_deleted=True,
+                    deleted_at=timezone.now()
+                )
 
             log_activity(
                 request,
                 "PRODUCT_DELETE",
-                f"Removed category '{name}' (reassigned {affected_count} product(s) to 'General')"
+                f"Removed category '{clean_name}' (reassigned {affected_count} product(s) to 'General')"
             )
             trigger_desktop_sync_safe()
 
-            success_msg = f"Category '{name}' removed successfully! ({affected_count} product(s) reassigned to 'General')"
+            success_msg = f"Category '{clean_name}' removed permanently! ({affected_count} product(s) reassigned to 'General')"
             if is_ajax:
                 return JsonResponse({
                     "status": "success",
                     "message": success_msg,
-                    "name": name,
+                    "name": clean_name,
                     "reassigned_count": affected_count,
                 })
             messages.success(request, success_msg)

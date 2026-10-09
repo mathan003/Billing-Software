@@ -214,7 +214,8 @@ class SyncManager:
                 })
 
             from billing.models import ProductCategory
-            categories_payload = list(ProductCategory.objects.values_list("name", flat=True).distinct())
+            categories_payload = list(ProductCategory.objects.filter(is_deleted=False).values_list("name", flat=True).distinct())
+            deleted_categories_payload = list(ProductCategory.objects.filter(is_deleted=True).values_list("name", flat=True).distinct())
 
             # Push local active products catalog
             products_payload = []
@@ -271,7 +272,7 @@ class SyncManager:
                     "is_active": u.is_active,
                 })
 
-            if not invoices_payload and not customers_payload and not products_payload and not clients_payload:
+            if not invoices_payload and not customers_payload and not products_payload and not clients_payload and not deleted_categories_payload:
                 return
 
             push_data = {
@@ -281,6 +282,7 @@ class SyncManager:
                 "products": products_payload,
                 "customers": customers_payload,
                 "categories": categories_payload,
+                "deleted_categories": deleted_categories_payload,
                 "clients": clients_payload,
             }
 
@@ -540,15 +542,26 @@ class SyncManager:
 
                 # 3.5. Synchronize Categories locally
                 cloud_categories = data.get("categories", [])
+                cloud_deleted_categories = data.get("deleted_categories", [])
                 from billing.models import ProductCategory
                 if client_user:
+                    # Sync deletions first
+                    for d_name in cloud_deleted_categories:
+                        if d_name and d_name.strip():
+                            ProductCategory.objects.filter(client=client_user, name__iexact=d_name.strip()).update(
+                                is_deleted=True, deleted_at=timezone.now()
+                            )
+                            Product.objects.filter(client=client_user, category__iexact=d_name.strip()).update(category="General")
+
+                    # Sync active categories
                     for c_name in cloud_categories:
                         if c_name and c_name.strip():
-                            ProductCategory.objects.get_or_create(name=c_name.strip(), client=client_user)
-                    if cloud_categories:
-                        ProductCategory.objects.filter(client=client_user).exclude(name__iexact="General").filter(
-                            ~Q(name__in=cloud_categories)
-                        ).delete()
+                            c_clean = c_name.strip()
+                            cat_obj, created = ProductCategory.objects.get_or_create(name=c_clean, client=client_user)
+                            if cat_obj.is_deleted:
+                                cat_obj.is_deleted = False
+                                cat_obj.deleted_at = None
+                                cat_obj.save(update_fields=["is_deleted", "deleted_at"])
 
                 # 4. Update products locally without touching existing invoice records
                 for p_data in products:

@@ -319,8 +319,8 @@
         </div>
     </footer>
 
-    <!-- Software Update Sticky Banner (Appears at bottom of client app when update is published by Admin) -->
-    {% if available_software_update %}
+    <!-- Software Update Sticky Banner (Appears at bottom of client app when update is published by Admin, hidden on dashboard) -->
+    {% if available_software_update and request.resolver_match.url_name != 'dashboard' and request.path != '/' %}
     <div id="softwareUpdateBanner" class="position-fixed bottom-0 start-0 end-0 p-3 shadow-lg" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-top: 3px solid #6366f1; z-index: 1050; color: #fff;">
         <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3">
             <div class="d-flex align-items-center gap-3">

@@ -268,6 +268,51 @@
             </div>
         </div>
 
+        <!-- Software Update & System Version Card -->
+        <div class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden">
+            <div class="card-header bg-white border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center">
+                <h6 class="fw-bold mb-0 text-dark">
+                    <i class="fa-solid fa-cloud-arrow-down text-primary me-2"></i> Software Update & System Status
+                </h6>
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1 rounded-pill small">
+                    v{{ current_app_version }}
+                </span>
+            </div>
+            <div class="card-body p-4">
+                {% if available_software_update %}
+                    <div class="alert alert-primary border border-primary-subtle rounded-3 p-3 mb-0 bg-primary-subtle">
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                            <span class="badge bg-primary fw-bold">{{ available_software_update.version }}</span>
+                            <span class="badge bg-warning text-dark fw-bold"><i class="fa-solid fa-bell me-1"></i> Update Ready</span>
+                        </div>
+                        <h6 class="fw-bold text-dark mt-2 mb-1">{{ available_software_update.title }}</h6>
+                        <p class="text-secondary small mb-3">
+                            {{ available_software_update.release_notes|default:"A new software update is available for your system with important features and optimizations." }}
+                        </p>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-primary fw-bold px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1 rounded-pill" onclick="applySoftwareUpdateAjax()">
+                                <i class="fa-solid fa-arrows-rotate"></i> Update (புதுப்பிக்கவும்)
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger fw-semibold px-3 py-1 d-inline-flex align-items-center gap-1 rounded-pill" onclick="rejectSoftwareUpdateAjax()">
+                                <i class="fa-solid fa-xmark"></i> Reject (வேண்டாம்)
+                            </button>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="p-3 bg-light rounded-3 border text-center mb-3">
+                        <div class="text-success mb-1">
+                            <i class="fa-solid fa-circle-check fa-2x"></i>
+                        </div>
+                        <h6 class="fw-bold text-dark mb-1">System is Up to Date</h6>
+                        <div class="text-muted small">Current Version: <strong>v{{ current_app_version }}</strong></div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary w-100 rounded-pill py-2 fw-semibold" data-bs-toggle="modal" data-bs-target="#clientSoftwareUpdateModal">
+                        <i class="fa-solid fa-rotate me-1"></i> Check for Updates & Release Notes
+                    </button>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- Logo Preview Card -->
         <div class="card border-0 shadow-sm rounded-4 mb-4">
             <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
@@ -427,6 +472,57 @@
                     <button type="submit" class="btn btn-primary-custom btn-sm">Add Branch</button>
                 </div>
             </form>
+        </div>
+    </div>
+<!-- Client Software Update Modal -->
+<div class="modal fade" id="clientSoftwareUpdateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header bg-dark text-white rounded-top-4">
+                <h6 class="modal-title fw-bold">
+                    <i class="fa-solid fa-cloud-arrow-down text-warning me-2"></i> Software Update Details
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="d-flex align-items-center justify-content-between p-3 bg-light rounded-3 border mb-3">
+                    <div>
+                        <div class="text-muted small">Current Installed Version</div>
+                        <strong class="text-dark fs-5 font-monospace">v{{ current_app_version }}</strong>
+                    </div>
+                    <div class="text-end">
+                        <div class="text-muted small">Latest Server Version</div>
+                        <strong class="text-primary fs-5 font-monospace">{{ latest_update_version|default:current_app_version }}</strong>
+                    </div>
+                </div>
+
+                {% if available_software_update %}
+                    <h6 class="fw-bold text-dark mb-1">{{ available_software_update.title }}</h6>
+                    <div class="p-3 bg-light rounded-3 border small text-secondary mb-3" style="max-height: 180px; overflow-y: auto; white-space: pre-line;">
+                        {{ available_software_update.release_notes|default:"Bug fixes, security updates, and performance optimizations." }}
+                    </div>
+                {% else %}
+                    <div class="alert alert-success border-0 rounded-3 text-center small mb-3">
+                        <i class="fa-solid fa-circle-check me-1"></i> You are running the latest software version. No pending updates found.
+                    </div>
+                    <div class="small text-muted mb-2">Release Notes:</div>
+                    <div class="p-3 bg-light rounded-3 border small text-secondary mb-3" style="max-height: 140px; overflow-y: auto; white-space: pre-line;">
+                        {{ latest_release_notes|default:"System is up to date." }}
+                    </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer bg-light rounded-bottom-4">
+                {% if available_software_update %}
+                    <button type="button" class="btn btn-sm btn-danger px-3 rounded-pill fw-semibold" id="btnModalRejectUpdate" onclick="rejectSoftwareUpdateAjax()">
+                        <i class="fa-solid fa-xmark me-1"></i> Reject (வேண்டாம்)
+                    </button>
+                    <button type="button" class="btn btn-sm btn-primary-custom px-4 rounded-pill fw-bold" id="btnModalApplyUpdate" onclick="applySoftwareUpdateAjax()">
+                        <i class="fa-solid fa-arrows-rotate me-1"></i> Update (புதுப்பிக்கவும்)
+                    </button>
+                {% else %}
+                    <button type="button" class="btn btn-sm btn-secondary px-3 rounded-pill" data-bs-dismiss="modal">Close</button>
+                {% endif %}
+            </div>
         </div>
     </div>
 </div>

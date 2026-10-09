@@ -47,7 +47,6 @@ def build():
         "--collect-all=webview",
         "--collect-all=whitenoise",
         "--collect-all=rest_framework",
-        "--collect-all=fitz",
         # Explicit billing migrations bundling
         f"--add-data={backend_dir / 'billing' / 'migrations'};billing/migrations",
         "--hidden-import=billing.migrations",
@@ -66,6 +65,7 @@ def build():
         "--hidden-import=billing.migrations.0013_invoice_customer_address_alter_product_sku_and_more",
         "--hidden-import=billing.migrations.0014_customer_deleted_at_customer_is_deleted_and_more",
         "--hidden-import=billing.migrations.0015_productcategory_deleted_at_and_more",
+        "--hidden-import=billing.migrations.0016_deletedclient_userprofile_deleted_at_userprofile_is_deleted",
         # Hidden imports for Django dynamic loading
         "--hidden-import=billing",
         "--hidden-import=billing.models",

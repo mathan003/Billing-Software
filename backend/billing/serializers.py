@@ -164,6 +164,7 @@ class SyncClientPayloadSerializer(serializers.Serializer):
     password_hash = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
     initial_password = serializers.CharField(max_length=128, required=False, allow_blank=True, default="")
     is_active = serializers.BooleanField(default=True)
+    updated_at = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
 
 
 class SyncPushRequestSerializer(serializers.Serializer):
@@ -176,3 +177,4 @@ class SyncPushRequestSerializer(serializers.Serializer):
     categories = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     deleted_categories = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     clients = SyncClientPayloadSerializer(many=True, required=False, default=list)
+    deleted_clients = serializers.ListField(child=serializers.CharField(), required=False, default=list)

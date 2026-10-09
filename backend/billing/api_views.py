@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from .models import (
     Product, Customer, Invoice, InvoiceItem, SyncLog,
     CompanySettings, SoftwareUpdate, Purchase, PaymentRecord,
-    Branch, UserProfile, RegisteredDevice, ProductCategory, ActiveUserSession
+    Branch, UserProfile, RegisteredDevice, ProductCategory, ActiveUserSession, DeletedClient
 )
 from .serializers import (
     ProductSerializer,
@@ -287,6 +287,17 @@ class SyncPushView(views.APIView):
                         if not ProductCategory.objects.filter(client=client_user, name__iexact=c_clean, is_deleted=True).exists():
                             ProductCategory.objects.get_or_create(name=c_clean, client=client_user, defaults={"is_deleted": False})
 
+                # 0c. Sync Client Account Deletions from desktop
+                deleted_clients_data = data.get("deleted_clients", [])
+                for del_client in deleted_clients_data:
+                    d_c_clean = (del_client or "").strip()
+                    if d_c_clean and d_c_clean not in ("admin", "Mathan003"):
+                        DeletedClient.objects.get_or_create(username=d_c_clean)
+                        User.objects.filter(username=d_c_clean).update(is_active=False)
+                        UserProfile.objects.filter(user__username=d_c_clean).update(is_deleted=True, deleted_at=timezone.now())
+                        ActiveUserSession.objects.filter(user__username=d_c_clean).delete()
+                        RegisteredDevice.objects.filter(user__username=d_c_clean).update(is_active=False, is_verified=False)
+
                 # 1. Sync Products (created, updated, or removed/deactivated offline)
                 for p_data in products_data:
                     sku = p_data.get("sku")
@@ -453,39 +464,64 @@ class SyncPushView(views.APIView):
                 # 5. Sync Clients created or updated offline (Admin action in Desktop App)
                 clients_data = data.get("clients", [])
                 synced_clients = []
+                active_deleted_set = set(DeletedClient.objects.values_list("username", flat=True)) | set(deleted_clients_data)
+
                 for cl_d in clients_data:
                     c_uname = cl_d.get("username", "").strip()
-                    if not c_uname or c_uname in ("admin", "Mathan003"):
+                    if not c_uname or c_uname in ("admin", "Mathan003") or c_uname in active_deleted_set:
                         continue
-                    u_obj, u_created = User.objects.get_or_create(username=c_uname)
-                    u_obj.first_name = cl_d.get("first_name", u_obj.first_name)
-                    u_obj.last_name = cl_d.get("last_name", u_obj.last_name)
-                    u_obj.email = cl_d.get("email", u_obj.email)
-                    u_obj.is_active = cl_d.get("is_active", True)
-                    if cl_d.get("password_hash") and (u_created or not u_obj.has_usable_password()):
-                        u_obj.password = cl_d["password_hash"]
-                    elif cl_d.get("initial_password") and (u_created or not u_obj.has_usable_password()):
-                        u_obj.set_password(cl_d["initial_password"])
-                    u_obj.save()
 
+                    u_obj, u_created = User.objects.get_or_create(username=c_uname)
                     u_prof, _ = UserProfile.objects.get_or_create(user=u_obj)
-                    u_prof.role = cl_d.get("role", "client")
-                    u_prof.shop_name = cl_d.get("shop_name", u_prof.shop_name)
-                    u_prof.shop_address = cl_d.get("shop_address", u_prof.shop_address)
-                    u_prof.business_type = cl_d.get("business_type", u_prof.business_type)
-                    u_prof.access_mode = cl_d.get("access_mode", u_prof.access_mode)
-                    # Device limit is strictly managed by administrator; do not allow downgrade from client
-                    cl_lim = cl_d.get("device_limit")
-                    if cl_lim and (not u_prof.device_limit or u_prof.device_limit < cl_lim):
-                        u_prof.device_limit = cl_lim
-                    u_prof.phone = cl_d.get("phone", u_prof.phone)
-                    u_prof.gst_number = cl_d.get("gst_number", u_prof.gst_number)
-                    u_prof.bank_name = cl_d.get("bank_name", u_prof.bank_name)
-                    u_prof.account_number = cl_d.get("account_number", u_prof.account_number)
-                    u_prof.ifsc_code = cl_d.get("ifsc_code", u_prof.ifsc_code)
-                    u_prof.avatar_base64 = cl_d.get("avatar_base64", u_prof.avatar_base64)
-                    u_prof.shop_logo_base64 = cl_d.get("shop_logo_base64", u_prof.shop_logo_base64)
-                    u_prof.save()
+                    if u_prof.is_deleted:
+                        continue
+
+                    # Compare updated_at: only overwrite if desktop update timestamp is newer than server
+                    desktop_updated_str = cl_d.get("updated_at")
+                    should_update = u_created
+                    if not should_update and desktop_updated_str and u_prof.updated_at:
+                        try:
+                            from django.utils.dateparse import parse_datetime
+                            desktop_dt = parse_datetime(desktop_updated_str)
+                            if desktop_dt and desktop_dt >= u_prof.updated_at:
+                                should_update = True
+                        except Exception:
+                            should_update = True
+                    elif not should_update and not desktop_updated_str:
+                        should_update = True
+
+                    if should_update:
+                        u_obj.first_name = cl_d.get("first_name", u_obj.first_name)
+                        u_obj.last_name = cl_d.get("last_name", u_obj.last_name)
+                        u_obj.email = cl_d.get("email", u_obj.email)
+                        u_obj.is_active = cl_d.get("is_active", True)
+                        if cl_d.get("password_hash") and (u_created or not u_obj.has_usable_password()):
+                            u_obj.password = cl_d["password_hash"]
+                        elif cl_d.get("initial_password") and (u_created or not u_obj.has_usable_password()):
+                            u_obj.set_password(cl_d["initial_password"])
+                        u_obj.save()
+
+                        u_prof.role = cl_d.get("role", "client")
+                        u_prof.shop_name = cl_d.get("shop_name", u_prof.shop_name)
+                        u_prof.shop_address = cl_d.get("shop_address", u_prof.shop_address)
+                        u_prof.business_type = cl_d.get("business_type", u_prof.business_type)
+                        u_prof.access_mode = cl_d.get("access_mode", u_prof.access_mode)
+                        cl_lim = cl_d.get("device_limit")
+                        if cl_lim:
+                            u_prof.device_limit = cl_lim
+                        u_prof.phone = cl_d.get("phone", u_prof.phone)
+                        u_prof.gst_number = cl_d.get("gst_number", u_prof.gst_number)
+                        u_prof.bank_name = cl_d.get("bank_name", u_prof.bank_name)
+                        u_prof.account_number = cl_d.get("account_number", u_prof.account_number)
+                        u_prof.ifsc_code = cl_d.get("ifsc_code", u_prof.ifsc_code)
+                        if cl_d.get("avatar_base64"):
+                            u_prof.avatar_base64 = cl_d["avatar_base64"]
+                        if cl_d.get("shop_logo_base64"):
+                            u_prof.shop_logo_base64 = cl_d["shop_logo_base64"]
+                        if cl_d.get("initial_password"):
+                            u_prof.initial_password = cl_d["initial_password"]
+                        u_prof.is_deleted = False
+                        u_prof.save()
                     synced_clients.append(c_uname)
 
                 # Log sync operation
@@ -781,9 +817,17 @@ class SyncPullView(views.APIView):
             })
 
         # Active clients catalog for seamless synchronization across web and desktop apps
+        deleted_client_names = list(DeletedClient.objects.values_list("username", flat=True))
+        deleted_profile_names = list(UserProfile.objects.filter(is_deleted=True).values_list("user__username", flat=True))
+        all_deleted_clients = list(set(deleted_client_names + deleted_profile_names))
+
         clients_data = []
         for u in User.objects.filter(is_active=True).exclude(username="admin"):
+            if u.username in all_deleted_clients:
+                continue
             prof = getattr(u, "profile", None)
+            if prof and prof.is_deleted:
+                continue
             clients_data.append({
                 "id": u.id,
                 "username": u.username,
@@ -806,8 +850,9 @@ class SyncPullView(views.APIView):
                 "password_hash": u.password,
                 "initial_password": getattr(prof, "initial_password", ""),
                 "is_active": u.is_active,
+                "updated_at": prof.updated_at.isoformat() if (prof and prof.updated_at) else "",
             })
-        active_client_usernames = list(User.objects.filter(is_active=True).values_list("username", flat=True))
+        active_client_usernames = [u.username for u in User.objects.filter(is_active=True).exclude(username__in=all_deleted_clients)]
 
         reg_devices_data = []
         for rd in RegisteredDevice.objects.select_related("user").order_by("-last_login")[:50]:
@@ -829,6 +874,7 @@ class SyncPullView(views.APIView):
             "products": products_data,
             "categories": list(categories_qs.values_list("name", flat=True).distinct()),
             "deleted_categories": list(deleted_categories_qs.values_list("name", flat=True).distinct()),
+            "deleted_clients": all_deleted_clients,
             "customers_count": len(customers_data),
             "customers": customers_data,
             "invoices_count": len(invoices_data),

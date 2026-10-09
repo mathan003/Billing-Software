@@ -46,33 +46,26 @@ def auto_seed_default_users(sender, **kwargs):
         prof_mathan.device_limit = 2
         prof_mathan.save()
 
-        # 5. Ensure 'operator1' Client Operator exists
-        operator_user, o_created = User.objects.get_or_create(username="operator1")
-        if o_created or not operator_user.has_usable_password():
-            operator_user.set_password("operator123")
-            operator_user.is_staff = False
-            operator_user.save()
+        # 5. Check DeletedClient blacklist to guarantee deleted clients are NEVER recreated on restart/migration
+        from .models import DeletedClient
+        deleted_names = set(DeletedClient.objects.values_list("username", flat=True))
 
-        prof_op, _ = UserProfile.objects.get_or_create(user=operator_user)
-        prof_op.role = "client"
-        prof_op.shop_name = "MathanHub Branch 1"
-        prof_op.device_limit = 5
-        prof_op.access_mode = "online_offline"
-        prof_op.save()
+        # Only seed demo client 'operator1' if fresh system, never deleted, and no clients exist
+        has_any_client = UserProfile.objects.filter(role="client", is_deleted=False).exists()
+        if not has_any_client and "operator1" not in deleted_names:
+            operator_user, o_created = User.objects.get_or_create(username="operator1")
+            if o_created or not operator_user.has_usable_password():
+                operator_user.set_password("operator123")
+                operator_user.is_staff = False
+                operator_user.save()
 
-        # 6. Ensure 'Goutham' Client exists
-        goutham_user, g_created = User.objects.get_or_create(username="Goutham")
-        if g_created or not goutham_user.has_usable_password():
-            goutham_user.set_password("Goutham@2026")
-            goutham_user.is_staff = False
-            goutham_user.save()
-
-        prof_g, _ = UserProfile.objects.get_or_create(user=goutham_user)
-        prof_g.role = "client"
-        prof_g.shop_name = "Goutham Supermarket"
-        prof_g.device_limit = 2
-        prof_g.access_mode = "online_offline"
-        prof_g.save()
+            prof_op, _ = UserProfile.objects.get_or_create(user=operator_user)
+            prof_op.role = "client"
+            prof_op.shop_name = "MathanHub Branch 1"
+            prof_op.device_limit = 5
+            prof_op.access_mode = "online_offline"
+            prof_op.is_deleted = False
+            prof_op.save()
 
         # 7. Auto-publish Current Code Version to SoftwareUpdate table
         from .version import APP_VERSION, APP_TITLE, APP_RELEASE_NOTES

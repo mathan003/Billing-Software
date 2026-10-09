@@ -17,7 +17,7 @@ from .models import (
     Product, ProductCategory, Customer, Invoice, InvoiceItem, Purchase,
     PaymentRecord, ActiveUserSession, RegisteredDevice, UserProfile, ActivityLog,
     CompanySettings, Branch, StockLog, SoftwareUpdate, purge_old_customer_data, log_activity,
-    SavedReport, purge_expired_deleted_items
+    SavedReport, purge_expired_deleted_items, DeletedClient
 )
 from .device_utils import (
     get_hardware_device_id, get_desktop_pos_config, save_desktop_pos_config,
@@ -2053,8 +2053,15 @@ def admin_panel(request):
     6. Company Profile & Receipt Branding
     Client users are strictly blocked and redirected by @admin_required and SessionSecurityMiddleware.
     """
+    deleted_client_names = set(DeletedClient.objects.values_list("username", flat=True))
     users = User.objects.select_related("profile").prefetch_related("active_sessions").order_by("username")
-    clients = [u for u in users if getattr(u, "profile", None) and u.profile.role == "client"]
+    clients = [
+        u for u in users
+        if getattr(u, "profile", None)
+        and u.profile.role == "client"
+        and not getattr(u.profile, "is_deleted", False)
+        and u.username not in deleted_client_names
+    ]
     for c in clients:
         c.invoice_count = Invoice.objects.filter(client=c, is_deleted=False).count()
         c.customer_count = Customer.objects.filter(client=c, is_deleted=False).count()
@@ -2149,21 +2156,40 @@ def admin_user_create(request):
             messages.error(request, "Passwords do not match.")
             return redirect("billing:admin_panel")
 
-        if User.objects.filter(username=username).exists():
-            messages.error(request, f"Username '{username}' already exists. Please choose a different username.")
-            return redirect("billing:admin_panel")
+        # Remove from DeletedClient blacklist if admin intentionally creates this client
+        DeletedClient.objects.filter(username=username).delete()
 
         is_admin_role = (role == "admin")
-        user = User.objects.create_user(
-            username=username,
-            email=email,
-            password=password,
-            first_name=first_name,
-            last_name=last_name,
-            is_staff=is_admin_role,
-        )
-
-        profile, _ = UserProfile.objects.get_or_create(user=user)
+        existing_user = User.objects.filter(username=username).first()
+        if existing_user:
+            existing_prof = getattr(existing_user, "profile", None)
+            if existing_prof and existing_prof.is_deleted:
+                user = existing_user
+                user.email = email
+                user.set_password(password)
+                user.first_name = first_name
+                user.last_name = last_name
+                user.is_active = True
+                user.is_staff = is_admin_role
+                user.save()
+                profile = existing_prof
+                profile.is_deleted = False
+                profile.deleted_at = None
+            else:
+                messages.error(request, f"Username '{username}' already exists. Please choose a different username.")
+                return redirect("billing:admin_panel")
+        else:
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                is_staff=is_admin_role,
+            )
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.is_deleted = False
+            profile.deleted_at = None
         profile.phone = phone
         profile.shop_name = shop_name
         profile.shop_address = shop_address
@@ -2304,9 +2330,22 @@ def admin_client_delete(request, user_id):
             return redirect("billing:admin_panel")
 
         uname = target_user.username
-        # Invalidate all active device sessions for this user so they are immediately kicked out
+        # 1. Permanently register in DeletedClient blacklist to block sync/auto-seed revival
+        DeletedClient.objects.get_or_create(username=uname)
+
+        # 2. Invalidate all active device sessions for this user so they are immediately kicked out
         ActiveUserSession.objects.filter(user=target_user).delete()
-        target_user.delete()
+
+        # 3. Deactivate all registered devices
+        RegisteredDevice.objects.filter(user=target_user).update(is_active=False, is_verified=False)
+
+        # 4. Deactivate user login and mark profile deleted (preserving business data safe & isolated)
+        target_user.is_active = False
+        target_user.save(update_fields=["is_active"])
+        if hasattr(target_user, "profile"):
+            target_user.profile.is_deleted = True
+            target_user.profile.deleted_at = timezone.now()
+            target_user.profile.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
 
         log_activity(
             request,
@@ -2738,6 +2777,7 @@ def admin_user_password_change(request, user_id):
             "PASSWORD_CHANGE",
             f"Admin reset/changed password for user '{user.username}'"
         )
+        trigger_desktop_sync_safe()
         messages.success(request, f"Password for user '{user.username}' changed successfully!")
 
     return redirect("billing:admin_panel")

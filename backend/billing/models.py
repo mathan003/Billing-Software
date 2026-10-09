@@ -445,6 +445,9 @@ class UserProfile(models.Model):
     print_auto_expand_height = models.BooleanField(default=True, help_text="Auto-expand height for longer bills so nothing is cut off")
     print_font_scaling = models.CharField(max_length=20, default="auto", help_text="Font scaling mode")
 
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -828,5 +831,20 @@ def purge_expired_deleted_items(days=3):
         pass
 
     return purged_counts
+
+
+class DeletedClient(models.Model):
+    """
+    Tracks deleted client accounts so that cloud and desktop synchronization
+    cycles never accidentally recreate or revive deleted clients.
+    """
+    username = models.CharField(max_length=150, unique=True, db_index=True)
+    deleted_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-deleted_at"]
+
+    def __str__(self):
+        return f"DeletedClient: {self.username} ({self.deleted_at})"
 
 

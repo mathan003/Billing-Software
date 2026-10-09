@@ -246,9 +246,18 @@ class SyncManager:
 
             # Clients created or altered locally by Admin
             from django.contrib.auth.models import User
+            from billing.models import DeletedClient, UserProfile
+            deleted_clients_payload = list(DeletedClient.objects.values_list("username", flat=True))
+            soft_deleted_names = list(UserProfile.objects.filter(is_deleted=True).values_list("user__username", flat=True))
+            all_deleted_usernames = list(set(deleted_clients_payload + soft_deleted_names))
+
             clients_payload = []
             for u in User.objects.exclude(username__in=["admin", "Mathan003"]):
+                if u.username in all_deleted_usernames:
+                    continue
                 p = getattr(u, "profile", None)
+                if p and p.is_deleted:
+                    continue
                 clients_payload.append({
                     "username": u.username,
                     "first_name": u.first_name,
@@ -270,9 +279,10 @@ class SyncManager:
                     "password_hash": u.password,
                     "initial_password": getattr(p, "initial_password", ""),
                     "is_active": u.is_active,
+                    "updated_at": p.updated_at.isoformat() if (p and p.updated_at) else "",
                 })
 
-            if not invoices_payload and not customers_payload and not products_payload and not clients_payload and not deleted_categories_payload:
+            if not invoices_payload and not customers_payload and not products_payload and not clients_payload and not deleted_categories_payload and not all_deleted_usernames:
                 return
 
             push_data = {
@@ -284,6 +294,7 @@ class SyncManager:
                 "categories": categories_payload,
                 "deleted_categories": deleted_categories_payload,
                 "clients": clients_payload,
+                "deleted_clients": all_deleted_usernames,
             }
 
             resp = requests.post(
@@ -433,40 +444,71 @@ class SyncManager:
                     except Exception as pe:
                         logger.debug(f"Error updating local client profile: {pe}")
 
+                # 2.4. Process deleted clients from cloud so local deletions stay permanent
+                from billing.models import DeletedClient, UserProfile
+                deleted_clients_data = data.get("deleted_clients", [])
+                for del_client in deleted_clients_data:
+                    d_c_clean = (del_client or "").strip()
+                    if d_c_clean and d_c_clean not in ("admin", "Mathan003"):
+                        DeletedClient.objects.get_or_create(username=d_c_clean)
+                        User.objects.filter(username=d_c_clean).update(is_active=False)
+                        UserProfile.objects.filter(user__username=d_c_clean).update(is_deleted=True, deleted_at=timezone.now())
+                        ActiveUserSession.objects.filter(user__username=d_c_clean).delete()
+
+                local_deleted_set = set(DeletedClient.objects.values_list("username", flat=True)) | set(deleted_clients_data)
+
                 # 2.5. Synchronize all client accounts so web-created clients can log in immediately
                 cloud_clients = data.get("clients", [])
                 for cl in cloud_clients:
                     c_uname = cl.get("username", "").strip()
-                    if not c_uname or c_uname in ("admin", "Mathan003"):
+                    if not c_uname or c_uname in ("admin", "Mathan003") or c_uname in local_deleted_set:
                         continue
                     try:
-                        c_user, _ = User.objects.get_or_create(username=c_uname)
-                        c_user.first_name = cl.get("first_name", c_user.first_name)
-                        c_user.last_name = cl.get("last_name", c_user.last_name)
-                        c_user.email = cl.get("email", c_user.email)
-                        c_user.is_active = cl.get("is_active", True)
-                        if cl.get("password_hash"):
-                            c_user.password = cl["password_hash"]
-                        c_user.save()
-
-                        from billing.models import UserProfile
+                        c_user, created = User.objects.get_or_create(username=c_uname)
                         c_prof, _ = UserProfile.objects.get_or_create(user=c_user)
-                        c_prof.role = cl.get("role", "client")
-                        c_prof.shop_name = cl.get("shop_name", c_prof.shop_name)
-                        c_prof.shop_address = cl.get("shop_address", c_prof.shop_address)
-                        c_prof.business_type = cl.get("business_type", c_prof.business_type)
-                        c_prof.access_mode = cl.get("access_mode", c_prof.access_mode)
-                        c_prof.device_limit = cl.get("device_limit", c_prof.device_limit)
-                        c_prof.phone = cl.get("phone", c_prof.phone)
-                        c_prof.gst_number = cl.get("gst_number", c_prof.gst_number)
-                        c_prof.bank_name = cl.get("bank_name", c_prof.bank_name)
-                        c_prof.account_number = cl.get("account_number", c_prof.account_number)
-                        c_prof.ifsc_code = cl.get("ifsc_code", c_prof.ifsc_code)
-                        c_prof.avatar_base64 = cl.get("avatar_base64", c_prof.avatar_base64)
-                        c_prof.shop_logo_base64 = cl.get("shop_logo_base64", c_prof.shop_logo_base64)
-                        if cl.get("initial_password"):
-                            c_prof.initial_password = cl["initial_password"]
-                        c_prof.save()
+                        if c_prof.is_deleted:
+                            continue
+
+                        # Compare timestamps: only overwrite local profile if cloud update is newer
+                        cloud_updated_str = cl.get("updated_at")
+                        should_update = created
+                        if not should_update and cloud_updated_str and c_prof.updated_at:
+                            try:
+                                from django.utils.dateparse import parse_datetime
+                                cloud_dt = parse_datetime(cloud_updated_str)
+                                if cloud_dt and cloud_dt >= c_prof.updated_at:
+                                    should_update = True
+                            except Exception:
+                                should_update = True
+                        elif not should_update and not cloud_updated_str:
+                            should_update = True
+
+                        if should_update:
+                            c_user.first_name = cl.get("first_name", c_user.first_name)
+                            c_user.last_name = cl.get("last_name", c_user.last_name)
+                            c_user.email = cl.get("email", c_user.email)
+                            c_user.is_active = cl.get("is_active", True)
+                            if cl.get("password_hash"):
+                                c_user.password = cl["password_hash"]
+                            c_user.save()
+
+                            c_prof.role = cl.get("role", "client")
+                            c_prof.shop_name = cl.get("shop_name", c_prof.shop_name)
+                            c_prof.shop_address = cl.get("shop_address", c_prof.shop_address)
+                            c_prof.business_type = cl.get("business_type", c_prof.business_type)
+                            c_prof.access_mode = cl.get("access_mode", c_prof.access_mode)
+                            c_prof.device_limit = cl.get("device_limit", c_prof.device_limit)
+                            c_prof.phone = cl.get("phone", c_prof.phone)
+                            c_prof.gst_number = cl.get("gst_number", c_prof.gst_number)
+                            c_prof.bank_name = cl.get("bank_name", c_prof.bank_name)
+                            c_prof.account_number = cl.get("account_number", c_prof.account_number)
+                            c_prof.ifsc_code = cl.get("ifsc_code", c_prof.ifsc_code)
+                            c_prof.avatar_base64 = cl.get("avatar_base64", c_prof.avatar_base64)
+                            c_prof.shop_logo_base64 = cl.get("shop_logo_base64", c_prof.shop_logo_base64)
+                            if cl.get("initial_password"):
+                                c_prof.initial_password = cl["initial_password"]
+                            c_prof.is_deleted = False
+                            c_prof.save()
                     except Exception as cl_err:
                         logger.debug(f"Error syncing client {c_uname}: {cl_err}")
 

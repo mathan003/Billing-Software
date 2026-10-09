@@ -40,20 +40,20 @@
         .navbar-custom {
             background: #ffffff;
             border-bottom: 1px solid #e2e8f0;
-            padding: 0.4rem 0.75rem;
+            padding: 0.25rem 0.6rem;
         }
         .navbar-custom .container-fluid {
             display: flex;
             align-items: center;
             justify-content: space-between;
             max-width: 100%;
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
         }
         @media (min-width: 1200px) {
             .navbar-custom .container-fluid {
-                padding-left: 1rem !important;
-                padding-right: 1rem !important;
+                padding-left: 0.85rem !important;
+                padding-right: 0.85rem !important;
             }
         }
         .navbar-brand {
@@ -70,13 +70,6 @@
                 align-items: center;
                 flex: 1 1 auto;
                 min-width: 0;
-                overflow-x: auto;
-                overflow-y: hidden;
-                scrollbar-width: none;
-                -ms-overflow-style: none;
-            }
-            .navbar-nav-container::-webkit-scrollbar {
-                display: none;
             }
             .navbar-custom .navbar-nav {
                 display: flex;
@@ -90,23 +83,47 @@
         .nav-link {
             font-weight: 500;
             color: #64748b !important;
-            padding: 0.35rem 0.5rem !important;
+            padding: 0.22rem 0.45rem !important;
             border-radius: 8px;
             transition: all 0.2s ease-in-out;
             white-space: nowrap !important;
             display: inline-flex;
             align-items: center;
-            font-size: 0.82rem;
-            line-height: 1.25;
+            gap: 0.35rem;
             text-decoration: none;
-        }
-        .nav-link i {
-            font-size: 0.85rem;
-            flex-shrink: 0;
         }
         .nav-link:hover, .nav-link.active {
             color: #4f46e5 !important;
             background: #eef2ff;
+        }
+        .nav-text-block {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            line-height: 1.15;
+        }
+        .nav-en {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #334155;
+            white-space: nowrap;
+        }
+        .nav-link.active .nav-en {
+            color: #4f46e5;
+            font-weight: 700;
+        }
+        .nav-ta {
+            font-size: 0.64rem;
+            color: #64748b;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .nav-link.active .nav-ta {
+            color: #6366f1;
+        }
+        .nav-link i {
+            font-size: 0.85rem;
+            flex-shrink: 0;
         }
         /* Large Desktop Screens (1400px+) */
         @media (min-width: 1400px) {
@@ -114,8 +131,14 @@
                 gap: 4px;
             }
             .nav-link {
-                padding: 0.42rem 0.7rem !important;
-                font-size: 0.875rem;
+                padding: 0.28rem 0.6rem !important;
+                gap: 0.45rem;
+            }
+            .nav-en {
+                font-size: 0.83rem;
+            }
+            .nav-ta {
+                font-size: 0.68rem;
             }
             .nav-link i {
                 font-size: 0.92rem;
@@ -124,15 +147,20 @@
         /* Compact Desktop & Laptop Screens (992px - 1280px) */
         @media (max-width: 1280px) and (min-width: 992px) {
             .navbar-custom {
-                padding: 0.32rem 0.5rem;
+                padding: 0.2rem 0.4rem;
             }
             .nav-link {
-                padding: 0.3rem 0.42rem !important;
-                font-size: 0.78rem;
+                padding: 0.18rem 0.32rem !important;
+                gap: 0.22rem;
+            }
+            .nav-en {
+                font-size: 0.74rem;
+            }
+            .nav-ta {
+                font-size: 0.6rem;
             }
             .nav-link i {
-                font-size: 0.8rem;
-                margin-right: 2px !important;
+                font-size: 0.78rem;
             }
         }
         /* Mobile / Tablet Collapsed drawer (max-width: 991.98px) */
@@ -151,12 +179,15 @@
                 gap: 4px;
             }
             .nav-link {
-                padding: 0.6rem 0.85rem !important;
-                font-size: 0.92rem;
+                padding: 0.45rem 0.85rem !important;
+                gap: 0.6rem;
                 border-radius: 8px;
             }
-            .nav-tamil-label {
-                display: inline !important;
+            .nav-en {
+                font-size: 0.88rem;
+            }
+            .nav-ta {
+                font-size: 0.72rem;
             }
         }
         .card-stat {
@@ -259,65 +290,89 @@
                     <ul class="navbar-nav">
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'billing:dashboard' %}" title="Dashboard (டாஷ்போர்டு)">
-                                <i class="fa-solid fa-chart-pie me-1"></i>
-                                <span>Dashboard</span>
+                                <i class="fa-solid fa-chart-pie"></i>
+                                <span class="nav-text-block">
+                                    <span class="nav-en">Dashboard</span>
+                                    <span class="nav-ta">டாஷ்போர்டு</span>
+                                </span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'billing_page' %}active{% endif %}" href="{% url 'billing:billing_page' %}{{ sec_param }}" title="Quick Bill (பில்லிங்)">
-                                <i class="fa-solid fa-bolt me-1 text-warning"></i>
-                                <span>Quick Bill</span>
-                                <span class="nav-tamil-label d-none d-xxl-inline small opacity-75 ms-1">(பில்லிங்)</span>
+                                <i class="fa-solid fa-bolt text-warning"></i>
+                                <span class="nav-text-block">
+                                    <span class="nav-en">Quick Bill</span>
+                                    <span class="nav-ta">பில்லிங்</span>
+                                </span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'reports_dashboard' %}active{% endif %}" href="{% url 'billing:reports_dashboard' %}" title="Reports (அறிக்கைகள்)">
-                                <i class="fa-solid fa-chart-line me-1 text-primary"></i>
-                                <span>Reports</span>
-                                <span class="nav-tamil-label d-none d-xxl-inline small opacity-75 ms-1">(அறிக்கைகள்)</span>
+                                <i class="fa-solid fa-chart-line text-primary"></i>
+                                <span class="nav-text-block">
+                                    <span class="nav-en">Reports</span>
+                                    <span class="nav-ta">அறிக்கைகள்</span>
+                                </span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'stock_management' %}active{% endif %}" href="{% url 'billing:stock_management' %}" title="Stock (இருப்பு)">
-                                <i class="fa-solid fa-warehouse me-1 text-success"></i>
-                                <span>Stock</span>
-                                <span class="nav-tamil-label d-none d-xxl-inline small opacity-75 ms-1">(இருப்பு)</span>
+                                <i class="fa-solid fa-warehouse text-success"></i>
+                                <span class="nav-text-block">
+                                    <span class="nav-en">Stock</span>
+                                    <span class="nav-ta">இருப்பு</span>
+                                </span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'customer_list' %}active{% endif %}" href="{% url 'billing:customer_list' %}" title="Customers (வாடிக்கையாளர்கள்)">
-                                <i class="fa-solid fa-address-book me-1 text-info"></i>
-                                <span>Customers</span>
+                                <i class="fa-solid fa-address-book text-info"></i>
+                                <span class="nav-text-block">
+                                    <span class="nav-en">Customers</span>
+                                    <span class="nav-ta">வாடிக்கையாளர்</span>
+                                </span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'invoice_list' %}active{% endif %}" href="{% url 'billing:invoice_list' %}" title="Invoices (ரசீதுகள்)">
-                                <i class="fa-solid fa-file-invoice me-1"></i>
-                                <span>Invoices</span>
+                                <i class="fa-solid fa-file-invoice"></i>
+                                <span class="nav-text-block">
+                                    <span class="nav-en">Invoices</span>
+                                    <span class="nav-ta">ரசீதுகள்</span>
+                                </span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'product_list' %}active{% endif %}" href="{% url 'billing:product_list' %}" title="Products (பொருட்கள்)">
-                                <i class="fa-solid fa-boxes-stacked me-1"></i>
-                                <span>Products</span>
-                                <span class="nav-tamil-label d-none d-xxl-inline small opacity-75 ms-1">(பொருட்கள்)</span>
+                                <i class="fa-solid fa-boxes-stacked"></i>
+                                <span class="nav-text-block">
+                                    <span class="nav-en">Products</span>
+                                    <span class="nav-ta">பொருட்கள்</span>
+                                </span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'recycle_bin' %}active fw-semibold text-danger{% endif %}" href="{% url 'billing:recycle_bin' %}" title="Deleted Items / Recycle Bin (3-day recovery)">
-                                <i class="fa-solid fa-trash-can me-1 text-danger"></i>
-                                <span>Recycle Bin</span>
-                                {% if recycle_bin_count > 0 %}
-                                    <span class="badge bg-danger rounded-pill px-1.5 py-0.5 ms-1" style="font-size: 0.65rem;">{{ recycle_bin_count }}</span>
-                                {% endif %}
+                                <i class="fa-solid fa-trash-can text-danger"></i>
+                                <span class="nav-text-block">
+                                    <span class="nav-en d-flex align-items-center">
+                                        Recycle Bin
+                                        {% if recycle_bin_count > 0 %}
+                                            <span class="badge bg-danger rounded-pill px-1.5 py-0.5 ms-1" style="font-size: 0.6rem;">{{ recycle_bin_count }}</span>
+                                        {% endif %}
+                                    </span>
+                                    <span class="nav-ta">குப்பைத்தொட்டி</span>
+                                </span>
                             </a>
                         </li>
                         {% if is_admin_user %}
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'admin_panel' %}active fw-bold text-danger{% endif %}" href="{% url 'billing:admin_panel' %}{{ sec_param }}" title="Admin Panel (நிர்வாகம்)">
-                                <i class="fa-solid fa-screwdriver-wrench me-1 text-danger"></i>
-                                <span>Admin Panel</span>
-                                <span class="nav-tamil-label d-none d-xxl-inline small opacity-75 ms-1">(நிர்வாகம்)</span>
+                                <i class="fa-solid fa-screwdriver-wrench text-danger"></i>
+                                <span class="nav-text-block">
+                                    <span class="nav-en">Admin Panel</span>
+                                    <span class="nav-ta">நிர்வாகம்</span>
+                                </span>
                             </a>
                         </li>
                         {% endif %}

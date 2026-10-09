@@ -33,7 +33,7 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
-# Determine persistent data folder for SQLite
+# Determine persistent data folder for SQLite & WebView2
 if getattr(sys, "frozen", False):
     # PyInstaller standalone EXE environment
     app_data_dir = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "SmartBillingPOS"
@@ -42,6 +42,11 @@ else:
 
 app_data_dir.mkdir(parents=True, exist_ok=True)
 db_file = app_data_dir / "billing_local.sqlite3"
+
+# Configure isolated WebView2 user data directory to prevent locks
+webview2_dir = app_data_dir / "webview2_data"
+webview2_dir.mkdir(parents=True, exist_ok=True)
+os.environ["WEBVIEW2_USER_DATA_FOLDER"] = str(webview2_dir)
 
 # Configure Django Environment
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "billing_backend.settings")
@@ -65,6 +70,7 @@ def init_database():
     """
     Ensure local SQLite database is migrated and has default admin credentials.
     Highly optimized fast-path check:
+    - Enables SQLite WAL mode for non-blocking concurrent reads and writes.
     - Avoids running heavy Django migrate on every launch if database is already up to date.
     - Avoids expensive PBKDF2 password hashing on every launch if Mathan003 already exists.
     - Avoids repetitive model existence queries on every launch.
@@ -73,15 +79,31 @@ def init_database():
     try:
         is_fresh_db = not db_file.exists() or db_file.stat().st_size == 0
 
+        # Enable SQLite WAL mode immediately for non-blocking concurrent reads & writes
+        from django.db import connection
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("PRAGMA journal_mode=WAL;")
+                cursor.execute("PRAGMA synchronous=NORMAL;")
+                cursor.execute("PRAGMA busy_timeout=5000;")
+        except Exception as pragma_err:
+            logger.debug(f"SQLite PRAGMA notice: {pragma_err}")
+
         # 1. Fast Migration Check using MigrationExecutor
         needs_migration = False
-        from django.db import connection
-        from django.db.migrations.executor import MigrationExecutor
-        try:
-            executor = MigrationExecutor(connection)
-            plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
-            needs_migration = bool(plan)
-        except Exception:
+        if not is_fresh_db:
+            try:
+                table_names = connection.introspection.table_names()
+                if "billing_product" in table_names and "auth_user" in table_names:
+                    from django.db.migrations.executor import MigrationExecutor
+                    executor = MigrationExecutor(connection)
+                    plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+                    needs_migration = bool(plan)
+                else:
+                    needs_migration = True
+            except Exception:
+                needs_migration = False
+        else:
             needs_migration = True
 
         if is_fresh_db or needs_migration:
@@ -143,6 +165,7 @@ def find_available_port(preferred_port=8765):
     """Finds an available TCP port for the local Waitress server"""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", preferred_port))
             return preferred_port
     except OSError:
@@ -184,6 +207,23 @@ def main():
     updater_worker = get_auto_updater(server_url=cloud_url)
     updater_worker.start()
 
+    # Clean termination helper to prevent lingering background zombie processes
+    def on_window_closed():
+        logger.info("MathanHub desktop window closed. Exiting cleanly...")
+        try:
+            updater_worker.stop()
+        except Exception:
+            pass
+        try:
+            sync_worker.stop()
+        except Exception:
+            pass
+        try:
+            server.close()
+        except Exception:
+            pass
+        os._exit(0)
+
     # 4. Launch Desktop Window
     try:
         import webview
@@ -200,6 +240,9 @@ def main():
             confirm_close=False,
             text_select=True,
         )
+
+        # Ensure immediate process teardown when the window is closed
+        window.events.closed += on_window_closed
 
         # Locate application icon
         icon_path = None
@@ -223,6 +266,8 @@ def main():
             else:
                 webview.start(private_mode=False)
 
+        on_window_closed()
+
     except Exception as e:
         logger.warning(f"Native desktop window unavailable ({e}). Opening in default browser...")
         webbrowser.open(app_url)
@@ -233,12 +278,8 @@ def main():
                 time.sleep(1)
         except KeyboardInterrupt:
             pass
-
-    # Cleanup
-    updater_worker.stop()
-    sync_worker.stop()
-    server.close()
-    logger.info("MathanHub shut down cleanly.")
+    finally:
+        on_window_closed()
 
 
 if __name__ == "__main__":

@@ -507,6 +507,8 @@
                 qtyInput.focus();
                 qtyInput.select();
             }
+        });
+
         unitSelect.addEventListener("change", function() {
             unitSelect.dataset.modified = "true";
             if (this.value === "Other") {

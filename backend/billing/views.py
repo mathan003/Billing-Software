@@ -571,19 +571,8 @@ def login_view(request):
             is_user_admin = user.is_superuser or (getattr(user, "profile", None) and user.profile.role == "admin")
             last_client = pos_cfg.get("last_logged_in_client", "")
             if not is_user_admin:
-                if last_client and last_client != user.username:
-                    # User switched clients! Erase previous client's cached local records so new client has a clean slate
-                    try:
-                        InvoiceItem.objects.all().delete()
-                        Invoice.objects.all().delete()
-                        PaymentRecord.objects.all().delete()
-                        StockLog.objects.all().delete()
-                        Customer.objects.all().delete()
-                        Product.objects.all().delete()
-                        ProductCategory.objects.all().delete()
-                        Branch.objects.exclude(branch_code="MAIN-01").delete()
-                    except Exception:
-                        pass
+                # Multi-tenant safety: Preserve all client data locally without wiping.
+                # Each client's records are strictly isolated and queried by client_id.
 
                 save_desktop_pos_config({
                     "device_id": device_id,

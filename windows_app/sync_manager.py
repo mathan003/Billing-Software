@@ -693,18 +693,26 @@ class SyncManager:
                             local_inv.payment_status = inv_data.get("payment_status", local_inv.payment_status)
                             local_inv.save(update_fields=["subtotal", "discount_amount", "tax_amount", "grand_total", "paid_amount", "balance_amount", "payment_status"])
 
-                # 7. Synchronize Web Deletions to Desktop App
+                # 7. Synchronize Web Deletions to Desktop App (Isolated strictly per client)
+                is_admin_user = client_user and (client_user.is_superuser or (hasattr(client_user, "profile") and client_user.profile.role == "admin"))
+
                 if "active_invoice_uuids" in data:
                     active_uuids = set(data.get("active_invoice_uuids", []))
                     # Remove locally synced invoices that have been deleted on the web
-                    for inv in Invoice.objects.filter(notes__contains="[CLOUD_SYNCED]"):
+                    inv_filter = Q(notes__contains="[CLOUD_SYNCED]")
+                    if client_user and not is_admin_user:
+                        inv_filter &= Q(client=client_user)
+                    for inv in Invoice.objects.filter(inv_filter):
                         if str(inv.invoice_uuid) not in active_uuids:
                             inv.items.all().delete()
                             inv.delete()
 
                 if "active_customer_phones" in data:
                     active_phones = set(data.get("active_customer_phones", []))
-                    for c in Customer.objects.all():
+                    cust_filter = Q()
+                    if client_user and not is_admin_user:
+                        cust_filter = Q(client=client_user)
+                    for c in Customer.objects.filter(cust_filter):
                         if c.phone and c.phone not in active_phones:
                             has_pending = c.invoices.filter(~Q(notes__contains="[CLOUD_SYNCED]")).exists()
                             if not has_pending:
@@ -713,7 +721,10 @@ class SyncManager:
 
                 if "active_product_skus" in data:
                     active_skus = set(data.get("active_product_skus", []))
-                    for p in Product.objects.filter(is_active=True):
+                    prod_filter = Q(is_active=True)
+                    if client_user and not is_admin_user:
+                        prod_filter = Q(client=client_user)
+                    for p in Product.objects.filter(prod_filter):
                         if p.sku not in active_skus:
                             if not p.invoice_items.exists():
                                 p.delete()
@@ -721,7 +732,7 @@ class SyncManager:
                                 p.is_active = False
                                 p.save(update_fields=["is_active"])
 
-                if "active_client_usernames" in data:
+                if "active_client_usernames" in data and is_admin_user:
                     active_clients = set(data.get("active_client_usernames", []))
                     for u in User.objects.exclude(username__in=["admin", "Mathan003"]):
                         if u.username not in active_clients:

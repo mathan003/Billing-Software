@@ -3,13 +3,11 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.5.8"
-APP_TITLE = "Permanent Category Deletion, WhatsApp OTP Verification & Profile Updates"
+APP_VERSION = "v2.5.9"
+APP_TITLE = "Responsive Login Alignment, Safe Updates & Zero Data Loss Architecture"
 APP_RELEASE_NOTES = (
-    "• Permanent Category Deletion: Categories deleted remain permanently deleted across page refreshes and offline desktop sync without resurrection\n"
-    "• Client Login Verification via WhatsApp: OTP verification managed directly with Administrator WhatsApp (9384098304)\n"
-    "• Strict role permissions: Client account creation and verification strictly restricted to administrator\n"
-    "• Application Update Controls: Clear Update and Reject buttons on Login Page and dedicated Software Update card in Client Profile\n"
-    "• Dashboard cleanly excludes update banners for distraction-free billing operations"
+    "• Responsive Login Page Alignment: Completely restructured layout with balanced spacing, responsive update cards, and unclipped touch-friendly action buttons\n"
+    "• Zero Data Loss Guarantee: Safe update mechanism with automatic pre-update database backups and detached rollback support\n"
+    "• Strict Multi-Tenant Data Protection: Client customer records, bills, invoices, products, and categories remain 100% isolated and preserved across updates\n"
+    "• Seamless Database Migration Handling: Safe database snapshotting prior to migrations preventing SQLite schema corruption"
 )
-

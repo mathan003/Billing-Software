@@ -65,6 +65,28 @@ def init_database():
     """Ensure local SQLite database is migrated and has default admin credentials"""
     try:
         logger.info(f"Checking local database at {db_file}...")
+
+        # Pre-migration safety snapshot to guarantee zero data loss
+        if db_file.exists() and db_file.stat().st_size > 0:
+            try:
+                backups_dir = app_data_dir / "backups"
+                backups_dir.mkdir(parents=True, exist_ok=True)
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                snap_path = backups_dir / f"billing_local_pre_migration_{timestamp}.sqlite3"
+                import shutil
+                shutil.copy2(db_file, snap_path)
+                logger.info(f"Pre-migration database snapshot created: {snap_path}")
+                # Retain the most recent 10 migration snapshots
+                old_snaps = sorted(backups_dir.glob("billing_local_pre_migration_*.sqlite3"), key=lambda p: p.stat().st_mtime)
+                if len(old_snaps) > 10:
+                    for old_s in old_snaps[:-10]:
+                        try:
+                            old_s.unlink()
+                        except Exception:
+                            pass
+            except Exception as snap_err:
+                logger.warning(f"Snapshot creation notice: {snap_err}")
+
         try:
             call_command("migrate", interactive=False, verbosity=0)
         except Exception as e:

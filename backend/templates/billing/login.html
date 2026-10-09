@@ -20,38 +20,123 @@
             background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 1rem;
+            padding: 1.25rem 1rem;
+            margin: 0;
         }
         .login-card {
-            max-width: 450px;
+            max-width: 480px;
             width: 100%;
             background: #ffffff;
-            border-radius: 18px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+            border-radius: 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45), 0 10px 15px -3px rgba(0, 0, 0, 0.2);
             overflow: hidden;
+            margin: auto;
         }
         .login-header {
             background: linear-gradient(135deg, #4338ca 0%, #3b82f6 100%);
-            padding: 2.2rem 2rem 1.8rem;
+            padding: 2.25rem 2rem 1.75rem;
             color: #ffffff;
             text-align: center;
+        }
+        .login-body {
+            padding: 2.25rem 2rem;
+        }
+        @media (max-width: 575.98px) {
+            .login-header {
+                padding: 1.75rem 1.25rem 1.5rem;
+            }
+            .login-body {
+                padding: 1.5rem 1.25rem;
+            }
+        }
+        .form-label-custom {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 0.4rem;
+            display: block;
+        }
+        .custom-input-group {
+            display: flex;
+            align-items: stretch;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 12px;
+            background: #f8fafc;
+            transition: all 0.2s ease-in-out;
+            overflow: hidden;
+        }
+        .custom-input-group:focus-within {
+            border-color: #4f46e5;
+            background: #ffffff;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+        }
+        .custom-input-group .input-icon-box {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 44px;
+            color: #64748b;
+            font-size: 1rem;
+            background: transparent;
+            border: none;
+        }
+        .custom-input-group .form-control {
+            border: none;
+            background: transparent;
+            padding: 0.75rem 0.5rem;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: #1e293b;
+            box-shadow: none !important;
+            min-height: 48px;
+        }
+        .custom-input-group .form-control:focus {
+            background: transparent;
+        }
+        .custom-input-group .btn-pw-toggle {
+            border: none;
+            background: transparent;
+            padding: 0 0.9rem;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: color 0.15s;
+        }
+        .custom-input-group .btn-pw-toggle:hover {
+            color: #334155;
         }
         .btn-login {
             background: linear-gradient(135deg, #4f46e5 0%, #2563eb 100%);
             border: none;
             color: #ffffff;
             font-weight: 600;
-            padding: 0.75rem;
-            border-radius: 10px;
+            min-height: 48px;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
             box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.3);
-            transition: all 0.2s;
+            transition: all 0.2s ease-in-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .btn-login:hover {
             opacity: 0.95;
             color: #ffffff;
             transform: translateY(-1px);
+            box-shadow: 0 6px 10px -1px rgba(79, 70, 229, 0.4);
+        }
+        .update-notification-card {
+            background: linear-gradient(135deg, #f0fdf4 0%, #eef2ff 100%);
+            border: 2px solid #6366f1;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.15);
+            margin-bottom: 1.5rem;
+            overflow: hidden;
         }
     </style>
 </head>
@@ -60,16 +145,16 @@
 <div class="login-card">
     <div class="login-header">
         <div class="mb-3 text-center">
-            <img src="{% static 'img/MathanHub.png' %}" alt="MathanHub" style="height: 62px; max-width: 200px; object-fit: contain;" class="bg-white p-2 rounded-3 shadow-sm" onerror="this.onerror=null; this.src='{% static 'img/logo.png' %}';">
+            <img src="{% static 'img/MathanHub.png' %}" alt="MathanHub" style="height: 60px; max-width: 200px; object-fit: contain;" class="bg-white p-2 rounded-3 shadow-sm" onerror="this.onerror=null; this.src='{% static 'img/logo.png' %}';">
         </div>
-        <h4 class="fw-bold mb-1">MathanHub</h4>
+        <h4 class="fw-bold mb-1" style="letter-spacing: -0.3px;">MathanHub</h4>
         <p class="mb-0 text-white-50 small">Secure Cloud & Store Billing Management</p>
     </div>
 
-    <div class="p-4 p-md-5">
+    <div class="login-body">
         {% if messages %}
             {% for message in messages %}
-                <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show rounded-3 small" role="alert">
+                <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show rounded-3 small mb-3" role="alert">
                     <i class="fa-solid fa-circle-exclamation me-1"></i> {{ message }}
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
@@ -100,29 +185,38 @@
 
         {% if available_software_update %}
         <!-- Application Software Update Notification on Login Page -->
-        <div id="loginUpdateCard" class="card border-primary border-2 shadow-sm rounded-4 mb-4 overflow-hidden" style="background: linear-gradient(135deg, #f0fdf4 0%, #e0e7ff 100%);">
-            <div class="card-body p-3">
-                <div class="d-flex align-items-start gap-3">
-                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white bg-primary shadow-sm" style="width: 44px; height: 44px; flex-shrink: 0;">
-                        <i class="fa-solid fa-cloud-arrow-down fa-lg"></i>
+        <div id="loginUpdateCard" class="update-notification-card">
+            <div class="p-3">
+                <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom border-primary-subtle">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="rounded-circle d-flex align-items-center justify-content-center text-white bg-primary shadow-sm" style="width: 32px; height: 32px; font-size: 13px; flex-shrink: 0;">
+                            <i class="fa-solid fa-cloud-arrow-down"></i>
+                        </div>
+                        <span class="badge bg-primary fw-bold text-uppercase px-2 py-1" style="font-size: 11px; letter-spacing: 0.5px;">{{ available_software_update.version }}</span>
                     </div>
-                    <div class="flex-grow-1">
-                        <div class="d-flex align-items-center justify-content-between mb-1">
-                            <span class="badge bg-primary fw-bold">{{ available_software_update.version }}</span>
-                            <small class="text-primary fw-semibold">New Update Available</small>
-                        </div>
-                        <h6 class="fw-bold text-dark mb-1">{{ available_software_update.title }}</h6>
-                        <p class="text-secondary small mb-2" style="font-size: 12px;">
-                            {{ available_software_update.release_notes|default:"A new software update is available with latest features and optimizations."|truncatechars:120 }}
-                        </p>
-                        <div class="d-flex align-items-center gap-2 mt-2">
-                            <button type="button" class="btn btn-sm btn-primary fw-bold px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1 rounded-pill" id="btnLoginUpdate" onclick="applyLoginSoftwareUpdate()">
-                                <i class="fa-solid fa-arrows-rotate"></i> Update (புதுப்பிக்கவும்)
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger fw-semibold px-3 py-1 d-inline-flex align-items-center gap-1 rounded-pill" id="btnLoginReject" onclick="rejectLoginSoftwareUpdate()">
-                                <i class="fa-solid fa-xmark"></i> Reject (வேண்டாம்)
-                            </button>
-                        </div>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2 py-1" style="font-size: 11px;">
+                        <i class="fa-solid fa-sparkles me-1"></i> New Update Available
+                    </span>
+                </div>
+
+                <h6 class="fw-bold text-dark mb-1 text-break" style="font-size: 13.5px; line-height: 1.35;">
+                    {{ available_software_update.title|default:"Software Update Available" }}
+                </h6>
+                <p class="text-secondary small mb-3 text-break" style="font-size: 12px; line-height: 1.45;">
+                    {{ available_software_update.release_notes|default:"A new software update is available with latest features, performance improvements, and security enhancements." }}
+                </p>
+
+                <!-- Action buttons: 2 equal-width columns, fully responsive, zero clipping -->
+                <div class="row g-2 pt-1">
+                    <div class="col-6">
+                        <button type="button" class="btn btn-primary fw-bold w-100 py-2 d-flex align-items-center justify-content-center gap-1 shadow-sm rounded-3" style="font-size: 12px;" id="btnLoginUpdate" onclick="applyLoginSoftwareUpdate()">
+                            <i class="fa-solid fa-arrows-rotate"></i> <span>Update (புதுப்பி)</span>
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button type="button" class="btn btn-outline-danger fw-semibold w-100 py-2 d-flex align-items-center justify-content-center gap-1 rounded-3" style="font-size: 12px;" id="btnLoginReject" onclick="rejectLoginSoftwareUpdate()">
+                            <i class="fa-solid fa-xmark"></i> <span>Reject (வேண்டாம்)</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -153,26 +247,26 @@
                 <input type="hidden" name="password" value="{{ password }}">
 
                 <div class="mb-4">
-                    <label class="form-label small fw-semibold text-secondary text-center d-block">Admin 6-Digit OTP (நிர்வாகி OTP குறியீடு)</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-key text-warning"></i></span>
-                        <input type="text" name="admin_otp" id="loginAdminOtp" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" class="form-control text-center fw-bold fs-4 bg-light border-start-0" required autofocus style="letter-spacing: 6px;">
+                    <label class="form-label-custom text-center">Admin 6-Digit OTP (நிர்வாகி OTP குறியீடு)</label>
+                    <div class="custom-input-group mb-3">
+                        <span class="input-icon-box text-warning"><i class="fa-solid fa-key"></i></span>
+                        <input type="text" name="admin_otp" id="loginAdminOtp" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" class="form-control text-center fw-bold fs-4" required autofocus style="letter-spacing: 8px;">
                     </div>
 
                     <!-- WhatsApp Verification Notice & Action Button (Admin WhatsApp: 9384098304) -->
                     <div class="alert alert-success border border-success-subtle rounded-3 py-2 px-3 mt-3 mb-2 small text-dark d-flex align-items-start gap-2" style="background-color: #f0fdf4;">
                         <i class="fa-brands fa-whatsapp text-success fa-xl mt-1"></i>
-                        <div style="font-size: 12px;">
+                        <div style="font-size: 12px; line-height: 1.45;">
                             OTP verification is managed by <strong>Administrator (+91 9384098304)</strong>. The 6-digit code has been sent via WhatsApp to your registered phone number.
                         </div>
                     </div>
 
-                    <a href="https://wa.me/919384098304?text=Hello%20Administrator,%20please%20send%20my%20SmartBilling%20POS%20Verification%20OTP%20for%20account:%20{{ username|urlencode }}%20(Device:%20{{ device_id|urlencode }})" target="_blank" class="btn btn-outline-success fw-bold w-100 py-2 mb-2 d-inline-flex align-items-center justify-content-center gap-2 rounded-3 shadow-sm">
+                    <a href="https://wa.me/919384098304?text=Hello%20Administrator,%20please%20send%20my%20SmartBilling%20POS%20Verification%20OTP%20for%20account:%20{{ username|urlencode }}%20(Device:%20{{ device_id|urlencode }})" target="_blank" class="btn btn-outline-success fw-bold w-100 py-2.5 mb-2 d-inline-flex align-items-center justify-content-center gap-2 rounded-3 shadow-sm">
                         <i class="fa-brands fa-whatsapp fa-lg"></i> Contact Admin on WhatsApp (+91 9384098304)
                     </a>
                 </div>
 
-                <button type="submit" class="btn btn-warning text-dark fw-bold w-100 py-2 shadow-sm">
+                <button type="submit" class="btn btn-warning text-dark fw-bold w-100 py-2.5 shadow-sm rounded-3">
                     <i class="fa-solid fa-circle-check me-2"></i> Verify & Activate Device
                 </button>
 
@@ -202,11 +296,11 @@
                 <input type="hidden" name="username" value="{{ remembered_username }}">
 
                 <div class="mb-4">
-                    <label class="form-label small fw-semibold text-secondary">Password (கடவுச்சொல்)</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-lock"></i></span>
-                        <input type="password" name="password" id="loginPassword1" class="form-control bg-light border-start-0 border-end-0" required autofocus>
-                        <button class="btn btn-light border border-start-0 text-secondary" type="button" onclick="togglePasswordVisibility('loginPassword1', this)" title="Show/Hide Password" style="cursor: pointer;">
+                    <label class="form-label-custom">Password (கடவுச்சொல்)</label>
+                    <div class="custom-input-group">
+                        <span class="input-icon-box"><i class="fa-solid fa-lock"></i></span>
+                        <input type="password" name="password" id="loginPassword1" class="form-control" placeholder="Enter password" required autofocus>
+                        <button class="btn-pw-toggle" type="button" onclick="togglePasswordVisibility('loginPassword1', this)" title="Show/Hide Password">
                             <i class="fa-solid fa-eye"></i>
                         </button>
                     </div>
@@ -225,19 +319,19 @@
             {% else %}
                 <!-- WEB LOGIN EVERY TIME OR FIRST-TIME SETUP: BOTH USERNAME & PASSWORD -->
                 <div class="mb-3">
-                    <label class="form-label small fw-semibold text-secondary">Username / Login ID</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-user"></i></span>
-                        <input type="text" name="username" class="form-control bg-light border-start-0" required autofocus>
+                    <label class="form-label-custom">Username / Login ID</label>
+                    <div class="custom-input-group">
+                        <span class="input-icon-box"><i class="fa-solid fa-user"></i></span>
+                        <input type="text" name="username" class="form-control" placeholder="Enter username" required autofocus>
                     </div>
                 </div>
 
                 <div class="mb-4">
-                    <label class="form-label small fw-semibold text-secondary">Password</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-lock"></i></span>
-                        <input type="password" name="password" id="loginPassword2" class="form-control bg-light border-start-0 border-end-0" required>
-                        <button class="btn btn-light border border-start-0 text-secondary" type="button" onclick="togglePasswordVisibility('loginPassword2', this)" title="Show/Hide Password" style="cursor: pointer;">
+                    <label class="form-label-custom">Password</label>
+                    <div class="custom-input-group">
+                        <span class="input-icon-box"><i class="fa-solid fa-lock"></i></span>
+                        <input type="password" name="password" id="loginPassword2" class="form-control" placeholder="Enter password" required>
+                        <button class="btn-pw-toggle" type="button" onclick="togglePasswordVisibility('loginPassword2', this)" title="Show/Hide Password">
                             <i class="fa-solid fa-eye"></i>
                         </button>
                     </div>
@@ -315,7 +409,7 @@
             const card = document.getElementById('loginUpdateCard');
             if (card) {
                 card.innerHTML = `
-                    <div class="card-body p-3 text-center bg-success-subtle text-success rounded-4">
+                    <div class="p-3 text-center bg-success-subtle text-success rounded-4">
                         <i class="fa-solid fa-circle-check fa-2x mb-2"></i>
                         <h6 class="fw-bold mb-1">${data.message || 'Update initiated successfully!'}</h6>
                         <small class="text-secondary">${data.is_desktop ? 'Desktop POS will restart shortly.' : 'Ready to use.'}</small>

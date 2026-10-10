@@ -421,6 +421,7 @@ class SyncManager:
             from billing.device_utils import get_desktop_pos_config, save_desktop_pos_config, get_hardware_device_id
             from django.db import transaction
             from django.db.models import Q
+            from django.utils import timezone
 
             pos_cfg = get_desktop_pos_config()
             client_username = pos_cfg.get("last_logged_in_client") or pos_cfg.get("remembered_username") or ""

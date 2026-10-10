@@ -140,6 +140,9 @@
                         <button type="button" class="btn btn-primary-custom btn-sm" id="addProductRowBtn">
                             <i class="fa-solid fa-plus me-1"></i> Add Product (+ பொருள் சேர்க்க)
                         </button>
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-semibold" id="openQuickAddProdBtn">
+                            <i class="fa-solid fa-circle-plus me-1"></i> New Product (+ புதிய பொருள்)
+                        </button>
                         <button type="button" class="btn btn-success btn-sm fw-semibold" id="addOtherProductBtn">
                             <i class="fa-solid fa-pen-to-square me-1"></i> Other Product (+ மற்ற பொருள் சேர்க்க)
                         </button>
@@ -188,6 +191,9 @@
                 <div class="mt-2 d-flex justify-content-start align-items-center flex-wrap gap-2">
                     <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3" id="addProductRowBtn2">
                         <i class="fa-solid fa-circle-plus me-1"></i> Add Another Product (+ மேலும் பொருள் சேர்க்க)
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-semibold" id="openQuickAddProdBtn2">
+                        <i class="fa-solid fa-plus-circle me-1"></i> + New Product (புதிய பொருள் உருவாக்க)
                     </button>
                     <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold" id="addOtherProductBtn2">
                         <i class="fa-solid fa-pen-to-square me-1"></i> + Other Product (மற்ற பொருள் சேர்க்க)
@@ -269,6 +275,86 @@
                 </div>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- ======================================================== -->
+<!-- MODAL: QUICK ADD PRODUCT (நேரடியாக புதிய பொருள் சேர்க்க)  -->
+<!-- ======================================================== -->
+<div class="modal fade" id="quickAddProductModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold"><i class="fa-solid fa-plus-circle text-primary me-2"></i>Create New Product (புதிய பொருள் உருவாக்க)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'billing:product_add' %}" id="quickAddProductForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tamil Product Name (தமிழ் பெயர்) *</label>
+                        <input type="text" name="name_tamil" id="quickAddNameTamil" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">English Product Name (Optional)</label>
+                        <input type="text" name="name" id="quickAddNameEnglish" class="form-control">
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Unit Type (அளவீடு) *</label>
+                            <select name="unit" id="quickAddUnitSelect" class="form-select" onchange="toggleQuickCustomUnitField()">
+                                <option value="KG">KG (கிலோ)</option>
+                                <option value="Gram">Gram (கிராம்)</option>
+                                <option value="Pack">Pack / Bag (பேக்)</option>
+                                <option value="Box">Box (பெட்டி)</option>
+                                <option value="Pcs" selected>Pcs (எண்ணிக்கை)</option>
+                                <option value="Ltr">Liter (லிட்டர்)</option>
+                                <option value="Set">Set (செட்)</option>
+                                <option value="Nos">Nos (எண்கள்)</option>
+                                <option value="Unit">Unit (யூனிட்)</option>
+                                <option value="Other">+ Other / மற்றவை...</option>
+                            </select>
+                            <div id="quickCustomUnitContainer" class="mt-1" style="display: none;">
+                                <input type="text" name="custom_unit" id="quickCustomUnitInput" class="form-control form-control-sm border-primary">
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold mb-1">Category (வகை) *</label>
+                            <select name="category" id="quickAddCategorySelect" class="form-select form-select-sm" required>
+                                <option value="">-- Select Category --</option>
+                                {% for cat in categories %}
+                                    <option value="{{ cat }}" {% if cat == 'General' %}selected{% endif %}>{{ cat }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Selling Price (₹) *</label>
+                            <input type="number" step="0.01" min="0" name="price" id="quickAddPrice" class="form-control" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Buy / Cost Price (₹)</label>
+                            <input type="number" step="0.01" min="0" name="cost_price" id="quickAddCostPrice" class="form-control">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Opening Stock</label>
+                            <input type="number" step="any" min="0" name="stock_quantity" id="quickAddStock" class="form-control" value="100">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Tax / GST %</label>
+                            <input type="number" step="0.01" min="0" name="tax_percent" id="quickAddTax" class="form-control" value="0.00">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom px-4" id="btnSubmitQuickAddProduct">Create & Add to Bill</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -824,6 +910,160 @@
             custSuggestions.style.display = "none";
         }
     });
+
+    // Floating toast alert helper for billing screen
+    function showBillingToast(message, type = "success") {
+        let container = document.getElementById("billingToastContainer");
+        if (!container) {
+            container = document.createElement("div");
+            container.id = "billingToastContainer";
+            container.style.cssText = "position: fixed; top: 20px; right: 20px; z-index: 1090; min-width: 280px; max-width: 420px;";
+            document.body.appendChild(container);
+        }
+        const icon = type === "success" ? "fa-circle-check" : "fa-circle-info";
+        const alertEl = document.createElement("div");
+        alertEl.className = `alert alert-${type} shadow-lg rounded-3 py-2 px-3 mb-2 d-flex align-items-center gap-2 border-0 fade show`;
+        alertEl.style.transition = "all 0.3s ease";
+        alertEl.innerHTML = `
+            <i class="fa-solid ${icon} fa-lg"></i>
+            <div class="flex-grow-1 small fw-semibold">${message}</div>
+            <button type="button" class="btn-close btn-close-sm" style="font-size: 0.7rem;"></button>
+        `;
+        alertEl.querySelector(".btn-close").addEventListener("click", () => alertEl.remove());
+        container.appendChild(alertEl);
+        setTimeout(() => {
+            alertEl.classList.remove("show");
+            setTimeout(() => alertEl.remove(), 300);
+        }, 4000);
+    }
+
+    // Toggle custom unit field in quick add product modal
+    window.toggleQuickCustomUnitField = function() {
+        const sel = document.getElementById("quickAddUnitSelect");
+        const cont = document.getElementById("quickCustomUnitContainer");
+        const inp = document.getElementById("quickCustomUnitInput");
+        if (!sel || !cont) return;
+        if (sel.value === "Other") {
+            cont.style.display = "block";
+            if (inp) {
+                inp.focus();
+                inp.required = true;
+            }
+        } else {
+            cont.style.display = "none";
+            if (inp) {
+                inp.value = "";
+                inp.required = false;
+            }
+        }
+    };
+
+    // Quick Add Product Modal Opener
+    const quickModalEl = document.getElementById("quickAddProductModal");
+    function openQuickAddModal() {
+        if (!quickModalEl) return;
+        if (window.bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(quickModalEl);
+            modal.show();
+        } else {
+            quickModalEl.classList.add("show");
+            quickModalEl.style.display = "block";
+            quickModalEl.setAttribute("aria-modal", "true");
+            quickModalEl.removeAttribute("aria-hidden");
+        }
+    }
+    function closeQuickAddModal() {
+        if (!quickModalEl) return;
+        if (window.bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(quickModalEl);
+            modal.hide();
+        }
+        quickModalEl.classList.remove("show");
+        quickModalEl.style.display = "none";
+        document.querySelectorAll(".modal-backdrop").forEach(b => b.remove());
+        document.body.classList.remove("modal-open");
+    }
+
+    const openQuickBtn = document.getElementById("openQuickAddProdBtn");
+    const openQuickBtn2 = document.getElementById("openQuickAddProdBtn2");
+    if (openQuickBtn) openQuickBtn.addEventListener("click", openQuickAddModal);
+    if (openQuickBtn2) openQuickBtn2.addEventListener("click", openQuickAddModal);
+
+    // Quick Add Product Form Submission via AJAX (instant creation and automatic bill selection)
+    const quickAddForm = document.getElementById("quickAddProductForm");
+    if (quickAddForm) {
+        quickAddForm.addEventListener("submit", function(e) {
+            e.preventDefault();
+            const tName = (document.getElementById("quickAddNameTamil")?.value || "").trim();
+            const eName = (document.getElementById("quickAddNameEnglish")?.value || "").trim();
+            if (!tName && !eName) {
+                alert("Please enter at least a Tamil or English product name (தமிழ் அல்லது ஆங்கிலப் பெயர் உள்ளிடவும்).");
+                document.getElementById("quickAddNameTamil")?.focus();
+                return false;
+            }
+
+            const submitBtn = document.getElementById("btnSubmitQuickAddProduct");
+            const origText = submitBtn ? submitBtn.innerHTML : "";
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Saving...';
+            }
+
+            const formData = new FormData(quickAddForm);
+            fetch(quickAddForm.action, {
+                method: "POST",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "success" && data.product) {
+                    closeQuickAddModal();
+                    quickAddForm.reset();
+
+                    // Prepend new product to local in-memory catalog
+                    const p = data.product;
+                    catalog.unshift({
+                        id: p.id,
+                        name_tamil: p.name_tamil,
+                        name_english: p.name,
+                        display_name: p.display_name,
+                        category: p.category || "General",
+                        sku: p.sku || "",
+                        unit: p.unit || "KG",
+                        price: parseFloat(p.price),
+                        tax: parseFloat(p.tax_percent) || 0,
+                        stock: parseFloat(p.stock_quantity) || 0
+                    });
+
+                    // Update catalog count badge
+                    if (catalogCountBadge) {
+                        catalogCountBadge.innerText = `${catalog.length} Products`;
+                    }
+
+                    // Refresh all product dropdowns across existing item rows
+                    refreshAllProductSelects();
+
+                    // Automatically add and select this newly created product in the bill!
+                    addProductRow(p.id);
+
+                    showBillingToast(`Product '${p.display_name}' created and added to bill!`, "success");
+                } else {
+                    alert(data.message || "Failed to create product.");
+                }
+            })
+            .catch(err => {
+                console.error("Quick product creation error:", err);
+                quickAddForm.submit();
+            })
+            .finally(() => {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = origText;
+                }
+            });
+        });
+    }
 
     // Initialize with first empty row ready for cashier to choose from list
     addProductRow();

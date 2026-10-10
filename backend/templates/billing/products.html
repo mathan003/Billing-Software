@@ -59,35 +59,37 @@
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="productsTableBody">
                 {% for p in products %}
-                <tr>
-                    <td>
-                        <div class="fw-bold text-dark fs-6">{{ p.name_tamil|default:p.name }}</div>
+                <tr id="product-row-{{ p.id }}" class="product-item-row" data-id="{{ p.id }}">
+                    <td class="prod-col-title">
+                        <div class="fw-bold text-dark fs-6 prod-display-name">{{ p.name_tamil|default:p.name }}</div>
                         {% if p.name and p.name_tamil %}
-                            <div class="text-muted small">English: {{ p.name }}</div>
+                            <div class="text-muted small prod-english-name">English: {{ p.name }}</div>
+                        {% else %}
+                            <div class="text-muted small prod-english-name" style="display: none;"></div>
                         {% endif %}
                     </td>
-                    <td>
-                        <code class="text-secondary">{{ p.sku }}</code>
+                    <td class="prod-col-sku">
+                        <code class="text-secondary prod-sku-text">{{ p.sku }}</code>
                     </td>
-                    <td>
-                        <span class="badge bg-light text-dark border px-2 py-1">{{ p.unit }}</span>
+                    <td class="prod-col-unit">
+                        <span class="badge bg-light text-dark border px-2 py-1 prod-unit-badge">{{ p.unit }}</span>
                     </td>
-                    <td class="text-end fw-bold text-primary fs-6">
+                    <td class="text-end fw-bold text-primary fs-6 prod-col-price">
                         ₹{{ p.price|floatformat:2 }}
                     </td>
-                    <td class="text-end text-muted small">
+                    <td class="text-end text-muted small prod-col-cost">
                         ₹{{ p.cost_price|floatformat:2 }}
                     </td>
-                    <td class="text-center">
+                    <td class="text-center prod-col-stock">
                         {% if p.stock_quantity <= 5 %}
-                            <span class="badge bg-danger-subtle text-danger px-2 py-1">{{ p.stock_quantity }} {{ p.unit }}</span>
+                            <span class="badge bg-danger-subtle text-danger px-2 py-1 prod-stock-badge">{{ p.stock_quantity }} {{ p.unit }}</span>
                         {% else %}
-                            <span class="badge bg-success-subtle text-success px-2 py-1">{{ p.stock_quantity }} {{ p.unit }}</span>
+                            <span class="badge bg-success-subtle text-success px-2 py-1 prod-stock-badge">{{ p.stock_quantity }} {{ p.unit }}</span>
                         {% endif %}
                     </td>
-                    <td class="text-end">
+                    <td class="text-end prod-col-actions">
                         <div class="btn-group btn-group-sm">
                             <!-- Edit Button -->
                             <button type="button" class="btn btn-outline-primary edit-prod-btn"
@@ -114,7 +116,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr>
+                <tr id="noProductsRow">
                     <td colspan="7" class="text-center py-5 text-muted">
                         <i class="fa-solid fa-box-open fa-3x mb-2 d-block text-secondary"></i>
                         No products found. Click "Add Product" to add your first item!
@@ -320,6 +322,32 @@
 {% block extra_js %}
 <script>
     document.addEventListener("DOMContentLoaded", function() {
+        // Floating toast alert helper for instant visual feedback
+        function showProductToast(message, type = "success") {
+            let container = document.getElementById("productToastContainer");
+            if (!container) {
+                container = document.createElement("div");
+                container.id = "productToastContainer";
+                container.style.cssText = "position: fixed; top: 20px; right: 20px; z-index: 1090; min-width: 280px; max-width: 420px;";
+                document.body.appendChild(container);
+            }
+            const icon = type === "success" ? "fa-circle-check" : (type === "danger" ? "fa-circle-xmark" : "fa-circle-info");
+            const alertEl = document.createElement("div");
+            alertEl.className = `alert alert-${type} shadow-lg rounded-3 py-2 px-3 mb-2 d-flex align-items-center gap-2 border-0 fade show`;
+            alertEl.style.transition = "all 0.3s ease";
+            alertEl.innerHTML = `
+                <i class="fa-solid ${icon} fa-lg"></i>
+                <div class="flex-grow-1 small fw-semibold">${message}</div>
+                <button type="button" class="btn-close btn-close-sm" style="font-size: 0.7rem;"></button>
+            `;
+            alertEl.querySelector(".btn-close").addEventListener("click", () => alertEl.remove());
+            container.appendChild(alertEl);
+            setTimeout(() => {
+                alertEl.classList.remove("show");
+                setTimeout(() => alertEl.remove(), 300);
+            }, 4000);
+        }
+
         // Safe modal opener
         function openModalSafe(modalEl) {
             if (window.bootstrap && bootstrap.Modal) {
@@ -395,6 +423,156 @@
             }
         };
 
+        // Helper to bind edit and delete button events on a given row
+        function bindRowActions(row) {
+            const editBtn = row.querySelector(".edit-prod-btn");
+            if (editBtn) {
+                editBtn.addEventListener("click", function(e) {
+                    e.preventDefault();
+                    const id = this.getAttribute("data-id");
+                    document.getElementById("editProductForm").action = `/products/${id}/edit/`;
+                    document.getElementById("editProductForm").setAttribute("data-target-id", id);
+                    document.getElementById("editNameTamil").value = this.getAttribute("data-name-tamil") || "";
+                    document.getElementById("editName").value = this.getAttribute("data-name") || "";
+
+                    const unitVal = this.getAttribute("data-unit") || "KG";
+                    const editUnitSelect = document.getElementById("editUnit");
+                    const editCustomCont = document.getElementById("editCustomUnitContainer");
+                    const editCustomInp = document.getElementById("editCustomUnitInput");
+                    let unitFound = false;
+                    if (editUnitSelect) {
+                        for (let i = 0; i < editUnitSelect.options.length; i++) {
+                            if (editUnitSelect.options[i].value.toLowerCase() === unitVal.toLowerCase()) {
+                                editUnitSelect.selectedIndex = i;
+                                unitFound = true;
+                                break;
+                            }
+                        }
+                        if (!unitFound && unitVal) {
+                            editUnitSelect.value = "Other";
+                            if (editCustomCont) editCustomCont.style.display = "block";
+                            if (editCustomInp) editCustomInp.value = unitVal;
+                        } else {
+                            if (editCustomCont) editCustomCont.style.display = "none";
+                            if (editCustomInp) editCustomInp.value = "";
+                        }
+                    }
+
+                    const catVal = this.getAttribute("data-category") || "General";
+                    const editCatSelect = document.getElementById("editCategorySelect");
+                    if (editCatSelect) {
+                        let found = false;
+                        for (let i = 0; i < editCatSelect.options.length; i++) {
+                            if (editCatSelect.options[i].value.toLowerCase() === catVal.toLowerCase()) {
+                                editCatSelect.selectedIndex = i;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found && catVal) {
+                            const opt = document.createElement("option");
+                            opt.value = catVal;
+                            opt.text = catVal;
+                            opt.selected = true;
+                            editCatSelect.appendChild(opt);
+                        }
+                    }
+
+                    document.getElementById("editPrice").value = this.getAttribute("data-price") || "0.00";
+                    document.getElementById("editCostPrice").value = this.getAttribute("data-cost-price") || "0.00";
+                    document.getElementById("editStock").value = this.getAttribute("data-stock") || "0";
+                    document.getElementById("editTax").value = this.getAttribute("data-tax") || "0.00";
+                    openModalSafe(document.getElementById("editProductModal"));
+                });
+            }
+
+            const delBtn = row.querySelector(".del-prod-btn");
+            if (delBtn) {
+                delBtn.addEventListener("click", function(e) {
+                    e.preventDefault();
+                    const id = this.getAttribute("data-id");
+                    const name = this.getAttribute("data-name");
+                    const delForm = document.getElementById("deleteProductForm");
+                    delForm.action = `/products/${id}/delete/`;
+                    delForm.setAttribute("data-target-id", id);
+                    document.getElementById("deleteProductName").innerText = name;
+                    openModalSafe(document.getElementById("deleteProductModal"));
+                });
+            }
+        }
+
+        // Construct product row element dynamically
+        function createProductRow(p) {
+            const tr = document.createElement("tr");
+            tr.id = `product-row-${p.id}`;
+            tr.className = "product-item-row table-success";
+            tr.setAttribute("data-id", p.id);
+            tr.style.transition = "background-color 1.5s ease";
+
+            const stockNum = parseFloat(p.stock_quantity) || 0;
+            const stockBadge = stockNum <= 5
+                ? `<span class="badge bg-danger-subtle text-danger px-2 py-1 prod-stock-badge">${p.stock_quantity} ${p.unit}</span>`
+                : `<span class="badge bg-success-subtle text-success px-2 py-1 prod-stock-badge">${p.stock_quantity} ${p.unit}</span>`;
+
+            const englishHtml = (p.name && p.name_tamil)
+                ? `<div class="text-muted small prod-english-name">English: ${p.name}</div>`
+                : `<div class="text-muted small prod-english-name" style="display:none;"></div>`;
+
+            tr.innerHTML = `
+                <td class="prod-col-title">
+                    <div class="fw-bold text-dark fs-6 prod-display-name">${p.name_tamil || p.name}</div>
+                    ${englishHtml}
+                </td>
+                <td class="prod-col-sku">
+                    <code class="text-secondary prod-sku-text">${p.sku}</code>
+                </td>
+                <td class="prod-col-unit">
+                    <span class="badge bg-light text-dark border px-2 py-1 prod-unit-badge">${p.unit}</span>
+                </td>
+                <td class="text-end fw-bold text-primary fs-6 prod-col-price">
+                    ₹${parseFloat(p.price).toFixed(2)}
+                </td>
+                <td class="text-end text-muted small prod-col-cost">
+                    ₹${parseFloat(p.cost_price).toFixed(2)}
+                </td>
+                <td class="text-center prod-col-stock">
+                    ${stockBadge}
+                </td>
+                <td class="text-end prod-col-actions">
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-primary edit-prod-btn"
+                            data-id="${p.id}"
+                            data-name-tamil="${p.name_tamil || ''}"
+                            data-name="${p.name || ''}"
+                            data-category="${p.category || 'General'}"
+                            data-unit="${p.unit || 'KG'}"
+                            data-price="${p.price}"
+                            data-cost-price="${p.cost_price}"
+                            data-stock="${p.stock_quantity}"
+                            data-tax="${p.tax_percent}"
+                            title="Edit / Update Product">
+                            <i class="fa-solid fa-pen-to-square"></i> Edit
+                        </button>
+                        <button type="button" class="btn btn-outline-danger del-prod-btn"
+                            data-id="${p.id}"
+                            data-name="${p.display_name}"
+                            title="Remove Product">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            `;
+
+            bindRowActions(tr);
+
+            // Remove success highlight after 2 seconds
+            setTimeout(() => {
+                tr.classList.remove("table-success");
+            }, 2500);
+
+            return tr;
+        }
+
         // Add Product button listener
         const addBtn = document.getElementById("openAddProdBtn");
         const addModalEl = document.getElementById("addProductModal");
@@ -417,94 +595,228 @@
             });
         }
 
-        // Add Product form validation (requires either Tamil or English name)
+        // Bind existing rows on initial page load
+        document.querySelectorAll(".product-item-row").forEach(row => bindRowActions(row));
+
+        // Add Product form AJAX submission (instant table insertion with zero page refresh)
         const addProdForm = document.getElementById("addProductForm");
         if (addProdForm) {
             addProdForm.addEventListener("submit", function(e) {
+                e.preventDefault();
                 const tName = (document.getElementById("addNameTamil")?.value || "").trim();
                 const eName = (document.getElementById("addNameEnglish")?.value || "").trim();
                 if (!tName && !eName) {
-                    e.preventDefault();
                     alert("Please enter at least a Tamil or English product name (தமிழ் அல்லது ஆங்கிலப் பெயர் உள்ளிடவும்).");
                     document.getElementById("addNameTamil")?.focus();
                     return false;
                 }
+
+                const submitBtn = addProdForm.querySelector('button[type="submit"]');
+                const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Saving...';
+                }
+
+                const formData = new FormData(addProdForm);
+                fetch(addProdForm.action, {
+                    method: "POST",
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === "success" && data.product) {
+                        closeModalSafe(addModalEl);
+                        addProdForm.reset();
+
+                        // Remove empty row placeholder if present
+                        const noRow = document.getElementById("noProductsRow");
+                        if (noRow) noRow.remove();
+
+                        // Prepend newly created product row to top of table
+                        const tbody = document.getElementById("productsTableBody");
+                        if (tbody) {
+                            const newRow = createProductRow(data.product);
+                            tbody.insertBefore(newRow, tbody.firstChild);
+                            newRow.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                        }
+
+                        showProductToast(data.message || `Product '${data.product.display_name}' added successfully!`, "success");
+                    } else {
+                        alert(data.message || "Failed to add product. Please check input values.");
+                    }
+                })
+                .catch(err => {
+                    console.error("Product add error:", err);
+                    // Fallback to traditional form submission if network fetch fails
+                    addProdForm.submit();
+                })
+                .finally(() => {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = origBtnText;
+                    }
+                });
             });
         }
 
-        // Bind Edit buttons
+        // Edit Product form AJAX submission (instant in-place row update)
+        const editProdForm = document.getElementById("editProductForm");
         const editModalEl = document.getElementById("editProductModal");
-        document.querySelectorAll(".edit-prod-btn").forEach(btn => {
-            btn.addEventListener("click", function(e) {
+        if (editProdForm) {
+            editProdForm.addEventListener("submit", function(e) {
                 e.preventDefault();
-                const id = this.getAttribute("data-id");
-                document.getElementById("editProductForm").action = `/products/${id}/edit/`;
-                document.getElementById("editNameTamil").value = this.getAttribute("data-name-tamil") || "";
-                document.getElementById("editName").value = this.getAttribute("data-name") || "";
-                
-                const unitVal = this.getAttribute("data-unit") || "KG";
-                const editUnitSelect = document.getElementById("editUnit");
-                const editCustomCont = document.getElementById("editCustomUnitContainer");
-                const editCustomInp = document.getElementById("editCustomUnitInput");
-                let unitFound = false;
-                if (editUnitSelect) {
-                    for (let i = 0; i < editUnitSelect.options.length; i++) {
-                        if (editUnitSelect.options[i].value.toLowerCase() === unitVal.toLowerCase()) {
-                            editUnitSelect.selectedIndex = i;
-                            unitFound = true;
-                            break;
+                const submitBtn = editProdForm.querySelector('button[type="submit"]');
+                const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Updating...';
+                }
+
+                const formData = new FormData(editProdForm);
+                fetch(editProdForm.action, {
+                    method: "POST",
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === "success" && data.product) {
+                        closeModalSafe(editModalEl);
+                        const p = data.product;
+                        const row = document.getElementById(`product-row-${p.id}`);
+                        if (row) {
+                            // Update cell values immediately
+                            const dispNameEl = row.querySelector(".prod-display-name");
+                            if (dispNameEl) dispNameEl.innerText = p.name_tamil || p.name;
+
+                            const engNameEl = row.querySelector(".prod-english-name");
+                            if (engNameEl) {
+                                if (p.name && p.name_tamil) {
+                                    engNameEl.innerText = `English: ${p.name}`;
+                                    engNameEl.style.display = "";
+                                } else {
+                                    engNameEl.innerText = "";
+                                    engNameEl.style.display = "none";
+                                }
+                            }
+
+                            const unitBadge = row.querySelector(".prod-unit-badge");
+                            if (unitBadge) unitBadge.innerText = p.unit;
+
+                            const priceCol = row.querySelector(".prod-col-price");
+                            if (priceCol) priceCol.innerText = `₹${parseFloat(p.price).toFixed(2)}`;
+
+                            const costCol = row.querySelector(".prod-col-cost");
+                            if (costCol) costCol.innerText = `₹${parseFloat(p.cost_price).toFixed(2)}`;
+
+                            const stockCol = row.querySelector(".prod-col-stock");
+                            if (stockCol) {
+                                const stockNum = parseFloat(p.stock_quantity) || 0;
+                                stockCol.innerHTML = stockNum <= 5
+                                    ? `<span class="badge bg-danger-subtle text-danger px-2 py-1 prod-stock-badge">${p.stock_quantity} ${p.unit}</span>`
+                                    : `<span class="badge bg-success-subtle text-success px-2 py-1 prod-stock-badge">${p.stock_quantity} ${p.unit}</span>`;
+                            }
+
+                            // Update edit button data attributes
+                            const editBtn = row.querySelector(".edit-prod-btn");
+                            if (editBtn) {
+                                editBtn.setAttribute("data-name-tamil", p.name_tamil || "");
+                                editBtn.setAttribute("data-name", p.name || "");
+                                editBtn.setAttribute("data-category", p.category || "General");
+                                editBtn.setAttribute("data-unit", p.unit || "KG");
+                                editBtn.setAttribute("data-price", p.price);
+                                editBtn.setAttribute("data-cost-price", p.cost_price);
+                                editBtn.setAttribute("data-stock", p.stock_quantity);
+                                editBtn.setAttribute("data-tax", p.tax_percent);
+                            }
+
+                            // Briefly highlight updated row
+                            row.classList.add("table-info");
+                            setTimeout(() => row.classList.remove("table-info"), 2000);
                         }
-                    }
-                    if (!unitFound && unitVal) {
-                        editUnitSelect.value = "Other";
-                        if (editCustomCont) editCustomCont.style.display = "block";
-                        if (editCustomInp) editCustomInp.value = unitVal;
+
+                        showProductToast(data.message || `Product '${p.display_name}' updated successfully!`, "success");
                     } else {
-                        if (editCustomCont) editCustomCont.style.display = "none";
-                        if (editCustomInp) editCustomInp.value = "";
+                        alert(data.message || "Failed to update product.");
                     }
-                }
-                
-                const catVal = this.getAttribute("data-category") || "General";
-                const editCatSelect = document.getElementById("editCategorySelect");
-                if (editCatSelect) {
-                    let found = false;
-                    for (let i = 0; i < editCatSelect.options.length; i++) {
-                        if (editCatSelect.options[i].value.toLowerCase() === catVal.toLowerCase()) {
-                            editCatSelect.selectedIndex = i;
-                            found = true;
-                            break;
-                        }
+                })
+                .catch(err => {
+                    console.error("Product edit error:", err);
+                    editProdForm.submit();
+                })
+                .finally(() => {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = origBtnText;
                     }
-                    if (!found && catVal) {
-                        const opt = document.createElement("option");
-                        opt.value = catVal;
-                        opt.text = catVal;
-                        opt.selected = true;
-                        editCatSelect.appendChild(opt);
-                    }
-                }
-
-                document.getElementById("editPrice").value = this.getAttribute("data-price") || "0.00";
-                document.getElementById("editCostPrice").value = this.getAttribute("data-cost-price") || "0.00";
-                document.getElementById("editStock").value = this.getAttribute("data-stock") || "0";
-                document.getElementById("editTax").value = this.getAttribute("data-tax") || "0.00";
-                openModalSafe(editModalEl);
+                });
             });
-        });
+        }
 
-        // Bind Delete buttons
+        // Delete Product form AJAX submission (instant row removal)
+        const deleteProdForm = document.getElementById("deleteProductForm");
         const deleteModalEl = document.getElementById("deleteProductModal");
-        document.querySelectorAll(".del-prod-btn").forEach(btn => {
-            btn.addEventListener("click", function(e) {
+        if (deleteProdForm) {
+            deleteProdForm.addEventListener("submit", function(e) {
                 e.preventDefault();
-                const id = this.getAttribute("data-id");
-                const name = this.getAttribute("data-name");
-                document.getElementById("deleteProductForm").action = `/products/${id}/delete/`;
-                document.getElementById("deleteProductName").innerText = name;
-                openModalSafe(deleteModalEl);
+                const submitBtn = deleteProdForm.querySelector('button[type="submit"]');
+                const origBtnText = submitBtn ? submitBtn.innerHTML : "";
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Removing...';
+                }
+
+                const formData = new FormData(deleteProdForm);
+                fetch(deleteProdForm.action, {
+                    method: "POST",
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    closeModalSafe(deleteModalEl);
+                    const prodId = data.product_id || deleteProdForm.getAttribute("data-target-id");
+                    const row = document.getElementById(`product-row-${prodId}`);
+                    if (row) {
+                        row.style.transition = "opacity 0.4s ease, transform 0.4s ease";
+                        row.style.opacity = "0";
+                        row.style.transform = "translateX(20px)";
+                        setTimeout(() => {
+                            row.remove();
+                            // Check if table is now empty
+                            const remaining = document.querySelectorAll(".product-item-row");
+                            if (remaining.length === 0) {
+                                const tbody = document.getElementById("productsTableBody");
+                                if (tbody) {
+                                    tbody.innerHTML = `
+                                        <tr id="noProductsRow">
+                                            <td colspan="7" class="text-center py-5 text-muted">
+                                                <i class="fa-solid fa-box-open fa-3x mb-2 d-block text-secondary"></i>
+                                                No products found. Click "Add Product" to add your first item!
+                                            </td>
+                                        </tr>
+                                    `;
+                                }
+                            }
+                        }, 400);
+                    }
+
+                    showProductToast(data.message || "Product moved to Recycle Bin.", "warning");
+                })
+                .catch(err => {
+                    console.error("Product delete error:", err);
+                    deleteProdForm.submit();
+                })
+                .finally(() => {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = origBtnText;
+                    }
+                });
             });
-        });
+        }
 
         // Bind all Dismiss buttons
         document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {

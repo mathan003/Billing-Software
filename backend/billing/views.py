@@ -13,6 +13,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.http import HttpResponse, JsonResponse, HttpResponseForbidden
+from django.views.decorators.cache import never_cache
 from .models import (
     Product, ProductCategory, Customer, Invoice, InvoiceItem, Purchase,
     PaymentRecord, ActiveUserSession, RegisteredDevice, UserProfile, ActivityLog,
@@ -150,8 +151,12 @@ def get_available_categories(request):
 def trigger_desktop_sync_safe():
     """Triggers background desktop sync to immediately reflect changes on web cloud database"""
     try:
-        from sync_manager import trigger_desktop_sync
-        trigger_desktop_sync()
+        try:
+            from sync_manager import trigger_desktop_sync
+            trigger_desktop_sync()
+        except ImportError:
+            from windows_app.sync_manager import trigger_desktop_sync
+            trigger_desktop_sync()
     except Exception:
         pass
 
@@ -756,6 +761,7 @@ def parse_decimal(val, default="0.00"):
 # DEDICATED BILLING TERMINAL & QUICK BILLING
 # ==========================================
 
+@never_cache
 def billing_page(request):
     """
     Dedicated Billing Page Terminal:
@@ -1644,6 +1650,7 @@ def invoice_apply_discount(request, invoice_id):
 # PRODUCTS (Add, Edit, Update, Remove)
 # ==========================================
 
+@never_cache
 def product_list(request):
     """
     Products page:
@@ -1839,8 +1846,14 @@ def category_delete(request):
     return redirect("billing:product_list")
 
 
+@never_cache
 def product_add(request):
     """Add a new product with Tamil & English names and Unit choices"""
+    is_ajax = (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("accept", "")
+        or request.content_type == "application/json"
+    )
     if request.method == "POST":
         name_tamil = request.POST.get("name_tamil", "").strip()
         name = request.POST.get("name", "").strip()
@@ -1859,6 +1872,11 @@ def product_add(request):
         stock = parse_decimal(request.POST.get("stock_quantity"), "0.00")
 
         if not name_tamil and not name:
+            if is_ajax:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Please enter at least a Tamil or English product name (தமிழ் அல்லது ஆங்கிலப் பெயர் உள்ளிடவும்)."
+                }, status=400)
             messages.error(request, "Please enter at least a Tamil or English product name.")
             return redirect("billing:product_list")
 
@@ -1870,6 +1888,11 @@ def product_add(request):
 
         # Check if an active product already exists with this SKU
         if Product.objects.filter(c_filter, sku=sku, is_deleted=False).exists():
+            if is_ajax:
+                return JsonResponse({
+                    "status": "error",
+                    "message": f"An active product with SKU '{sku}' already exists."
+                }, status=400)
             messages.error(request, f"An active product with SKU '{sku}' already exists.")
             return redirect("billing:product_list")
 
@@ -1919,13 +1942,39 @@ def product_add(request):
             f"Added product '{prod.display_name}' (SKU: {prod.sku}, Unit: {prod.unit}, Price: ₹{prod.price}, Stock: {prod.stock_quantity})"
         )
         trigger_desktop_sync_safe()
+
+        if is_ajax:
+            return JsonResponse({
+                "status": "success",
+                "message": f"Product '{name_tamil or name}' added successfully!",
+                "product": {
+                    "id": prod.id,
+                    "name_tamil": prod.name_tamil or "",
+                    "name": prod.name or "",
+                    "display_name": prod.display_name,
+                    "sku": prod.sku,
+                    "category": prod.category,
+                    "unit": prod.unit,
+                    "price": f"{prod.price:.2f}",
+                    "cost_price": f"{prod.cost_price:.2f}",
+                    "tax_percent": f"{prod.tax_percent:.2f}",
+                    "stock_quantity": f"{prod.stock_quantity:.2f}" if prod.stock_quantity % 1 else str(int(prod.stock_quantity)),
+                }
+            })
+
         messages.success(request, f"Product '{name_tamil or name}' added successfully!")
 
     return redirect("billing:product_list")
 
 
+@never_cache
 def product_edit(request, product_id):
     """Edit / Update product details (Price, Stock, Unit, Names) anytime"""
+    is_ajax = (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("accept", "")
+        or request.content_type == "application/json"
+    )
     c_filter = get_client_filter(request)
     product = Product.objects.filter(c_filter, pk=product_id, is_deleted=False).first()
     if not product and is_admin_user(request.user):
@@ -1934,6 +1983,8 @@ def product_edit(request, product_id):
         product = Product.objects.filter(Q(client=request.user) | Q(client__isnull=True), pk=product_id, is_deleted=False).first()
 
     if not product:
+        if is_ajax:
+            return JsonResponse({"status": "error", "message": "Product not found or has already been removed."}, status=404)
         messages.error(request, "Product not found or has already been removed.")
         return redirect("billing:product_list")
 
@@ -1972,15 +2023,40 @@ def product_edit(request, product_id):
         )
         trigger_desktop_sync_safe()
 
+        if is_ajax:
+            return JsonResponse({
+                "status": "success",
+                "message": f"Product '{product.display_name}' updated successfully!",
+                "product": {
+                    "id": product.id,
+                    "name_tamil": product.name_tamil or "",
+                    "name": product.name or "",
+                    "display_name": product.display_name,
+                    "sku": product.sku,
+                    "category": product.category,
+                    "unit": product.unit,
+                    "price": f"{product.price:.2f}",
+                    "cost_price": f"{product.cost_price:.2f}",
+                    "tax_percent": f"{product.tax_percent:.2f}",
+                    "stock_quantity": f"{product.stock_quantity:.2f}" if product.stock_quantity % 1 else str(int(product.stock_quantity)),
+                }
+            })
+
         messages.success(request, f"Product '{product.display_name}' updated successfully!")
 
     return redirect("billing:product_list")
 
 
+@never_cache
 def product_delete(request, product_id):
     """Moves product to Recycle Bin (3-day recovery window) and records tombstone without 404 crashes"""
     if not request.user.is_authenticated:
         return redirect("billing:login")
+    is_ajax = (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("accept", "")
+        or request.content_type == "application/json"
+    )
     if request.method == "POST":
         c_filter = get_client_filter(request)
         client_u = get_client_user(request)
@@ -1993,6 +2069,8 @@ def product_delete(request, product_id):
             product = Product.objects.filter(Q(client=request.user) | Q(client__isnull=True), pk=product_id).first()
 
         if not product:
+            if is_ajax:
+                return JsonResponse({"status": "info", "message": "Product has already been removed or does not exist.", "product_id": product_id})
             messages.info(request, "Product has already been removed or does not exist.")
             return redirect("billing:product_list")
 
@@ -2004,6 +2082,8 @@ def product_delete(request, product_id):
                 client=product.client or client_u,
                 defaults={"name": product.display_name, "deleted_at": timezone.now()}
             )
+            if is_ajax:
+                return JsonResponse({"status": "info", "message": f"Product '{product.display_name}' is already in the Recycle Bin.", "product_id": product_id})
             messages.info(request, f"Product '{product.display_name}' is already in the Recycle Bin.")
             return redirect("billing:product_list")
 
@@ -2040,6 +2120,15 @@ def product_delete(request, product_id):
             f"User '{request.user.username}' moved product '{prod_name}' (SKU: {sku}) to Recycle Bin (3-day recovery)."
         )
         trigger_desktop_sync_safe()
+
+        if is_ajax:
+            return JsonResponse({
+                "status": "success",
+                "message": f"Product '{prod_name}' moved to Recycle Bin.",
+                "product_id": product_id,
+                "sku": sku
+            })
+
         messages.success(request, f"Product '{prod_name}' moved to Recycle Bin (Deleted Items). Recoverable for 3 days.")
 
     return redirect("billing:product_list")

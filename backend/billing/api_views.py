@@ -192,7 +192,7 @@ class ClientAuthVerifyView(views.APIView):
 class ProductViewSet(viewsets.ModelViewSet):
     authentication_classes = []
     permission_classes = []
-    queryset = Product.objects.filter(is_active=True)
+    queryset = Product.objects.filter(is_active=True, is_deleted=False)
     serializer_class = ProductSerializer
 
     def get_queryset(self):

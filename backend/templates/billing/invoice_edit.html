@@ -171,9 +171,14 @@
                         <span class="fw-bold" id="dispDiscount">- ₹{{ invoice.discount_amount|floatformat:2 }}</span>
                     </div>
                     <hr class="my-2">
-                    <div class="d-flex justify-content-between fs-5 fw-bold text-primary mb-2">
-                        <span>Grand Total:</span>
-                        <span id="dispGrandTotal">₹{{ invoice.grand_total|floatformat:2 }}</span>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold text-dark mb-1">Grand Total (₹):</label>
+                        <div class="input-group">
+                            <button type="button" class="btn btn-outline-secondary" id="editDecTotalBtn"><i class="fa-solid fa-minus"></i></button>
+                            <input type="number" step="0.01" min="0" name="grand_total" class="form-control text-primary fw-bold text-center fs-5" id="editGrandTotalInput" value="{{ invoice.grand_total|floatformat:2 }}">
+                            <button type="button" class="btn btn-outline-secondary" id="editIncTotalBtn"><i class="fa-solid fa-plus"></i></button>
+                        </div>
+                        <div class="small text-muted mt-1" style="font-size: 0.72rem;">Manual adjustment / Round-off</div>
                     </div>
                     <div class="d-flex justify-content-between text-success fw-semibold small mb-1">
                         <span>Amount Already Paid:</span>
@@ -280,8 +285,18 @@
             totalTax += rowTax;
         });
 
-        const grandTotal = Math.max(0, subtotal + totalTax - discountAmount);
-        const balance = Math.max(0, grandTotal - paidAmount);
+        const computedGrandTotal = Math.max(0, subtotal + totalTax - discountAmount);
+        const editGrandTotalInput = document.getElementById('editGrandTotalInput');
+        let effectiveGrandTotal = computedGrandTotal;
+        if (editGrandTotalInput) {
+            const entered = parseFloat(editGrandTotalInput.value);
+            if (!isNaN(entered) && entered >= 0) {
+                effectiveGrandTotal = entered;
+            } else {
+                editGrandTotalInput.value = computedGrandTotal.toFixed(2);
+            }
+        }
+        const balance = Math.max(0, effectiveGrandTotal - paidAmount);
 
         document.getElementById('dispSubtotal').textContent = '₹' + subtotal.toFixed(2);
         const dispTaxRow = document.getElementById('dispTaxRow');
@@ -294,8 +309,29 @@
                 dispTaxRow.style.setProperty("display", "none", "important");
             }
         }
-        document.getElementById('dispGrandTotal').textContent = '₹' + grandTotal.toFixed(2);
         document.getElementById('dispBalance').textContent = '₹' + balance.toFixed(2);
+    }
+
+    const editGrandTotalInput = document.getElementById('editGrandTotalInput');
+    const editIncTotalBtn = document.getElementById('editIncTotalBtn');
+    const editDecTotalBtn = document.getElementById('editDecTotalBtn');
+
+    if (editGrandTotalInput) {
+        editGrandTotalInput.addEventListener('input', recalculate);
+    }
+    if (editIncTotalBtn) {
+        editIncTotalBtn.addEventListener('click', function() {
+            let cur = parseFloat(editGrandTotalInput.value || 0);
+            editGrandTotalInput.value = (cur + 1).toFixed(2);
+            recalculate();
+        });
+    }
+    if (editDecTotalBtn) {
+        editDecTotalBtn.addEventListener('click', function() {
+            let cur = parseFloat(editGrandTotalInput.value || 0);
+            editGrandTotalInput.value = Math.max(0, cur - 1).toFixed(2);
+            recalculate();
+        });
     }
 
     function attachRowEvents(row) {

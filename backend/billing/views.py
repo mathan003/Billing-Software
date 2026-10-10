@@ -946,7 +946,14 @@ def billing_page(request):
         if discount_amount > max_discount:
             discount_amount = max_discount
 
-        grand_total = max(Decimal("0.00"), subtotal + total_tax - discount_amount)
+        computed_grand_total = max(Decimal("0.00"), subtotal + total_tax - discount_amount)
+        # Allow manual editing of Grand Total (increase / decrease / round off)
+        manual_grand_total_str = request.POST.get("grand_total", "").strip()
+        if manual_grand_total_str != "":
+            grand_total = max(Decimal("0.00"), parse_decimal(manual_grand_total_str, str(computed_grand_total)))
+        else:
+            grand_total = computed_grand_total
+
         paid_amount = parse_decimal(paid_amount_str, str(grand_total))
 
         # Create Invoice
@@ -1558,6 +1565,12 @@ def invoice_edit(request, invoice_id):
         max_discount = subtotal + total_tax
         if invoice.discount_amount > max_discount:
             invoice.discount_amount = max_discount
+
+        manual_grand = request.POST.get("grand_total", "").strip()
+        if manual_grand != "":
+            invoice.grand_total = max(Decimal("0.00"), parse_decimal(manual_grand, str(old_total)))
+        else:
+            invoice.grand_total = max(Decimal("0.00"), subtotal + total_tax - invoice.discount_amount)
 
         invoice.notes = (invoice.notes or "").replace("[CLOUD_SYNCED]", "").strip()
         invoice.save()  # Auto updates grand_total, balance_amount, and payment_status

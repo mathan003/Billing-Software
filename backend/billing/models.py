@@ -222,9 +222,12 @@ class Invoice(models.Model):
         self.discount_amount = Decimal(str(self.discount_amount or "0.00"))
         self.paid_amount = Decimal(str(self.paid_amount or "0.00"))
 
-        # Automatically calculate grand total taking discount into account
+        # Automatically calculate grand total taking discount into account if not manually overridden
         expected_grand = max(Decimal("0.00"), self.subtotal + self.tax_amount - self.discount_amount)
-        if self.subtotal > Decimal("0.00") or self.discount_amount > Decimal("0.00"):
+        if self.grand_total is not None and self.grand_total > Decimal("0.00"):
+            # If manually specified (or pre-set), retain the custom grand total
+            pass
+        elif self.subtotal > Decimal("0.00") or self.discount_amount > Decimal("0.00"):
             self.grand_total = expected_grand
         elif self.grand_total is None:
             self.grand_total = Decimal("0.00")
@@ -237,6 +240,13 @@ class Invoice(models.Model):
         else:
             self.payment_status = "Pending"
         super().save(*args, **kwargs)
+
+    @property
+    def return_amount(self):
+        """Amount to return to customer when paid amount exceeds grand total"""
+        if self.paid_amount and self.grand_total and self.paid_amount > self.grand_total:
+            return self.paid_amount - self.grand_total
+        return Decimal("0.00")
 
     def __str__(self):
         return f"{self.invoice_number} - {self.customer_name} - ₹{self.grand_total} (Bal: ₹{self.balance_amount})"

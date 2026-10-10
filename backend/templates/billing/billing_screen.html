@@ -222,10 +222,28 @@
                             </div>
                         </div>
 
-                        <div class="row g-2 mb-3">
+                        <div class="row g-2 mb-2">
                             <div class="col-12">
-                                <label class="form-label small fw-semibold">Customer Paid Amount (₹)</label>
-                                <input type="number" step="0.01" min="0" name="paid_amount" class="form-control text-success fw-bold fs-6" id="paidAmountInput" value="">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label small fw-semibold mb-0">Customer Paid Amount (பெற்ற தொகை) (₹)</label>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary py-0 px-2" id="exactPaidBtn" title="Customer paid exact grand total">Exact</button>
+                                        <button type="button" class="btn btn-outline-secondary py-0 px-2" id="quickPaid100" data-val="100">₹100</button>
+                                        <button type="button" class="btn btn-outline-secondary py-0 px-2" id="quickPaid500" data-val="500">₹500</button>
+                                    </div>
+                                </div>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-muted">₹</span>
+                                    <input type="number" step="0.01" min="0" name="paid_amount" class="form-control text-success fw-bold fs-6" id="paidAmountInput" value="">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Left-side Return Amount Alert Pill -->
+                        <div class="p-2 px-3 rounded-3 mb-3 border bg-success-subtle border-success-subtle" id="leftReturnBox" style="display: none !important;">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="small fw-bold text-success"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Return to Customer (மீதி கொடுக்க வேண்டியது):</span>
+                                <span class="fs-5 fw-bold text-success" id="leftReturnAmount">₹0.00</span>
                             </div>
                         </div>
 
@@ -251,16 +269,40 @@
                                 <span id="summaryDiscount">- ₹0.00</span>
                             </div>
                             <hr class="my-2">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <span class="fw-bold fs-5 text-dark">Grand Total:</span>
-                                <span class="fw-bold fs-4 text-primary" id="summaryGrandTotal">₹0.00</span>
+                            <div class="mb-2">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="fw-bold fs-5 text-dark mb-0" for="grandTotalInput">
+                                        Grand Total (மொத்தத் தொகை):
+                                    </label>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 small" id="resetGrandTotalBtn" title="Reset to auto-calculated total" style="display: none; font-size: 0.72rem;">
+                                        <i class="fa-solid fa-rotate-left me-1"></i>Auto
+                                    </button>
+                                </div>
+                                <div class="input-group input-group-lg">
+                                    <span class="input-group-text bg-primary text-white fw-bold">₹</span>
+                                    <button type="button" class="btn btn-outline-secondary px-3" id="decGrandTotalBtn" title="Decrease Total (₹1 குறைக்கவும்)">
+                                        <i class="fa-solid fa-minus"></i>
+                                    </button>
+                                    <input type="number" step="0.01" min="0" name="grand_total" class="form-control text-primary fw-bold fs-4 text-center" id="grandTotalInput" value="0.00" title="Manually edit or adjust grand total anytime">
+                                    <button type="button" class="btn btn-outline-secondary px-3" id="incGrandTotalBtn" title="Increase Total (₹1 கூட்டவும்)">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                    <span class="small text-muted" style="font-size: 0.72rem;"><i class="fa-solid fa-pen text-primary me-1"></i>Manual Edit (தொகையை மாற்றலாம்)</span>
+                                    <span class="small text-muted" id="calcTotalHint" style="font-size: 0.72rem;">Computed: ₹0.00</span>
+                                </div>
                             </div>
                             <div class="d-flex justify-content-between small text-success fw-bold mb-1">
-                                <span>Customer Paid:</span>
+                                <span>Customer Paid (பெற்றது):</span>
                                 <span id="summaryPaid">₹0.00</span>
                             </div>
+                            <div class="d-flex justify-content-between small fw-bold mb-1" id="summaryReturnRow" style="display: none !important;">
+                                <span class="text-success"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Return Amount (மீதி தர வேண்டியது):</span>
+                                <span id="summaryReturn" class="text-success fs-6">₹0.00</span>
+                            </div>
                             <div class="d-flex justify-content-between small fw-bold" id="summaryBalanceRow">
-                                <span>Remaining Balance Due:</span>
+                                <span>Remaining Balance Due (நிலுவை):</span>
                                 <span id="summaryBalance" class="text-danger">₹0.00</span>
                             </div>
                         </div>
@@ -852,12 +894,26 @@
         }
     }
 
-    // Recalculate Grand Totals
+    // Recalculate Grand Totals & Manage Manual Override
     const discountInput = document.getElementById("discountAmountInput");
     const discountRow = document.getElementById("summaryDiscountRow");
     const discountEl = document.getElementById("summaryDiscount");
+    const grandTotalInput = document.getElementById("grandTotalInput");
+    const calcTotalHint = document.getElementById("calcTotalHint");
+    const resetGrandTotalBtn = document.getElementById("resetGrandTotalBtn");
+    const incGrandTotalBtn = document.getElementById("incGrandTotalBtn");
+    const decGrandTotalBtn = document.getElementById("decGrandTotalBtn");
+    const summaryReturnRow = document.getElementById("summaryReturnRow");
+    const summaryReturn = document.getElementById("summaryReturn");
+    const leftReturnBox = document.getElementById("leftReturnBox");
+    const leftReturnAmount = document.getElementById("leftReturnAmount");
+    const exactPaidBtn = document.getElementById("exactPaidBtn");
+    const quickPaid100 = document.getElementById("quickPaid100");
+    const quickPaid500 = document.getElementById("quickPaid500");
 
-    function recalculateGrandTotals() {
+    let isGrandTotalManuallyModified = false;
+
+    function recalculateGrandTotals(source = "items") {
         let subtotal = 0;
         let totalTax = 0;
 
@@ -880,7 +936,7 @@
             discountRow.style.setProperty("display", "none", "important");
         }
 
-        const grandTotal = Math.max(0, subtotal + totalTax - discount);
+        const computedGrandTotal = Math.max(0, subtotal + totalTax - discount);
 
         document.getElementById("summarySubtotal").innerText = "₹" + subtotal.toFixed(2);
         
@@ -894,34 +950,145 @@
             }
         }
 
-        document.getElementById("summaryGrandTotal").innerText = "₹" + grandTotal.toFixed(2);
+        if (calcTotalHint) {
+            calcTotalHint.innerText = `Computed: ₹${computedGrandTotal.toFixed(2)}`;
+        }
 
-        // Update paid & balance
+        // Determine effective Grand Total (manual override vs auto computed)
+        let effectiveGrandTotal = computedGrandTotal;
+        if (isGrandTotalManuallyModified && grandTotalInput) {
+            const entered = parseFloat(grandTotalInput.value);
+            if (!isNaN(entered) && entered >= 0) {
+                effectiveGrandTotal = entered;
+            } else {
+                effectiveGrandTotal = computedGrandTotal;
+            }
+        } else if (grandTotalInput) {
+            grandTotalInput.value = computedGrandTotal.toFixed(2);
+        }
+
+        // Show/hide auto reset button
+        if (resetGrandTotalBtn) {
+            if (isGrandTotalManuallyModified) {
+                resetGrandTotalBtn.style.display = "inline-block";
+            } else {
+                resetGrandTotalBtn.style.display = "none";
+            }
+        }
+
+        // Update paid & balance / return amount
         if (!isPaidCustom) {
-            paidInput.value = grandTotal.toFixed(2);
+            paidInput.value = effectiveGrandTotal.toFixed(2);
         }
 
         const paid = parseFloat(paidInput.value || 0);
-        const balance = Math.max(0, grandTotal - paid);
+        const diff = paid - effectiveGrandTotal;
+
+        if (diff > 0) {
+            // Customer paid MORE than grand total -> Return change to customer!
+            const returnAmt = diff;
+            if (summaryReturnRow) summaryReturnRow.style.setProperty("display", "flex", "important");
+            if (summaryReturn) summaryReturn.innerText = "₹" + returnAmt.toFixed(2);
+            if (leftReturnBox) leftReturnBox.style.setProperty("display", "block", "important");
+            if (leftReturnAmount) leftReturnAmount.innerText = "₹" + returnAmt.toFixed(2);
+
+            const balEl = document.getElementById("summaryBalance");
+            balEl.innerText = "₹0.00";
+            balEl.className = "text-success fw-bold";
+        } else {
+            // Customer paid EXACT or LESS -> Balance due
+            const balanceDue = Math.abs(diff);
+            if (summaryReturnRow) summaryReturnRow.style.setProperty("display", "none", "important");
+            if (leftReturnBox) leftReturnBox.style.setProperty("display", "none", "important");
+
+            const balEl = document.getElementById("summaryBalance");
+            balEl.innerText = "₹" + balanceDue.toFixed(2);
+            if (balanceDue > 0) {
+                balEl.className = "text-danger fw-bold";
+            } else {
+                balEl.className = "text-success fw-bold";
+            }
+        }
 
         document.getElementById("summaryPaid").innerText = "₹" + paid.toFixed(2);
-        const balEl = document.getElementById("summaryBalance");
-        balEl.innerText = "₹" + balance.toFixed(2);
-        if (balance > 0) {
-            balEl.className = "text-danger fw-bold";
-        } else {
-            balEl.className = "text-success fw-bold";
-        }
     }
 
-    paidInput.addEventListener("input", function() {
-        isPaidCustom = true;
-        recalculateGrandTotals();
-    });
+    if (grandTotalInput) {
+        grandTotalInput.addEventListener("input", function() {
+            isGrandTotalManuallyModified = true;
+            if (!isPaidCustom) {
+                paidInput.value = (parseFloat(this.value) || 0).toFixed(2);
+            }
+            recalculateGrandTotals("grandTotalInput");
+        });
+    }
+
+    if (incGrandTotalBtn) {
+        incGrandTotalBtn.addEventListener("click", function() {
+            isGrandTotalManuallyModified = true;
+            let current = parseFloat(grandTotalInput.value || 0);
+            grandTotalInput.value = (current + 1).toFixed(2);
+            if (!isPaidCustom) {
+                paidInput.value = grandTotalInput.value;
+            }
+            recalculateGrandTotals("incGrandTotal");
+        });
+    }
+
+    if (decGrandTotalBtn) {
+        decGrandTotalBtn.addEventListener("click", function() {
+            isGrandTotalManuallyModified = true;
+            let current = parseFloat(grandTotalInput.value || 0);
+            grandTotalInput.value = Math.max(0, current - 1).toFixed(2);
+            if (!isPaidCustom) {
+                paidInput.value = grandTotalInput.value;
+            }
+            recalculateGrandTotals("decGrandTotal");
+        });
+    }
+
+    if (resetGrandTotalBtn) {
+        resetGrandTotalBtn.addEventListener("click", function() {
+            isGrandTotalManuallyModified = false;
+            recalculateGrandTotals("resetGrandTotal");
+        });
+    }
+
+    if (exactPaidBtn) {
+        exactPaidBtn.addEventListener("click", function() {
+            isPaidCustom = false;
+            const eff = parseFloat(grandTotalInput?.value || 0);
+            paidInput.value = eff.toFixed(2);
+            recalculateGrandTotals("exactPaid");
+        });
+    }
+
+    if (quickPaid100) {
+        quickPaid100.addEventListener("click", function() {
+            isPaidCustom = true;
+            paidInput.value = "100.00";
+            recalculateGrandTotals("quick100");
+        });
+    }
+
+    if (quickPaid500) {
+        quickPaid500.addEventListener("click", function() {
+            isPaidCustom = true;
+            paidInput.value = "500.00";
+            recalculateGrandTotals("quick500");
+        });
+    }
+
+    if (paidInput) {
+        paidInput.addEventListener("input", function() {
+            isPaidCustom = true;
+            recalculateGrandTotals("paidInput");
+        });
+    }
 
     if (discountInput) {
         discountInput.addEventListener("input", function() {
-            recalculateGrandTotals();
+            recalculateGrandTotals("discountInput");
         });
     }
 

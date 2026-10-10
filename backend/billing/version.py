@@ -3,15 +3,15 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.8.0"
-APP_TITLE = "Strict Stock Control, Out of Stock Validation & Real-Time Inventory Sync"
+APP_VERSION = "v2.8.1"
+APP_TITLE = "Manual Grand Total Editing, Live Change/Return Amount & Real-Time Sync"
 APP_RELEASE_NOTES = (
-    "• Strict Out-of-Stock Protection: Products with 0 stock display an explicit Out of Stock alert and are strictly barred from being billed\n"
-    "• Insufficient Stock Prevention: Billing quantities exceeding available stock are blocked with precise error messages showing max available units\n"
-    "• Client & Multi-Row Aggregation: Sums quantities across multiple rows for the same product in a single invoice to guarantee no stock overrun\n"
-    "• Automatic Stock Decrement & Restore: Stock levels decrement accurately upon bill creation and are safely restored during order edits\n"
-    "• Instant Multi-Device Inventory Sync: Real-time synchronization updates stock counts across Web and Windows Desktop POS instantly\n"
-    "• 100% Data Preservation: All client records, customer data, historical invoices, and admin settings remain completely untouched"
+    "• Manual Grand Total Editing: Cashiers can freely adjust, increase, or decrease the final bill total with dedicated +/- buttons and manual typing\n"
+    "• Live Change & Return Amount: Automatically calculates and displays the exact change to return when the customer pays more than the grand total\n"
+    "• Quick Payment Shortcuts: Quick currency buttons (Exact, ₹100, ₹500) for rapid transaction processing\n"
+    "• Dashboard & Metrics Integration: Dashboard today's sales, payments collected, and balance due reflect manual totals seamlessly\n"
+    "• Real-Time Stock Updates & Desktop Sync: Automatic stock decrement upon sale and instant multi-device cloud synchronization\n"
+    "• 100% Data Preservation: All client records, customer data, invoices, and reports remain completely safe and untouched"
 )
 
 

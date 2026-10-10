@@ -206,7 +206,51 @@ class Invoice(models.Model):
     class Meta:
         ordering = ["-created_at"]
 
+    @classmethod
+    def generate_invoice_number(cls, prefix="WEB", date_str=None):
+        """
+        Generates a clean, consistent sequential invoice number.
+        Format:
+          Web application: WEB-YYYYMMDD-XXXX (e.g. WEB-20261010-0001)
+          POS system:      POS-YYYYMMDD-XXXX (e.g. POS-20261010-0018)
+        Guarantees:
+          - Strictly standard format with NO unwanted letters, extra characters, or hex suffixes.
+          - Never produces duplicate invoice numbers.
+        """
+        import re
+        clean_prefix = "POS" if str(prefix).upper().startswith("POS") else "WEB"
+        if not date_str:
+            date_str = timezone.localtime().strftime("%Y%m%d")
+
+        pattern_prefix = f"{clean_prefix}-{date_str}-"
+        existing_numbers = cls.objects.filter(
+            invoice_number__startswith=pattern_prefix
+        ).values_list("invoice_number", flat=True)
+
+        max_seq = 0
+        seq_regex = re.compile(rf"^{re.escape(pattern_prefix)}(\d+)")
+        for num in existing_numbers:
+            m = seq_regex.match(num)
+            if m:
+                try:
+                    val = int(m.group(1))
+                    if val > max_seq:
+                        max_seq = val
+                except (ValueError, TypeError):
+                    pass
+
+        next_seq = max_seq + 1
+        new_inv_num = f"{clean_prefix}-{date_str}-{next_seq:04d}"
+        while cls.objects.filter(invoice_number=new_inv_num).exists():
+            next_seq += 1
+            new_inv_num = f"{clean_prefix}-{date_str}-{next_seq:04d}"
+
+        return new_inv_num
+
     def save(self, *args, **kwargs):
+        if not self.invoice_number:
+            prefix = "POS" if self.source == "windows_app" else "WEB"
+            self.invoice_number = self.__class__.generate_invoice_number(prefix=prefix)
         if self.customer_address is None:
             self.customer_address = ""
         if self.customer_phone is None:

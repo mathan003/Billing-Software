@@ -873,12 +873,7 @@ def billing_page(request):
 
         # Generate unique collision-free sequential Invoice Number
         prefix = "POS" if is_desktop_environment(request) else "WEB"
-        date_str = timezone.now().strftime("%Y%m%d")
-        count = Invoice.objects.filter(invoice_number__startswith=f"{prefix}-{date_str}").count() + 1
-        inv_number = f"{prefix}-{date_str}-{count:04d}"
-        while Invoice.objects.filter(invoice_number=inv_number).exists():
-            count += 1
-            inv_number = f"{prefix}-{date_str}-{count:04d}"
+        inv_number = Invoice.generate_invoice_number(prefix=prefix)
 
         # Calculate line items
         line_items = []
@@ -1175,12 +1170,7 @@ def quick_bill_create(request):
 
             # Generate collision-free sequential Invoice Number
             prefix = "POS" if is_desktop_environment(request) else "WEB"
-            date_str = timezone.now().strftime("%Y%m%d")
-            count = Invoice.objects.filter(invoice_number__startswith=f"{prefix}-{date_str}").count() + 1
-            inv_number = f"{prefix}-{date_str}-{count:04d}"
-            while Invoice.objects.filter(invoice_number=inv_number).exists():
-                count += 1
-                inv_number = f"{prefix}-{date_str}-{count:04d}"
+            inv_number = Invoice.generate_invoice_number(prefix=prefix)
 
             # Create Invoice
             invoice = Invoice.objects.create(

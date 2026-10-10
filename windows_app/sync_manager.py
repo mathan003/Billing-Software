@@ -817,7 +817,10 @@ class SyncManager:
 
                         target_inv_num = inv_data.get("invoice_number")
                         if Invoice.objects.filter(invoice_number=target_inv_num).exclude(invoice_uuid=inv_uuid).exists():
-                            target_inv_num = f"{target_inv_num}-{str(inv_uuid)[:6]}"
+                            parts = str(target_inv_num).split("-")
+                            prefix = parts[0] if len(parts) > 0 and parts[0] in ["WEB", "POS"] else "WEB"
+                            date_str = parts[1] if len(parts) > 1 and parts[1].isdigit() else timezone.now().strftime("%Y%m%d")
+                            target_inv_num = Invoice.generate_invoice_number(prefix=prefix, date_str=date_str)
 
                         new_inv = Invoice.objects.create(
                             invoice_uuid=inv_uuid,

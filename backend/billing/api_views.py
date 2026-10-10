@@ -539,7 +539,10 @@ class SyncPushView(views.APIView):
                     if Invoice.objects.filter(invoice_number=inv_num).exists():
                         existing_same = Invoice.objects.filter(invoice_number=inv_num, invoice_uuid=inv_uuid).first()
                         if not existing_same:
-                            inv_num = f"{inv_num}-{str(inv_uuid)[:6]}"
+                            parts = str(inv_num).split("-")
+                            prefix = parts[0] if len(parts) > 0 and parts[0] in ["WEB", "POS"] else "POS"
+                            date_str = parts[1] if len(parts) > 1 and parts[1].isdigit() else timezone.now().strftime("%Y%m%d")
+                            inv_num = Invoice.generate_invoice_number(prefix=prefix, date_str=date_str)
 
                     invoice = Invoice.objects.create(
                         invoice_uuid=inv_uuid,

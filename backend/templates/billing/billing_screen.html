@@ -423,7 +423,10 @@
         let html = '<option value="">-- Select Product (பொருள் தேர்வு செய்) --</option>';
         matches.forEach(p => {
             const isSel = (selectedId && selectedId == p.id) ? 'selected' : '';
-            html += `<option value="${p.id}" data-price="${p.price}" data-unit="${p.unit}" data-tax="${p.tax}" data-category="${escapeHtml(p.category)}" data-sku="${escapeHtml(p.sku)}" ${isSel}>${escapeHtml(p.display_name)} (₹${p.price.toFixed(2)} / ${escapeHtml(p.unit)})</option>`;
+            const stockNum = parseFloat(p.stock) || 0;
+            const isOut = stockNum <= 0;
+            const stockBadge = isOut ? ' [❌ Out of Stock (0)]' : ` [Stock: ${stockNum} ${p.unit}]`;
+            html += `<option value="${p.id}" data-price="${p.price}" data-unit="${p.unit}" data-tax="${p.tax}" data-category="${escapeHtml(p.category)}" data-sku="${escapeHtml(p.sku)}" data-stock="${stockNum}" class="${isOut ? 'text-danger font-monospace' : ''}" ${isSel}>${escapeHtml(p.display_name)} (₹${p.price.toFixed(2)} / ${escapeHtml(p.unit)})${stockBadge}</option>`;
         });
         return html;
     }
@@ -494,8 +497,15 @@
         const initialId = initialProd ? initialProd.id : "";
         const initialPrice = initialProd ? initialProd.price.toFixed(2) : "0.00";
         const initialUnit = initialProd ? initialProd.unit : "KG";
-        const initialTax = (initialProd && hasShopGst) ? initialProd.tax : 0;
-        const initialCatText = initialProd ? `Category: ${escapeHtml(initialProd.category)}${initialProd.sku ? ' • SKU: ' + escapeHtml(initialProd.sku) : ''}` : "";
+        const initialStock = initialProd ? (parseFloat(initialProd.stock) || 0) : null;
+        let initialStockTag = '';
+        if (initialProd) {
+            if (initialStock <= 0) {
+                initialStockTag = `<span class="badge bg-danger mt-1 stock-badge"><i class="fa-solid fa-triangle-exclamation me-1"></i>Out of Stock (0 ${escapeHtml(initialProd.unit)})</span>`;
+            } else {
+                initialStockTag = `<span class="badge bg-success-subtle text-success border border-success-subtle mt-1 stock-badge"><i class="fa-solid fa-boxes-stacked me-1"></i>Available: ${initialStock} ${escapeHtml(initialProd.unit)}</span>`;
+            }
+        }
 
         tr.innerHTML = `
             <td>
@@ -504,6 +514,7 @@
                 </select>
                 <input type="hidden" name="product_name[]" class="item-name-hidden" value="${initialProd ? escapeHtml(initialProd.display_name) : ''}">
                 <div class="prod-category-tag small text-muted mt-1" style="font-size: 0.75rem;">${initialCatText}</div>
+                <div class="row-stock-status">${initialStockTag}</div>
             </td>
             <td>
                 <select name="unit[]" class="form-select form-select-sm unit-select">
@@ -528,6 +539,7 @@
             </td>
             <td>
                 <input type="number" step="any" min="0.001" name="quantity[]" class="form-control form-control-sm qty-input text-center fw-bold" value="1" required>
+                <div class="qty-stock-warning text-danger fw-bold small text-center mt-1" style="font-size: 0.72rem; display: none;"></div>
             </td>
             <td>
                 <input type="text" class="form-control form-control-sm total-input text-end fw-bold bg-light" readonly value="₹0.00">
@@ -546,15 +558,64 @@
         const prodSelect = tr.querySelector(".product-select");
         const nameHidden = tr.querySelector(".item-name-hidden");
         const catTag = tr.querySelector(".prod-category-tag");
+        const stockStatusDiv = tr.querySelector(".row-stock-status");
         const unitSelect = tr.querySelector(".unit-select");
         const priceInput = tr.querySelector(".price-input");
         const qtyInput = tr.querySelector(".qty-input");
+        const qtyWarning = tr.querySelector(".qty-stock-warning");
         const totalInput = tr.querySelector(".total-input");
         const taxInput = tr.querySelector(".tax-pct");
         const removeBtn = tr.querySelector(".remove-row-btn");
 
         if (initialUnit) {
             unitSelect.value = initialUnit;
+        }
+
+        function checkStockLimit() {
+            const pid = parseInt(prodSelect.value);
+            if (!pid) {
+                if (qtyWarning) qtyWarning.style.display = "none";
+                qtyInput.classList.remove("is-invalid");
+                prodSelect.classList.remove("is-invalid");
+                return true;
+            }
+
+            const p = catalog.find(x => x.id === pid);
+            if (!p) return true;
+
+            const availStock = parseFloat(p.stock) || 0;
+            // Sum all quantities for this same product across all rows in table
+            let totalRequestedForProduct = 0;
+            document.querySelectorAll("#billItemsBody tr").forEach(row => {
+                const rowPid = parseInt(row.querySelector(".product-select")?.value);
+                if (rowPid === pid) {
+                    const rowQty = parseFloat(row.querySelector(".qty-input")?.value || 0);
+                    totalRequestedForProduct += rowQty;
+                }
+            });
+
+            if (availStock <= 0) {
+                if (qtyWarning) {
+                    qtyWarning.innerHTML = `<i class="fa-solid fa-circle-exclamation me-1"></i>Out of Stock! (0 ${escapeHtml(p.unit)})`;
+                    qtyWarning.style.display = "block";
+                }
+                qtyInput.classList.add("is-invalid");
+                prodSelect.classList.add("is-invalid");
+                return false;
+            } else if (totalRequestedForProduct > availStock) {
+                if (qtyWarning) {
+                    qtyWarning.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-1"></i>Max: ${availStock} ${escapeHtml(p.unit)}`;
+                    qtyWarning.style.display = "block";
+                }
+                qtyInput.classList.add("is-invalid");
+                prodSelect.classList.remove("is-invalid");
+                return false;
+            } else {
+                if (qtyWarning) qtyWarning.style.display = "none";
+                qtyInput.classList.remove("is-invalid");
+                prodSelect.classList.remove("is-invalid");
+                return true;
+            }
         }
 
         function updateRow() {
@@ -567,6 +628,7 @@
             const rowTotal = rowSubtotal + rowTax;
 
             totalInput.value = "₹" + rowTotal.toFixed(2);
+            checkStockLimit();
             recalculateGrandTotals();
         }
 
@@ -574,6 +636,7 @@
             const pid = parseInt(this.value);
             if (!pid) {
                 if (catTag) catTag.innerText = "";
+                if (stockStatusDiv) stockStatusDiv.innerHTML = "";
                 if (nameHidden) nameHidden.value = "";
                 priceInput.value = "0.00";
                 taxInput.value = "0";
@@ -589,6 +652,16 @@
                 if (catTag) {
                     catTag.innerText = `Category: ${p.category}${p.sku ? ' • SKU: ' + p.sku : ''}`;
                 }
+
+                const sVal = parseFloat(p.stock) || 0;
+                if (stockStatusDiv) {
+                    if (sVal <= 0) {
+                        stockStatusDiv.innerHTML = `<span class="badge bg-danger mt-1 stock-badge"><i class="fa-solid fa-triangle-exclamation me-1"></i>Out of Stock (0 ${escapeHtml(p.unit)})</span>`;
+                    } else {
+                        stockStatusDiv.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle mt-1 stock-badge"><i class="fa-solid fa-boxes-stacked me-1"></i>Available: ${sVal} ${escapeHtml(p.unit)}</span>`;
+                    }
+                }
+
                 updateRow();
                 qtyInput.focus();
                 qtyInput.select();
@@ -611,11 +684,63 @@
             }
         });
         priceInput.addEventListener("input", function() { priceInput.dataset.modified = "true"; updateRow(); });
-        qtyInput.addEventListener("input", updateRow);
+        qtyInput.addEventListener("input", function() {
+            updateRow();
+            // Also trigger stock checks across any other rows of the same product
+            document.querySelectorAll("#billItemsBody tr").forEach(r => {
+                if (r !== tr) {
+                    const otherPid = parseInt(r.querySelector(".product-select")?.value);
+                    if (otherPid && otherPid === parseInt(prodSelect.value)) {
+                        const otherQty = r.querySelector(".qty-input");
+                        const otherWarn = r.querySelector(".qty-stock-warning");
+                        const p = catalog.find(x => x.id === otherPid);
+                        if (p) {
+                            const avail = parseFloat(p.stock) || 0;
+                            let totalQ = 0;
+                            document.querySelectorAll("#billItemsBody tr").forEach(xRow => {
+                                if (parseInt(xRow.querySelector(".product-select")?.value) === otherPid) {
+                                    totalQ += parseFloat(xRow.querySelector(".qty-input")?.value || 0);
+                                }
+                            });
+                            if (totalQ > avail && otherWarn) {
+                                otherWarn.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-1"></i>Max: ${avail} ${escapeHtml(p.unit)}`;
+                                otherWarn.style.display = "block";
+                                otherQty?.classList.add("is-invalid");
+                            } else if (otherWarn) {
+                                otherWarn.style.display = "none";
+                                otherQty?.classList.remove("is-invalid");
+                            }
+                        }
+                    }
+                }
+            });
+        });
 
         removeBtn.addEventListener("click", function() {
             if (itemsBody.children.length > 1) {
                 tr.remove();
+                // Recheck stock on remaining rows
+                document.querySelectorAll("#billItemsBody tr").forEach(r => {
+                    const pid = parseInt(r.querySelector(".product-select")?.value);
+                    if (pid) {
+                        const p = catalog.find(x => x.id === pid);
+                        if (p) {
+                            const avail = parseFloat(p.stock) || 0;
+                            let totalQ = 0;
+                            document.querySelectorAll("#billItemsBody tr").forEach(xRow => {
+                                if (parseInt(xRow.querySelector(".product-select")?.value) === pid) {
+                                    totalQ += parseFloat(xRow.querySelector(".qty-input")?.value || 0);
+                                }
+                            });
+                            const rWarn = r.querySelector(".qty-stock-warning");
+                            const rQty = r.querySelector(".qty-input");
+                            if (avail > 0 && totalQ <= avail && rWarn) {
+                                rWarn.style.display = "none";
+                                rQty?.classList.remove("is-invalid");
+                            }
+                        }
+                    }
+                });
                 recalculateGrandTotals();
             } else {
                 alert("An invoice must contain at least one product row.");
@@ -1062,6 +1187,57 @@
                     submitBtn.innerHTML = origText;
                 }
             });
+        });
+    }
+
+    // 4. Intercept Bill Submission to enforce stock limits and prevent Out of Stock billing
+    const mainBillingForm = document.getElementById("mainBillingForm");
+    if (mainBillingForm) {
+        mainBillingForm.addEventListener("submit", function(e) {
+            let hasStockError = false;
+            let errorMsg = "";
+
+            // Aggregate quantities by product
+            const requestedByProduct = {};
+            const productNames = {};
+
+            document.querySelectorAll("#billItemsBody tr").forEach(row => {
+                const prodSel = row.querySelector(".product-select");
+                if (prodSel) {
+                    const pid = parseInt(prodSel.value);
+                    if (pid) {
+                        const qty = parseFloat(row.querySelector(".qty-input")?.value || 0);
+                        requestedByProduct[pid] = (requestedByProduct[pid] || 0) + qty;
+                        const pObj = catalog.find(x => x.id === pid);
+                        if (pObj) {
+                            productNames[pid] = pObj;
+                        }
+                    }
+                }
+            });
+
+            for (const [pidStr, totalQty] of Object.entries(requestedByProduct)) {
+                const pid = parseInt(pidStr);
+                const p = productNames[pid];
+                if (p) {
+                    const availStock = parseFloat(p.stock) || 0;
+                    if (availStock <= 0) {
+                        hasStockError = true;
+                        errorMsg = `Out of Stock: '${p.display_name}' is currently out of stock (0 ${p.unit} available).\nCannot create bill for this item.\n(பொருள் கையிருப்பில் இல்லை)`;
+                        break;
+                    } else if (totalQty > availStock) {
+                        hasStockError = true;
+                        errorMsg = `Insufficient Stock: '${p.display_name}' has only ${availStock} ${p.unit} available, but ${totalQty} ${p.unit} requested.\nCannot exceed available stock.\n(கையிருப்பு போதாது)`;
+                        break;
+                    }
+                }
+            }
+
+            if (hasStockError) {
+                e.preventDefault();
+                alert(errorMsg);
+                return false;
+            }
         });
     }
 

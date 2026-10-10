@@ -917,6 +917,30 @@ def billing_page(request):
             messages.error(request, "Please add at least one valid product with quantity > 0.")
             return redirect("billing:billing_page")
 
+        # Strict Stock Validation & Out-of-Stock Prevention
+        # Aggregate quantities across line items by product to prevent exceeding stock across split rows
+        requested_by_product = {}
+        for item in line_items:
+            prod = item["product"]
+            if prod:
+                requested_by_product[prod.id] = requested_by_product.get(prod.id, Decimal("0.00")) + item["quantity"]
+
+        for prod_id, total_req_qty in requested_by_product.items():
+            prod = Product.objects.filter(pk=prod_id).first()
+            if prod:
+                if prod.stock_quantity <= Decimal("0.00"):
+                    messages.error(
+                        request,
+                        f"Out of Stock: '{prod.display_name}' is currently out of stock (0 {prod.unit} available). Cannot create bill for this item. (பொருள் கையிருப்பில் இல்லை)"
+                    )
+                    return redirect("billing:billing_page")
+                elif total_req_qty > prod.stock_quantity:
+                    messages.error(
+                        request,
+                        f"Insufficient Stock: '{prod.display_name}' has only {prod.stock_quantity} {prod.unit} available, but {total_req_qty} {prod.unit} was requested. Cannot exceed available stock. (கையிருப்பு போதாது)"
+                    )
+                    return redirect("billing:billing_page")
+
         discount_amount = parse_decimal(request.POST.get("discount_amount", "0"), "0.00")
         max_discount = subtotal + total_tax
         if discount_amount > max_discount:
@@ -1052,6 +1076,19 @@ def quick_bill_create(request):
                 return redirect("billing:dashboard")
 
             product = get_object_or_404(Product.objects.filter(c_filter, is_active=True, is_deleted=False), pk=product_id)
+            if product.stock_quantity <= Decimal("0.00"):
+                messages.error(
+                    request,
+                    f"Out of Stock: '{product.display_name}' is currently out of stock (0 {product.unit} available). Cannot create bill for this item. (பொருள் கையிருப்பில் இல்லை)"
+                )
+                return redirect("billing:dashboard")
+            elif qty > product.stock_quantity:
+                messages.error(
+                    request,
+                    f"Insufficient Stock: '{product.display_name}' has only {product.stock_quantity} {product.unit} available, but {qty} {product.unit} was requested. Cannot exceed available stock. (கையிருப்பு போதாது)"
+                )
+                return redirect("billing:dashboard")
+
             unit_price = product.price
             subtotal = unit_price * qty
             has_shop_gst = check_user_has_gst(client_user)
@@ -1393,6 +1430,32 @@ def invoice_edit(request, invoice_id):
                     notes=f"Restored stock from edited invoice #{invoice.invoice_number}",
                     created_by=user_name,
                 )
+
+        # Validate that updated quantities do not exceed available restored stock
+        edit_requested_by_prod = {}
+        for i in range(len(product_ids)):
+            pid = product_ids[i]
+            if pid and pid.isdigit():
+                q_val = parse_decimal(quantities[i] if i < len(quantities) else "1", "1")
+                if q_val > Decimal("0.00"):
+                    p_int = int(pid)
+                    edit_requested_by_prod[p_int] = edit_requested_by_prod.get(p_int, Decimal("0.00")) + q_val
+
+        for p_id, total_req in edit_requested_by_prod.items():
+            check_p = Product.objects.filter(pk=p_id).first()
+            if check_p:
+                if check_p.stock_quantity <= Decimal("0.00"):
+                    messages.error(
+                        request,
+                        f"Out of Stock: '{check_p.display_name}' has 0 {check_p.unit} available. Cannot update bill. (பொருள் கையிருப்பில் இல்லை)"
+                    )
+                    return redirect("billing:invoice_edit", invoice_id=invoice.id)
+                elif total_req > check_p.stock_quantity:
+                    messages.error(
+                        request,
+                        f"Insufficient Stock: '{check_p.display_name}' has only {check_p.stock_quantity} {check_p.unit} available, but {total_req} {check_p.unit} requested. (கையிருப்பு போதாது)"
+                    )
+                    return redirect("billing:invoice_edit", invoice_id=invoice.id)
 
         # 2. Delete existing items to replace with updated items
         invoice.items.all().delete()

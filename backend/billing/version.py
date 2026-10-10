@@ -3,15 +3,15 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.7.9"
-APP_TITLE = "Instant Product Additions, Real-Time Inventory & Multi-Screen Sync"
+APP_VERSION = "v2.8.0"
+APP_TITLE = "Strict Stock Control, Out of Stock Validation & Real-Time Inventory Sync"
 APP_RELEASE_NOTES = (
-    "• Instant Product Addition Without Refresh: Products added via the product catalog or billing screen appear immediately without requiring any page refresh\n"
-    "• Seamless In-Place Editing & Deletion: Product edits and deletions update instantly with smooth visual feedback and toast notifications\n"
-    "• Direct Billing Screen Product Creation: Cashiers can quickly create new products directly on the POS billing screen and sell them immediately\n"
-    "• Cache-Control & Never-Cache Optimization: Browser and WebView2 cache headers prevent stale views across products, billing, and inventory\n"
-    "• Multi-Device Cloud Synchronization: Background sync immediately transmits additions, modifications, and deletions to cloud and across client devices\n"
-    "• Zero Data Loss: Client partitions, customer histories, invoices, reports, and administrative databases remain 100% intact"
+    "• Strict Out-of-Stock Protection: Products with 0 stock display an explicit Out of Stock alert and are strictly barred from being billed\n"
+    "• Insufficient Stock Prevention: Billing quantities exceeding available stock are blocked with precise error messages showing max available units\n"
+    "• Client & Multi-Row Aggregation: Sums quantities across multiple rows for the same product in a single invoice to guarantee no stock overrun\n"
+    "• Automatic Stock Decrement & Restore: Stock levels decrement accurately upon bill creation and are safely restored during order edits\n"
+    "• Instant Multi-Device Inventory Sync: Real-time synchronization updates stock counts across Web and Windows Desktop POS instantly\n"
+    "• 100% Data Preservation: All client records, customer data, historical invoices, and admin settings remain completely untouched"
 )
 
 

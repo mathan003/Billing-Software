@@ -1,0 +1,93 @@
+/* ==========================================================================
+   Customer Module Styles - MathanHub POS
+   Dedicated styles for Customer Directory, Ledgers, Account Statements & Due
+   ========================================================================== */
+
+:root {
+    --customer-primary: #0284c7;
+    --customer-warning: #d97706;
+    --customer-danger: #dc2626;
+    --customer-success: #16a34a;
+}
+
+.customer-card-stat {
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.customer-card-stat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+}
+
+.customer-table thead th {
+    background-color: #f8fafc;
+    color: #475569;
+    font-weight: 700;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 2px solid #cbd5e1;
+    padding: 0.75rem 1rem;
+}
+
+.customer-table tbody td {
+    padding: 0.85rem 1rem;
+    vertical-align: middle;
+    font-size: 0.88rem;
+}
+
+.customer-balance-badge {
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 0.25rem 0.65rem;
+    border-radius: 8px;
+    display: inline-block;
+}
+
+.customer-balance-due {
+    background-color: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fee2e2;
+}
+
+.customer-balance-clear {
+    background-color: #f0fdf4;
+    color: #16a34a;
+    border: 1px solid #dcfce7;
+}
+
+.customer-avatar-circle {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #e0f2fe;
+    color: #0284c7;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+/* Statement Timeline / Ledger styling */
+.customer-ledger-item {
+    border-left: 2px solid #e2e8f0;
+    padding-left: 1rem;
+    margin-left: 0.5rem;
+    position: relative;
+}
+
+.customer-ledger-item::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #0284c7;
+}

@@ -1,0 +1,155 @@
+{% extends "billing/base.html" %}
+{% load static %}
+
+{% block title %}Client POS & Business Hub | MathanHub{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/client.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+    <!-- Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary rounded-pill px-3 py-1 text-uppercase fw-semibold" style="letter-spacing: 0.5px; font-size: 0.75rem;">
+                    <i class="fa-solid fa-shop me-1"></i> Client Terminal
+                </span>
+                <h4 class="fw-bold mb-0">Client Dashboard & Operations Hub</h4>
+            </div>
+            <p class="text-muted small mb-0 mt-1">Multi-device synchronized point-of-sale, inventory control, and transaction ledger</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'billing:billing_page' %}{{ sec_param }}" class="btn btn-primary-custom d-flex align-items-center gap-2 shadow-sm fw-bold">
+                <i class="fa-solid fa-bolt"></i>
+                <span>Open Quick Bill (பில்லிங்)</span>
+            </a>
+            <a href="{% url 'billing:product_list' %}{{ sec_param }}" class="btn btn-outline-primary d-flex align-items-center gap-2 shadow-sm">
+                <i class="fa-solid fa-boxes-stacked"></i>
+                <span>Products Catalog (பொருட்கள்)</span>
+            </a>
+            <a href="{% url 'billing:stock_management' %}{{ sec_param }}" class="btn btn-outline-success d-flex align-items-center gap-2 shadow-sm">
+                <i class="fa-solid fa-warehouse"></i>
+                <span>Stock Control (இருப்பு)</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Live Metrics Grid -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-lg-3">
+            <div class="client-stat-card p-3 border-start border-primary border-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">TODAY'S SALES (விற்பனை)</span>
+                    <div class="badge bg-primary-subtle text-primary p-2 rounded-3">
+                        <i class="fa-solid fa-indian-rupee-sign"></i>
+                    </div>
+                </div>
+                <h3 id="todaySalesDisplay" class="fw-bold mb-1 text-dark">₹{{ today_sales|default:"0.00" }}</h3>
+                <span class="text-muted small">Synchronized across all devices</span>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-lg-3">
+            <div class="client-stat-card p-3 border-start border-info border-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">BILLS GENERATED (ரசீதுகள்)</span>
+                    <div class="badge bg-info-subtle text-info p-2 rounded-3">
+                        <i class="fa-solid fa-receipt"></i>
+                    </div>
+                </div>
+                <h3 id="todayBillsCountDisplay" class="fw-bold mb-1 text-dark">{{ today_bills_count|default:"0" }}</h3>
+                <span class="text-muted small">Bills completed today</span>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-lg-3">
+            <div class="client-stat-card p-3 border-start border-success border-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">CASH COLLECTED (பெற்ற தொகை)</span>
+                    <div class="badge bg-success-subtle text-success p-2 rounded-3">
+                        <i class="fa-solid fa-hand-holding-dollar"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-1 text-success">₹{{ today_customer_paid|default:"0.00" }}</h3>
+                <span class="text-muted small">Total cash received</span>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-lg-3">
+            <div class="client-stat-card p-3 border-start border-warning border-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">PENDING DUES (நிலுவை)</span>
+                    <div class="badge bg-warning-subtle text-warning p-2 rounded-3">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                </div>
+                <h3 id="totalPendingDisplay" class="fw-bold mb-1 text-warning">₹{{ total_pending_amount|default:"0.00" }}</h3>
+                <span class="text-muted small">Customer credit balance</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Operations Cards -->
+    <div class="row g-3">
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 rounded-4 shadow-sm p-4 h-100">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="p-3 bg-primary-subtle text-primary rounded-3">
+                        <i class="fa-solid fa-bolt fs-4"></i>
+                    </div>
+                    <div>
+                        <h5 class="fw-bold mb-0">POS Quick Billing</h5>
+                        <span class="text-muted small">Fast keyboard-enabled billing</span>
+                    </div>
+                </div>
+                <p class="text-muted small mb-4">Barcode scanning, stock validation, instant receipt printing, and payment modes.</p>
+                <a href="{% url 'billing:billing_page' %}{{ sec_param }}" class="btn btn-primary mt-auto fw-semibold">
+                    Start Billing <i class="fa-solid fa-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 rounded-4 shadow-sm p-4 h-100">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="p-3 bg-success-subtle text-success rounded-3">
+                        <i class="fa-solid fa-boxes-stacked fs-4"></i>
+                    </div>
+                    <div>
+                        <h5 class="fw-bold mb-0">Product & Stock Center</h5>
+                        <span class="text-muted small">Catalog and inventory management</span>
+                    </div>
+                </div>
+                <p class="text-muted small mb-4">Manage products, bilingual names, pricing, barcode SKUs, and stock replenishment.</p>
+                <a href="{% url 'billing:product_list' %}{{ sec_param }}" class="btn btn-success mt-auto fw-semibold">
+                    Manage Products <i class="fa-solid fa-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 rounded-4 shadow-sm p-4 h-100">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="p-3 bg-info-subtle text-info rounded-3">
+                        <i class="fa-solid fa-file-invoice fs-4"></i>
+                    </div>
+                    <div>
+                        <h5 class="fw-bold mb-0">Invoices & Statements</h5>
+                        <span class="text-muted small">Historical sales records</span>
+                    </div>
+                </div>
+                <p class="text-muted small mb-4">Search, filter, reprint, alter, and export invoices to PDF and Excel formats.</p>
+                <a href="{% url 'billing:invoice_list' %}{{ sec_param }}" class="btn btn-info text-white mt-auto fw-semibold">
+                    View Invoices <i class="fa-solid fa-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/client.js' %}"></script>
+{% endblock %}

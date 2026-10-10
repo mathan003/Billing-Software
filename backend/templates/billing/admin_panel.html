@@ -1,6 +1,11 @@
 {% extends "billing/base.html" %}
+{% load static %}
 
 {% block title %}Admin Panel & Client Management | MathanHub{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/admin.css' %}">
+{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
@@ -1747,4 +1752,8 @@
         }
     }
 </script>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/admin.js' %}"></script>
 {% endblock %}

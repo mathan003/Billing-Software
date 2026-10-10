@@ -1,8 +1,10 @@
 {% extends "billing/base.html" %}
+{% load static %}
 
 {% block title %}Dashboard | MathanHub{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/client.css' %}">
 <style>
     .metric-clickable {
         cursor: pointer;
@@ -752,6 +754,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'js/client.js' %}"></script>
 <script>
     // In-memory serialized catalogs for sub-millisecond instant search across 500+ items
     const dashProducts = [

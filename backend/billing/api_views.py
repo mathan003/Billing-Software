@@ -1116,8 +1116,11 @@ class LiveStatusView(views.APIView):
     permission_classes = []
 
     def get(self, request):
+        from datetime import datetime as dt_cls, time as dt_time
         today = timezone.localtime().date()
-        today_invoices = Invoice.objects.filter(created_at__date=today)
+        start_dt = timezone.make_aware(dt_cls.combine(today, dt_time.min))
+        end_dt = timezone.make_aware(dt_cls.combine(today, dt_time.max))
+        today_invoices = Invoice.objects.filter(created_at__gte=start_dt, created_at__lte=end_dt)
         today_sales = today_invoices.aggregate(s=Sum("grand_total"))["s"] or Decimal("0.00")
         today_bills_count = today_invoices.count()
         today_customer_paid = today_invoices.aggregate(s=Sum("paid_amount"))["s"] or Decimal("0.00")

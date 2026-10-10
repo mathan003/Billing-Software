@@ -18,6 +18,8 @@ urlpatterns = [
 
     # Dashboard & Dedicated Quick Billing Terminal & Client Data Cleanup
     path("", views.dashboard, name="dashboard"),
+    path("client-module/", views.client_module_view, name="client_module"),
+    path("client-module/status/", views.client_quick_status_api, name="client_quick_status_api"),
     path("billing/", views.billing_page, name="billing_page"),
     path("quick-bill/", views.quick_bill_create, name="quick_bill_create"),
     path("delete-data/", views.client_delete_data, name="client_delete_data"),
@@ -43,6 +45,8 @@ urlpatterns = [
     path("customers/<int:customer_id>/statement/pdf/", views.customer_statement_pdf, name="customer_statement_pdf"),
 
     # Admin Panel (Users Management, Company Profile/Branding & Activity Logs - Strict Admin Only)
+    path("admin-module/", views.admin_module_view, name="admin_module"),
+    path("admin-module/db-health/", views.admin_db_health_api, name="admin_db_health_api"),
     path("admin-panel/", views.admin_panel, name="admin_panel"),
     path("admin-quick-unlock/", views.admin_quick_unlock, name="admin_quick_unlock"),
     path("admin-panel/company/", views.company_settings_update, name="company_settings_update"),
@@ -102,6 +106,8 @@ urlpatterns = [
     path("api/client/devices/", views.api_client_devices, name="api_client_devices"),
 
     # Customers (Directory, Ledger, Statement, Manual Delete, CSV Exports)
+    path("customer-module/", views.customer_module_view, name="customer_module"),
+    path("customer-module/metrics/", views.customer_quick_metrics_api, name="customer_quick_metrics_api"),
     path("customers/", views.customer_list, name="customer_list"),
     path("customers/add/", views.customer_add, name="customer_add"),
     path("customers/<int:customer_id>/edit/", views.customer_edit, name="customer_edit"),

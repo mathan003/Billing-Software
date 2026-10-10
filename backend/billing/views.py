@@ -25,6 +25,9 @@ from .device_utils import (
     clear_desktop_remembered_user, is_desktop_environment, check_internet_connection
 )
 from .pdf_generator import generate_invoice_pdf, generate_statement_pdf, generate_sales_report_pdf
+from .views_admin import admin_module_view, admin_db_health_api
+from .views_client import client_module_view, client_quick_status_api
+from .views_customer import customer_module_view, customer_quick_metrics_api
 
 
 def admin_required(view_func):
@@ -80,6 +83,20 @@ def get_branch_filter(request):
     if is_admin_user(request.user):
         return Q(is_active=True)
     return Q(is_active=True) & (Q(client=request.user) | Q(client__isnull=True))
+
+
+def get_date_bounds(start_d, end_d=None):
+    """
+    Constructs robust timezone-aware datetime bounds for date-range queries.
+    Works seamlessly on both MySQL (where CONVERT_TZ may return NULL if time zones aren't loaded)
+    and SQLite (where strings are stored in ISO format), guaranteeing zero date-shift errors.
+    """
+    from datetime import time as dt_time
+    if end_d is None:
+        end_d = start_d
+    start_dt = timezone.make_aware(datetime.combine(start_d, dt_time.min))
+    end_dt = timezone.make_aware(datetime.combine(end_d, dt_time.max))
+    return start_dt, end_dt
 
 
 def check_user_has_gst(user):
@@ -668,12 +685,18 @@ def logout_view(request):
 # ==========================================
 
 def dashboard(request):
-    today = timezone.now().date()
+    today = timezone.localdate()
+    today_start, today_end = get_date_bounds(today)
     c_filter = get_client_filter(request)
     b_filter = get_branch_filter(request)
 
     # 1. Today's Invoices & Total Sales scoped to client
-    today_invoices = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date=today).select_related("customer", "branch").prefetch_related("items").order_by("-created_at")
+    today_invoices = Invoice.objects.filter(
+        c_filter,
+        is_deleted=False,
+        created_at__gte=today_start,
+        created_at__lte=today_end
+    ).select_related("customer", "branch").prefetch_related("items").order_by("-created_at")
     today_sales = today_invoices.aggregate(Sum("grand_total"))["grand_total__sum"] or Decimal("0.00")
     today_bills_count = today_invoices.count()
 
@@ -3181,7 +3204,8 @@ def client_delete_data(request):
                 messages.error(request, f"Invalid date format: {e}")
                 return redirect(redirect_url)
 
-            invoices = Invoice.objects.filter(c_filter, created_at__date=target_date)
+            s_dt, e_dt = get_date_bounds(target_date)
+            invoices = Invoice.objects.filter(c_filter, created_at__gte=s_dt, created_at__lte=e_dt)
             inv_count = _restore_and_delete_invoices(invoices)
 
             log_activity(
@@ -3210,10 +3234,11 @@ def client_delete_data(request):
                 messages.error(request, "Start date cannot be after end date.")
                 return redirect(redirect_url)
 
+            s_dt, e_dt = get_date_bounds(start_date, end_date)
             invoices = Invoice.objects.filter(
                 c_filter,
-                created_at__date__gte=start_date,
-                created_at__date__lte=end_date
+                created_at__gte=s_dt,
+                created_at__lte=e_dt
             )
             inv_count = _restore_and_delete_invoices(invoices)
 
@@ -3344,8 +3369,10 @@ def get_customer_statement_data(customer, start_date, end_date):
     if customer.phone:
         cust_query |= Q(customer_phone=customer.phone)
 
+    start_dt, end_dt = get_date_bounds(start_date, end_date)
+
     # 1. Opening Balance prior to start_date
-    prior_invoices = Invoice.objects.filter(cust_query, is_deleted=False, created_at__date__lt=start_date)
+    prior_invoices = Invoice.objects.filter(cust_query, is_deleted=False, created_at__lt=start_dt)
     prior_billed = prior_invoices.aggregate(Sum("grand_total"))["grand_total__sum"] or Decimal("0.00")
     prior_paid = prior_invoices.aggregate(Sum("paid_amount"))["paid_amount__sum"] or Decimal("0.00")
     opening_balance = max(Decimal("0.00"), prior_billed - prior_paid)
@@ -3354,15 +3381,15 @@ def get_customer_statement_data(customer, start_date, end_date):
     range_invoices = Invoice.objects.filter(
         cust_query,
         is_deleted=False,
-        created_at__date__gte=start_date,
-        created_at__date__lte=end_date
+        created_at__gte=start_dt,
+        created_at__lte=end_dt
     ).prefetch_related("items").order_by("created_at")
 
     # 3. Payments in date range
     range_payments = PaymentRecord.objects.filter(
         invoice__in=Invoice.objects.filter(cust_query, is_deleted=False),
-        created_at__date__gte=start_date,
-        created_at__date__lte=end_date
+        created_at__gte=start_dt,
+        created_at__lte=end_dt
     ).select_related("invoice").order_by("created_at")
 
     # 4. Merge into chronological ledger
@@ -4126,11 +4153,12 @@ def _get_filtered_report_data(request):
         period_label = f"This Week ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b %Y')})"
 
     c_filter = get_client_filter(request)
+    period_start_dt, period_end_dt = get_date_bounds(start_date, end_date)
     bills_qs = Invoice.objects.filter(
         c_filter,
         is_deleted=False,
-        created_at__date__gte=start_date,
-        created_at__date__lte=end_date
+        created_at__gte=period_start_dt,
+        created_at__lte=period_end_dt
     ).select_related("customer", "branch").prefetch_related("items", "payments").order_by("-created_at")
 
     if branch_id:
@@ -4195,22 +4223,26 @@ def _get_filtered_report_data(request):
         }
 
     # 1. Today
-    today_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date=today)
+    t_start, t_end = get_date_bounds(today)
+    today_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__gte=t_start, created_at__lte=t_end)
     today_footfall = _compute_customer_footfall(today_bills)
 
     # 2. This Week
     week_start = today - timedelta(days=today.weekday())
-    week_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date__gte=week_start, created_at__date__lte=today)
+    w_start, w_end = get_date_bounds(week_start, today)
+    week_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__gte=w_start, created_at__lte=w_end)
     week_footfall = _compute_customer_footfall(week_bills)
 
     # 3. This Month
     month_start = today.replace(day=1)
-    month_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date__gte=month_start, created_at__date__lte=today)
+    m_start, m_end = get_date_bounds(month_start, today)
+    month_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__gte=m_start, created_at__lte=m_end)
     month_footfall = _compute_customer_footfall(month_bills)
 
     # 4. This Year
     year_start = today.replace(month=1, day=1)
-    year_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__date__gte=year_start, created_at__date__lte=today)
+    y_start, y_end = get_date_bounds(year_start, today)
+    year_bills = Invoice.objects.filter(c_filter, is_deleted=False, created_at__gte=y_start, created_at__lte=y_end)
     year_footfall = _compute_customer_footfall(year_bills)
 
     # 5. Selected Period / Date-to-Date Range

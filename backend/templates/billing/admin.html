@@ -1,0 +1,172 @@
+{% extends "billing/base.html" %}
+{% load static %}
+
+{% block title %}Admin Module & System Control | MathanHub{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/admin.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+    <!-- Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-danger rounded-pill px-3 py-1 text-uppercase fw-semibold" style="letter-spacing: 0.5px; font-size: 0.75rem;">
+                    <i class="fa-solid fa-lock me-1"></i> Admin Restricted
+                </span>
+                <h4 class="fw-bold mb-0">System Administration & Database Hub</h4>
+            </div>
+            <p class="text-muted small mb-0 mt-1">Modular control center for Clients, Multi-Device Authorizations, Database Connections and Cloud Logs</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'billing:admin_panel' %}{{ sec_param }}" class="btn btn-primary-custom d-flex align-items-center gap-2 shadow-sm">
+                <i class="fa-solid fa-screwdriver-wrench"></i>
+                <span>Open Full Admin Panel</span>
+            </a>
+            <a href="{% url 'billing:admin_download_all_data' %}" class="btn btn-outline-success d-flex align-items-center gap-2 shadow-sm">
+                <i class="fa-solid fa-cloud-arrow-down text-success"></i>
+                <span>Download Complete DB (JSON)</span>
+            </a>
+            <a href="{% url 'billing:dashboard' %}{{ sec_param }}" class="btn btn-outline-secondary d-flex align-items-center gap-2 shadow-sm">
+                <i class="fa-solid fa-cash-register"></i>
+                <span>Switch to POS Terminal</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Database Connection Health Diagnostics Card -->
+    <div class="card border-0 rounded-4 shadow-sm mb-4">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="fa-solid fa-database text-primary me-2"></i>Database Connection Diagnostics
+                </h5>
+                <span id="adminDbStatusBadge" class="badge bg-success-subtle text-success border px-3 py-2 rounded-pill">
+                    <i class="fa-solid fa-circle-check me-1"></i> Database Connected & Healthy
+                </span>
+            </div>
+            <p class="text-muted small mb-4">
+                Real-time isolation status across system partitions: Admin System, Client Stores, and Customer Ledgers.
+            </p>
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="p-3 rounded-3 bg-light border">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="fa-solid fa-shield-halved text-danger fs-5"></i>
+                            <h6 class="fw-bold mb-0">Admin Partition</h6>
+                        </div>
+                        <p class="text-muted small mb-1">Users, Devices, Branches & Security</p>
+                        <span class="badge bg-success-subtle text-success border rounded-pill">Status: Operational</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 rounded-3 bg-light border">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="fa-solid fa-boxes-stacked text-primary fs-5"></i>
+                            <h6 class="fw-bold mb-0">Client Partition</h6>
+                        </div>
+                        <p class="text-muted small mb-1">Products, Stock, Bills & Terminal Data</p>
+                        <span class="badge bg-success-subtle text-success border rounded-pill">Status: Operational</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 rounded-3 bg-light border">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="fa-solid fa-address-book text-info fs-5"></i>
+                            <h6 class="fw-bold mb-0">Customer Partition</h6>
+                        </div>
+                        <p class="text-muted small mb-1">Customers, Ledgers, Balances & Receipts</p>
+                        <span class="badge bg-success-subtle text-success border rounded-pill">Status: Operational</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Navigation to Admin Modules -->
+    <div class="row g-3">
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 rounded-4 shadow-sm p-3">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="admin-card-icon bg-primary-subtle text-primary">
+                        <i class="fa-solid fa-users"></i>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-0">Clients Management</h6>
+                        <span class="text-muted small">Multi-device & shops</span>
+                    </div>
+                </div>
+                <p class="text-muted small mb-3">Configure client credentials, upload business photos, and enforce max-device policies.</p>
+                <a href="{% url 'billing:admin_panel' %}#clients-pane" class="btn btn-sm btn-outline-primary mt-auto fw-semibold">
+                    Manage Clients <i class="fa-solid fa-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 rounded-4 shadow-sm p-3">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="admin-card-icon bg-warning-subtle text-warning">
+                        <i class="fa-solid fa-laptop-medical"></i>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-0">Device Approvals</h6>
+                        <span class="text-muted small">OTP & Session control</span>
+                    </div>
+                </div>
+                <p class="text-muted small mb-3">Review desktop terminal OTP authorization requests and revoke inactive sessions remotely.</p>
+                <a href="{% url 'billing:admin_panel' %}#devices-pane" class="btn btn-sm btn-outline-warning mt-auto fw-semibold">
+                    Review Devices <i class="fa-solid fa-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 rounded-4 shadow-sm p-3">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="admin-card-icon bg-success-subtle text-success">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-0">Audit Logs</h6>
+                        <span class="text-muted small">Cloud activity history</span>
+                    </div>
+                </div>
+                <p class="text-muted small mb-3">Inspect system audits, login events, critical billing alterations, and 45-day retention schedules.</p>
+                <a href="{% url 'billing:admin_panel' %}#logs-pane" class="btn btn-sm btn-outline-success mt-auto fw-semibold">
+                    View Logs <i class="fa-solid fa-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 rounded-4 shadow-sm p-3">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="admin-card-icon bg-info-subtle text-info">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-0">Software Updates</h6>
+                        <span class="text-muted small">Publish version releases</span>
+                    </div>
+                </div>
+                <p class="text-muted small mb-3">Publish mandatory or optional software updates to Web & Windows desktop client devices.</p>
+                <a href="{% url 'billing:admin_panel' %}#updates-pane" class="btn btn-sm btn-outline-info mt-auto fw-semibold">
+                    Manage Updates <i class="fa-solid fa-arrow-right ms-1"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/admin.js' %}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        if (typeof window.checkAdminDbHealth === 'function') {
+            window.checkAdminDbHealth();
+        }
+    });
+</script>
+{% endblock %}

@@ -1,6 +1,11 @@
 {% extends "billing/base.html" %}
+{% load static %}
 
 {% block title %}Customers Directory & Balances | MathanHub{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/customer.css' %}">
+{% endblock %}
 
 {% block content %}
 <!-- Header Bar -->
@@ -331,4 +336,8 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/customer.js' %}"></script>
 {% endblock %}

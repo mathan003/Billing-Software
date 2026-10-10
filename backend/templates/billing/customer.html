@@ -1,0 +1,110 @@
+{% extends "billing/base.html" %}
+{% load static %}
+
+{% block title %}Customer Ledger & Accounts Hub | MathanHub{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/customer.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+    <!-- Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-info rounded-pill px-3 py-1 text-uppercase fw-semibold" style="letter-spacing: 0.5px; font-size: 0.75rem;">
+                    <i class="fa-solid fa-address-book me-1"></i> Customer Accounts
+                </span>
+                <h4 class="fw-bold mb-0">Customer Ledger & Credit Directory</h4>
+            </div>
+            <p class="text-muted small mb-0 mt-1">Real-time credit dues tracking, statements, payment history, and customer database</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'billing:customer_list' %}{{ sec_param }}" class="btn btn-primary-custom d-flex align-items-center gap-2 shadow-sm fw-bold">
+                <i class="fa-solid fa-users"></i>
+                <span>Open Customers Directory</span>
+            </a>
+            <a href="{% url 'billing:customers_export_all_csv' %}" class="btn btn-outline-dark d-flex align-items-center gap-2 shadow-sm">
+                <i class="fa-solid fa-file-csv text-primary"></i>
+                <span>Export All Customers (CSV)</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Metric Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-md-4">
+            <div class="customer-card-stat p-3 border-start border-primary border-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">TOTAL REGISTERED CUSTOMERS</span>
+                    <div class="customer-avatar-circle">
+                        <i class="fa-solid fa-users"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-0 text-dark">{{ total_customers_count|default:"0" }}</h3>
+                <span class="text-muted small">Active customer accounts in database</span>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-4">
+            <div class="customer-card-stat p-3 border-start border-warning border-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">CUSTOMERS WITH DUE</span>
+                    <div class="customer-avatar-circle" style="background: #fef3c7; color: #d97706;">
+                        <i class="fa-solid fa-user-clock"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-0 text-warning">{{ pending_custs_count|default:"0" }}</h3>
+                <span class="text-muted small">Have unpaid / pending balances</span>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-4">
+            <div class="customer-card-stat p-3 border-start border-danger border-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">TOTAL OUTSTANDING BALANCE</span>
+                    <div class="customer-avatar-circle" style="background: #fee2e2; color: #dc2626;">
+                        <i class="fa-solid fa-indian-rupee-sign"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-0 text-danger">₹{{ total_pending_amount|default:"0.00" }}</h3>
+                <span class="text-muted small">Across all registered customers</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Operations -->
+    <div class="card border-0 rounded-4 shadow-sm p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold mb-0">Customer Module Actions</h5>
+            <a href="{% url 'billing:customer_list' %}" class="btn btn-sm btn-outline-primary">
+                View Full Table <i class="fa-solid fa-arrow-right ms-1"></i>
+            </a>
+        </div>
+        <p class="text-muted small mb-4">
+            Choose an operation below to manage customer credit records, generate statements, or record receipt payments:
+        </p>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="p-3 bg-light rounded-3 border">
+                    <h6 class="fw-bold text-dark"><i class="fa-solid fa-file-invoice text-primary me-2"></i>Statement & Ledgers</h6>
+                    <p class="text-muted small mb-2">Generate PDF account statements with opening balances and chronological billing ledger events.</p>
+                    <a href="{% url 'billing:customer_list' %}" class="btn btn-sm btn-link p-0 fw-semibold text-decoration-none">Open Statements &rarr;</a>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="p-3 bg-light rounded-3 border">
+                    <h6 class="fw-bold text-dark"><i class="fa-solid fa-hand-holding-dollar text-success me-2"></i>Receipt Payments</h6>
+                    <p class="text-muted small mb-2">Record partial or full balance payments and automatically adjust outstanding customer debt.</p>
+                    <a href="{% url 'billing:invoice_list' %}" class="btn btn-sm btn-link p-0 fw-semibold text-decoration-none">Open Payment Records &rarr;</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/customer.js' %}"></script>
+{% endblock %}

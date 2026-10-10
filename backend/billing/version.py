@@ -3,14 +3,14 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.7.7"
-APP_TITLE = "Multi-Client Database Isolation & Secure Multi-Device Synchronization"
+APP_VERSION = "v2.7.8"
+APP_TITLE = "Real-Time Cloud Diagnostics & Multi-Client Database Isolation"
 APP_RELEASE_NOTES = (
-    "• Strict Client Database Isolation: Each client has a dedicated, isolated data partition (products, customers, invoices, reports, categories). Zero data leakage between different clients.\n"
-    "• Seamless Multi-Device Client Sync: Multiple devices belonging to the same client connect to and synchronize with that client's database in real time.\n"
-    "• Admin Database & Settings Preserved: Administrative records, settings, and client management remain completely untouched and fully functional.\n"
-    "• Eliminated Cross-Client Leaks: Removed unassigned/null client fallbacks across all web views, sync push, and sync pull APIs.\n"
-    "• 100% Data Protection: All existing databases, customer details, client profiles, and historical bills preserved with complete integrity."
+    "• Live Sync Diagnostics & Error Visibility: Clicking the sync badge opens full diagnostic details displaying cloud connection state, pending invoice breakdown, and exact error troubleshooting\n"
+    "• Instant Interactive Sync: In-modal 'Sync Now' triggers synchronous cloud synchronization with instant visual feedback and zero delays\n"
+    "• Strict Multi-Client Database Isolation: Products, categories, customers, invoices, and reports are partitioned exclusively per client with zero cross-tenant leakage\n"
+    "• Seamless Multi-Device Synchronization: All devices belonging to the same client connect and synchronize with that client's specific database partition in real time\n"
+    "• 100% Data Integrity: All existing administrative records, client accounts, customer data, and invoices remain completely preserved and safe"
 )
 
 

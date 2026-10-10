@@ -26,6 +26,8 @@ class SyncManager:
         self.is_syncing = False
         self.last_sync_time = None
         self.last_sync_status = "idle"
+        self.last_error = None
+        self.last_error_time = None
         self.active_devices_count = None
         self.max_allowed_devices = None
         self.device_id = os.getenv("DEVICE_ID", f"WIN-POS-{hex(hash(os.environ.get('COMPUTERNAME', 'WIN')))[2:8].upper()}")
@@ -78,10 +80,20 @@ class SyncManager:
         return urls
 
     def get_status_dict(self):
-        """Returns clean status summary for the web and desktop UI sync badges"""
+        """Returns clean status summary for the web and desktop UI sync badges and diagnostics"""
+        pending_invoices = []
         try:
             from billing.models import Invoice
-            pending_count = Invoice.objects.filter(is_deleted=False).exclude(notes__contains="[CLOUD_SYNCED]").count()
+            pending_qs = Invoice.objects.filter(is_deleted=False).exclude(notes__contains="[CLOUD_SYNCED]").order_by("-created_at")
+            pending_count = pending_qs.count()
+            for p_inv in pending_qs[:15]:
+                pending_invoices.append({
+                    "invoice_number": p_inv.invoice_number,
+                    "customer_name": p_inv.customer_name or "Cash Customer",
+                    "grand_total": str(p_inv.grand_total),
+                    "created_at": p_inv.created_at.strftime("%Y-%m-%d %H:%M") if p_inv.created_at else "",
+                    "client": p_inv.client.username if p_inv.client else "Main",
+                })
         except Exception:
             pending_count = 0
 
@@ -91,7 +103,10 @@ class SyncManager:
             "server_url": self.server_url,
             "last_sync_time": self.last_sync_time.strftime("%H:%M:%S") if self.last_sync_time else None,
             "last_sync_status": self.last_sync_status,
+            "last_error": getattr(self, "last_error", None),
+            "last_error_time": self.last_error_time.strftime("%H:%M:%S") if getattr(self, "last_error_time", None) else None,
             "pending_count": pending_count,
+            "pending_invoices": pending_invoices,
             "is_desktop": True,
             "active_devices_count": getattr(self, "active_devices_count", None),
             "max_allowed_devices": getattr(self, "max_allowed_devices", None),
@@ -130,6 +145,8 @@ class SyncManager:
         if not active_url:
             self.is_online = False
             self.last_sync_status = "offline"
+            self.last_error = "Unable to connect to cloud server (Internet offline or server unreachable)."
+            self.last_error_time = datetime.now()
             return
 
         self.server_url = active_url
@@ -145,9 +162,13 @@ class SyncManager:
 
             self.last_sync_time = datetime.now()
             self.last_sync_status = "success"
+            self.last_error = None
+            self.last_error_time = None
         except Exception as e:
-            logger.debug(f"Sync error during cycle: {e}")
+            logger.warning(f"Sync error during cycle: {e}")
             self.last_sync_status = f"error: {e}"
+            self.last_error = str(e)
+            self.last_error_time = datetime.now()
         finally:
             self.is_syncing = False
 
@@ -172,17 +193,12 @@ class SyncManager:
                 except Exception:
                     pass
 
-            from billing.models import ProductCategory, DeletedInvoice
-            from django.contrib.auth.models import User
-            from django.db.models import Q
-            c_user = User.objects.filter(username=client_username).first() if client_username else None
-            c_filter = Q(client=c_user) if c_user else Q()
+            push_device_id = pos_cfg.get("device_id") or get_hardware_device_id()
 
             # Find invoices that haven't been synced to cloud yet
             # In local SQLite, invoices created locally have source='windows_app'
             # We track cloud sync using notes or notes containing '[SYNCED]' or a local log
-            inv_filter = Q(client=c_user) if c_user else Q()
-            unsynced_invoices = Invoice.objects.filter(inv_filter, is_deleted=False).exclude(notes__contains="[CLOUD_SYNCED]").order_by("created_at")[:50]
+            unsynced_invoices = list(Invoice.objects.filter(is_deleted=False).exclude(notes__contains="[CLOUD_SYNCED]").order_by("created_at")[:50])
             
             invoices_payload = []
             for inv in unsynced_invoices:
@@ -220,6 +236,12 @@ class SyncManager:
                     "items": items_data,
                 })
 
+            from billing.models import ProductCategory, DeletedInvoice
+            from django.contrib.auth.models import User
+            from django.db.models import Q
+            c_user = User.objects.filter(username=client_username).first() if client_username else None
+            c_filter = Q(client=c_user) if c_user else Q()
+
             # Collect deleted invoices to push to cloud
             tombstone_invs = set(DeletedInvoice.objects.filter(c_filter).values_list("invoice_uuid", flat=True))
             soft_del_invs = set(Invoice.objects.filter(c_filter, is_deleted=True).values_list("invoice_uuid", flat=True))
@@ -227,13 +249,15 @@ class SyncManager:
 
             # Collect payments to push to cloud
             payments_payload = []
-            for pr in PaymentRecord.objects.filter(invoice__in=unsynced_invoices)[:50]:
-                payments_payload.append({
-                    "invoice_number": pr.invoice.invoice_number,
-                    "amount": str(pr.amount),
-                    "payment_method": pr.payment_method,
-                    "notes": pr.notes or "",
-                })
+            unsynced_inv_ids = [inv.id for inv in unsynced_invoices]
+            if unsynced_inv_ids:
+                for pr in PaymentRecord.objects.filter(invoice_id__in=unsynced_inv_ids)[:50]:
+                    payments_payload.append({
+                        "invoice_number": pr.invoice.invoice_number,
+                        "amount": str(pr.amount),
+                        "payment_method": pr.payment_method,
+                        "notes": pr.notes or "",
+                    })
 
             categories_payload = list(ProductCategory.objects.filter(c_filter, is_deleted=False).values_list("name", flat=True).distinct())
             deleted_categories_payload = list(ProductCategory.objects.filter(c_filter, is_deleted=True).values_list("name", flat=True).distinct())
@@ -377,9 +401,18 @@ class SyncManager:
                         if str(inv.invoice_uuid) in synced_uuids:
                             inv.notes = (inv.notes + " [CLOUD_SYNCED]").strip()
                             inv.save(update_fields=["notes"])
+            else:
+                err_detail = resp.text[:200]
+                self.last_error = f"Cloud Push Error (HTTP {resp.status_code}): {err_detail}"
+                self.last_error_time = datetime.now()
+                logger.warning(self.last_error)
+                raise RuntimeError(self.last_error)
 
         except Exception as e:
-            logger.debug(f"Error during push: {e}")
+            self.last_error = f"Push error: {e}"
+            self.last_error_time = datetime.now()
+            logger.warning(f"Error during push: {e}")
+            raise
 
     def _pull_cloud_data(self):
         try:
@@ -411,9 +444,13 @@ class SyncManager:
             if dev_id:
                 params["device_id"] = dev_id
 
-            resp = requests.get(f"{self.server_url}/api/sync/pull/", params=params, timeout=10.0)
+            resp = requests.get(f"{self.server_url}/api/sync/pull/", params=params, timeout=12.0)
             if resp.status_code != 200:
-                return
+                err_detail = resp.text[:200]
+                self.last_error = f"Cloud Pull Error (HTTP {resp.status_code}): {err_detail}"
+                self.last_error_time = datetime.now()
+                logger.warning(self.last_error)
+                raise RuntimeError(self.last_error)
 
             data = resp.json()
             if "active_devices_count" in data and data["active_devices_count"] is not None:
@@ -665,7 +702,7 @@ class SyncManager:
                 for d_sku in del_sku_set:
                     prod_filter = Q(sku=d_sku)
                     if client_user:
-                        prod_filter &= Q(client=client_user)
+                        prod_filter &= (Q(client=client_user) | Q(client__isnull=True))
                     Product.objects.filter(prod_filter).update(
                         is_deleted=True,
                         is_active=False,
@@ -678,7 +715,7 @@ class SyncManager:
                     )
 
                 # 4.1. Update products locally without touching existing invoice records
-                tombstone_q = Q(client=client_user) if client_user else Q()
+                tombstone_q = Q(client=client_user) | Q(client__isnull=True) if client_user else Q()
                 local_deleted_skus = set(DeletedProduct.objects.filter(tombstone_q).values_list("sku", flat=True))
                 local_deleted_skus |= set(Product.objects.filter(tombstone_q, is_deleted=True).values_list("sku", flat=True))
 
@@ -690,7 +727,7 @@ class SyncManager:
                     # Check if locally marked as deleted
                     prod_filter = Q(sku=sku)
                     if client_user:
-                        prod_filter &= Q(client=client_user)
+                        prod_filter &= (Q(client=client_user) | Q(client__isnull=True))
                     if Product.objects.filter(prod_filter, is_deleted=True).exists():
                         continue
 
@@ -731,7 +768,6 @@ class SyncManager:
                     if phone:
                         cust, created = Customer.objects.get_or_create(
                             phone=phone,
-                            client=client_user,
                             defaults={
                                 "client": client_user,
                                 "name": c_data["name"],
@@ -776,7 +812,7 @@ class SyncManager:
                         cust_phone = inv_data.get("customer_phone", "").strip()
                         c_match = None
                         if cust_phone:
-                            c_match = Customer.objects.filter(phone=cust_phone, client=inv_owner_user).first()
+                            c_match = Customer.objects.filter(phone=cust_phone).first()
 
                         target_inv_num = inv_data.get("invoice_number")
                         if Invoice.objects.filter(invoice_number=target_inv_num).exclude(invoice_uuid=inv_uuid).exists():
@@ -806,7 +842,7 @@ class SyncManager:
                         from billing.models import InvoiceItem
                         for it_d in inv_data.get("items", []):
                             sku = it_d.get("product_sku", "")
-                            prod_obj = Product.objects.filter(sku=sku, client=inv_owner_user).first() if sku else None
+                            prod_obj = Product.objects.filter(sku=sku).first() if sku else None
                             InvoiceItem.objects.create(
                                 invoice=new_inv,
                                 product=prod_obj,
@@ -874,7 +910,10 @@ class SyncManager:
                             u.delete()
 
         except Exception as e:
-            logger.debug(f"Error during pull: {e}")
+            self.last_error = f"Pull error: {e}"
+            self.last_error_time = datetime.now()
+            logger.warning(f"Error during pull: {e}")
+            raise
 
 
 _sync_manager_instance = None

@@ -382,7 +382,7 @@
                 <div class="d-flex align-items-center gap-1.5 gap-md-2 flex-shrink-0 ms-lg-auto pt-2 pt-lg-0 border-top border-lg-0">
                     <!-- Real-Time Auto-Sync Live Indicator (Online/Offline Mode) -->
                     <div id="syncStatusBadgeContainer" class="d-inline-flex align-items-center flex-shrink-0">
-                        <button type="button" class="btn btn-sm rounded-pill px-2 py-1 border d-inline-flex align-items-center gap-1 shadow-sm text-decoration-none bg-white" id="globalSyncBtn" title="Network status & Auto-sync. Click to sync now." onclick="triggerImmediateSync(event)">
+                        <button type="button" class="btn btn-sm rounded-pill px-2 py-1 border d-inline-flex align-items-center gap-1 shadow-sm text-decoration-none bg-white" id="globalSyncBtn" title="Network status & Auto-sync. Click to view sync details and status." data-bs-toggle="modal" data-bs-target="#syncStatusModal" onclick="openSyncModalAndRefresh()">
                             <span class="spinner-grow spinner-grow-sm text-success d-none" id="syncSpinner" role="status" style="width: 8px; height: 8px;"></span>
                             <i class="fa-solid fa-cloud-check text-success" id="syncStatusIcon"></i>
                             <span class="small fw-semibold text-dark d-none d-sm-inline" id="syncStatusText" style="font-size: 0.78rem;">Online</span>
@@ -885,6 +885,118 @@
         </div>
     </div>
 
+    <!-- ======================================================== -->
+    <!-- MODAL: CLOUD SYNC & DATABASE DIAGNOSTICS                   -->
+    <!-- ======================================================== -->
+    <div class="modal fade" id="syncStatusModal" tabindex="-1" aria-labelledby="syncStatusModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <div>
+                        <h5 class="modal-title fw-bold" id="syncStatusModalLabel">
+                            <i class="fa-solid fa-cloud-arrow-up text-primary me-2"></i> Cloud Sync & Database Status (தரவுத்தள ஒத்திசைவு)
+                        </h5>
+                        <p class="text-secondary small mb-0">
+                            Real-time synchronization between this terminal and the cloud server.
+                        </p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body pt-3">
+                    <!-- Status Cards Row -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-sm-4">
+                            <div class="card border-0 bg-light rounded-3 p-2.5 h-100">
+                                <span class="text-muted small fw-semibold">Connection</span>
+                                <div class="d-flex align-items-center gap-1.5 mt-1">
+                                    <span class="rounded-circle d-inline-block" id="modalConnDot" style="width: 10px; height: 10px; background-color: #10b981;"></span>
+                                    <span class="fw-bold text-dark small" id="modalConnText">Online • Connected</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="card border-0 bg-light rounded-3 p-2.5 h-100">
+                                <span class="text-muted small fw-semibold">Sync Status</span>
+                                <div class="mt-1">
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 fw-bold small" id="modalSyncBadge">
+                                        All Data Synced
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="card border-0 bg-light rounded-3 p-2.5 h-100">
+                                <span class="text-muted small fw-semibold">Last Synced</span>
+                                <div class="fw-bold text-dark small mt-1" id="modalLastSyncTime">--:--:--</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cloud Server URL -->
+                    <div class="small text-secondary mb-3 d-flex align-items-center gap-1">
+                        <i class="fa-solid fa-server text-muted"></i>
+                        <span>Server: <strong id="modalServerUrl" class="text-dark">https://billing-software-production-d0f2.up.railway.app</strong></span>
+                    </div>
+
+                    <!-- Sync Error Alert Box (Dynamic) -->
+                    <div id="modalSyncErrorBox" class="alert alert-danger d-none rounded-3 py-2 px-3 mb-3 border-danger-subtle bg-danger-subtle text-danger">
+                        <div class="d-flex align-items-start gap-2">
+                            <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+                            <div>
+                                <strong class="d-block">Sync Issue / Error Details:</strong>
+                                <span class="small font-monospace text-break" id="modalSyncErrorMsg">None</span>
+                                <div class="small text-muted mt-1">
+                                    Tip: Check your internet connection or click "Sync Now" below to retry.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pending Items Section (Dynamic) -->
+                    <div id="modalPendingSection" class="d-none">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <h6 class="fw-bold text-dark mb-0 small">
+                                <i class="fa-solid fa-clock-rotate-left text-warning me-1"></i> Pending Invoices Awaiting Cloud Sync (<span id="modalPendingCountText">0</span>)
+                            </h6>
+                            <span class="badge bg-warning text-dark small">Pending Push</span>
+                        </div>
+                        <div class="table-responsive rounded-3 border bg-white mb-3" style="max-height: 200px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0" style="font-size: 12px;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Invoice #</th>
+                                        <th>Customer</th>
+                                        <th>Total (₹)</th>
+                                        <th>Created Date</th>
+                                        <th>Client</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modalPendingTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- All Synced Banner (Dynamic) -->
+                    <div id="modalAllSyncedBox" class="alert alert-success rounded-3 py-2 px-3 mb-0 border-success-subtle bg-success-subtle text-success d-flex align-items-center gap-2">
+                        <i class="fa-solid fa-circle-check"></i>
+                        <span class="small">All invoices, products, and customer records on this device are 100% synchronized with the cloud database.</span>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0 d-flex justify-content-between">
+                    <span class="text-muted small" id="modalSyncNoticeText">Auto-sync runs continuously in the background.</span>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary btn-sm px-3 rounded-2" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary btn-sm px-3 rounded-2 d-inline-flex align-items-center gap-1.5 shadow-sm fw-semibold" id="modalSyncNowBtn" onclick="triggerImmediateSyncFromModal()">
+                            <i class="fa-solid fa-arrows-rotate" id="modalSyncNowIcon"></i>
+                            <span id="modalSyncNowText">Sync Now</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Bottom Navigation Bar -->
     <div class="mobile-bottom-bar">
         <a href="{% url 'billing:dashboard' %}{{ sec_param }}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
@@ -960,48 +1072,128 @@
 
             if (!btn || !text || !icon) return;
 
+            // 1. Update Navbar Badge
             if (status.is_syncing) {
                 if (spinner) spinner.classList.remove("d-none");
                 icon.className = "fa-solid fa-arrows-rotate fa-spin text-primary";
                 text.innerText = "Syncing...";
                 btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-primary-subtle bg-primary-subtle text-primary d-inline-flex align-items-center gap-1 shadow-sm";
-                return;
-            }
-
-            if (spinner) spinner.classList.add("d-none");
-
-            if (status.is_online) {
-                if (status.pending_count > 0) {
-                    icon.className = "fa-solid fa-arrows-rotate text-warning";
-                    text.innerText = "Pending Sync";
-                    btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-warning-subtle bg-warning-subtle text-dark d-inline-flex align-items-center gap-1 shadow-sm";
+            } else {
+                if (spinner) spinner.classList.add("d-none");
+                if (status.last_error) {
+                    icon.className = "fa-solid fa-triangle-exclamation text-danger";
+                    text.innerText = "Sync Alert";
+                    btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-danger-subtle bg-danger-subtle text-danger d-inline-flex align-items-center gap-1 shadow-sm";
                     if (badge) {
                         badge.classList.remove("d-none");
-                        badge.innerText = `${status.pending_count} pending`;
+                        badge.innerText = status.pending_count > 0 ? `${status.pending_count} pending` : "Check error";
+                    }
+                } else if (status.is_online) {
+                    if (status.pending_count > 0) {
+                        icon.className = "fa-solid fa-arrows-rotate text-warning";
+                        text.innerText = "Pending Sync";
+                        btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-warning-subtle bg-warning-subtle text-dark d-inline-flex align-items-center gap-1 shadow-sm";
+                        if (badge) {
+                            badge.classList.remove("d-none");
+                            badge.innerText = `${status.pending_count} pending`;
+                        }
+                    } else {
+                        icon.className = "fa-solid fa-cloud-check text-success";
+                        text.innerText = status.is_desktop ? "Online • Synced" : "Connected";
+                        btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-success-subtle bg-success-subtle text-success d-inline-flex align-items-center gap-1 shadow-sm";
+                        if (badge) {
+                            badge.classList.add("d-none");
+                        }
                     }
                 } else {
-                    icon.className = "fa-solid fa-cloud-check text-success";
-                    text.innerText = status.is_desktop ? "Online • Synced" : "Connected";
-                    btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-success-subtle bg-success-subtle text-success d-inline-flex align-items-center gap-1 shadow-sm";
+                    icon.className = "fa-solid fa-cloud-slash text-danger";
+                    text.innerText = "Offline Mode";
+                    btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-danger-subtle bg-danger-subtle text-danger d-inline-flex align-items-center gap-1 shadow-sm";
                     if (badge) {
-                        badge.classList.add("d-none");
-                    }
-                }
-            } else {
-                icon.className = "fa-solid fa-cloud-slash text-danger";
-                text.innerText = "Offline Mode";
-                btn.className = "btn btn-sm rounded-pill px-2 py-1 border border-danger-subtle bg-danger-subtle text-danger d-inline-flex align-items-center gap-1 shadow-sm";
-                if (badge) {
-                    if (status.pending_count > 0) {
-                        badge.classList.remove("d-none");
-                        badge.innerText = `${status.pending_count} offline`;
-                    } else {
-                        badge.classList.add("d-none");
+                        if (status.pending_count > 0) {
+                            badge.classList.remove("d-none");
+                            badge.innerText = `${status.pending_count} offline`;
+                        } else {
+                            badge.classList.add("d-none");
+                        }
                     }
                 }
             }
 
-            // Real-Time Client/Admin Devices Quota & Concurrent Active Terminals Live Update
+            // 2. Populate Modal Elements (Sync Status & Diagnostics Modal)
+            const mDot = document.getElementById("modalConnDot");
+            const mConnText = document.getElementById("modalConnText");
+            const mBadge = document.getElementById("modalSyncBadge");
+            const mTime = document.getElementById("modalLastSyncTime");
+            const mServer = document.getElementById("modalServerUrl");
+            const mErrorBox = document.getElementById("modalSyncErrorBox");
+            const mErrorMsg = document.getElementById("modalSyncErrorMsg");
+            const mPendingSec = document.getElementById("modalPendingSection");
+            const mPendingCount = document.getElementById("modalPendingCountText");
+            const mPendingBody = document.getElementById("modalPendingTableBody");
+            const mAllSynced = document.getElementById("modalAllSyncedBox");
+
+            if (mDot && mConnText) {
+                mDot.style.backgroundColor = status.is_online ? "#10b981" : "#ef4444";
+                mConnText.innerText = status.is_online ? "Online • Connected" : "Offline Mode";
+            }
+            if (mServer && status.server_url) {
+                mServer.innerText = status.server_url;
+            }
+            if (mTime) {
+                mTime.innerText = status.last_sync_time ? `${status.last_sync_time}` : (status.is_desktop ? "Not yet synced" : "Live Cloud");
+            }
+            if (mBadge) {
+                if (status.is_syncing) {
+                    mBadge.className = "badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2.5 py-1 fw-bold small";
+                    mBadge.innerText = "Syncing in progress...";
+                } else if (status.last_error) {
+                    mBadge.className = "badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2.5 py-1 fw-bold small";
+                    mBadge.innerText = "Sync Issue Detected";
+                } else if (status.pending_count > 0) {
+                    mBadge.className = "badge bg-warning text-dark border border-warning rounded-pill px-2.5 py-1 fw-bold small";
+                    mBadge.innerText = `${status.pending_count} Item(s) Pending`;
+                } else {
+                    mBadge.className = "badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 fw-bold small";
+                    mBadge.innerText = "All Data Synced";
+                }
+            }
+
+            if (mErrorBox && mErrorMsg) {
+                if (status.last_error) {
+                    mErrorBox.classList.remove("d-none");
+                    mErrorMsg.innerText = status.last_error;
+                } else {
+                    mErrorBox.classList.add("d-none");
+                }
+            }
+
+            if (mPendingSec && mPendingBody && mAllSynced) {
+                if (status.pending_count > 0) {
+                    mPendingSec.classList.remove("d-none");
+                    mAllSynced.classList.add("d-none");
+                    if (mPendingCount) mPendingCount.innerText = status.pending_count;
+
+                    if (status.pending_invoices && status.pending_invoices.length > 0) {
+                        mPendingBody.innerHTML = status.pending_invoices.map(inv => `
+                            <tr>
+                                <td class="fw-bold font-monospace text-primary">${inv.invoice_number}</td>
+                                <td>${inv.customer_name || 'Cash Customer'}</td>
+                                <td class="fw-bold">₹${parseFloat(inv.grand_total).toFixed(2)}</td>
+                                <td class="text-secondary">${inv.created_at || ''}</td>
+                                <td><span class="badge bg-light text-dark border">${inv.client || 'Main'}</span></td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        mPendingBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-2">${status.pending_count} record(s) queued for sync</td></tr>`;
+                    }
+                } else {
+                    mPendingSec.classList.add("d-none");
+                    mAllSynced.classList.remove("d-none");
+                }
+            }
+
+            // Real-Time Client/Admin Devices Quota
             if (status.active_devices_count !== undefined && status.max_allowed_devices !== undefined) {
                 const devBadge = document.getElementById("clientDeviceBadge");
                 const rolePrefix = status.is_admin ? "Admin" : "Client";
@@ -1039,9 +1231,20 @@
                 });
         }
 
-        function triggerImmediateSync(e) {
-            if (e) e.preventDefault();
-            updateSyncBadge({ is_syncing: true });
+        function openSyncModalAndRefresh() {
+            checkSyncStatus();
+        }
+
+        function triggerImmediateSyncFromModal() {
+            const icon = document.getElementById("modalSyncNowIcon");
+            const text = document.getElementById("modalSyncNowText");
+            const btn = document.getElementById("modalSyncNowBtn");
+            const notice = document.getElementById("modalSyncNoticeText");
+
+            if (icon) icon.className = "fa-solid fa-arrows-rotate fa-spin";
+            if (text) text.innerText = "Syncing...";
+            if (btn) btn.disabled = true;
+            if (notice) notice.innerText = "Synchronizing records with cloud server now...";
 
             function getCookie(name) {
                 let cookieValue = null;
@@ -1067,11 +1270,29 @@
             })
             .then(res => res.json())
             .then(data => {
-                setTimeout(checkSyncStatus, 1200);
+                if (data.sync_data) {
+                    updateSyncBadge(data.sync_data);
+                } else {
+                    checkSyncStatus();
+                }
+                if (notice) {
+                    notice.innerText = data.status === "success" ? "Sync completed successfully!" : (data.message || "Sync completed with notices.");
+                }
             })
-            .catch(() => {
-                setTimeout(checkSyncStatus, 1500);
+            .catch(err => {
+                checkSyncStatus();
+                if (notice) notice.innerText = "Sync error: Unable to contact local or cloud server.";
+            })
+            .finally(() => {
+                if (icon) icon.className = "fa-solid fa-arrows-rotate";
+                if (text) text.innerText = "Sync Now";
+                if (btn) btn.disabled = false;
             });
+        }
+
+        function triggerImmediateSync(e) {
+            if (e) e.preventDefault();
+            triggerImmediateSyncFromModal();
         }
 
         // When device reconnects to network: Automatically trigger database sync immediately!

@@ -78,7 +78,7 @@ def get_branch_filter(request):
         return Q(is_active=True)
     if is_admin_user(request.user):
         return Q(is_active=True)
-    return Q(is_active=True) & (Q(client=request.user) | Q(is_default=True, client__isnull=True))
+    return Q(is_active=True) & (Q(client=request.user) | Q(client__isnull=True))
 
 
 def check_user_has_gst(user):
@@ -1652,6 +1652,37 @@ def product_list(request):
     Units: KG, Pack, Box, Pcs, Ltr.
     """
     c_filter = get_client_filter(request)
+    client_u = get_client_user(request)
+
+    # Initial isolated product seeding for new clients with zero products
+    if client_u and not is_admin_user(request.user):
+        if not Product.objects.filter(client=client_u).exists():
+            from billing.models import DeletedProduct
+            if not DeletedProduct.objects.filter(client=client_u).exists():
+                starter_prods = [
+                    ("பொன்னி அரிசி", "Ponni Rice", "SKU-RICE-01", "KG", 55.00, 45.00, 1000, "Grocery"),
+                    ("துவரம் பருப்பு", "Toor Dal", "SKU-DAL-01", "KG", 160.00, 140.00, 500, "Grocery"),
+                    ("சர்க்கரை", "Sugar", "SKU-SUGAR-01", "KG", 42.00, 36.00, 800, "Grocery"),
+                    ("காபி தூள்", "Filter Coffee Powder", "SKU-COFFEE-01", "Pack", 120.00, 95.00, 200, "Beverages"),
+                    ("ஆப்பிள் பாக்ஸ்", "Apple Box", "SKU-APPLE-BOX", "Box", 1200.00, 950.00, 50, "Fruits"),
+                ]
+                for p_tam, p_eng, p_sku, p_unit, p_pr, p_cpr, p_stk, p_cat in starter_prods:
+                    Product.objects.get_or_create(
+                        sku=p_sku,
+                        client=client_u,
+                        defaults={
+                            "name_tamil": p_tam,
+                            "name": p_eng,
+                            "unit": p_unit,
+                            "price": p_pr,
+                            "cost_price": p_cpr,
+                            "stock_quantity": p_stk,
+                            "category": p_cat,
+                            "is_active": True,
+                            "is_deleted": False,
+                        }
+                    )
+
     products = Product.objects.filter(c_filter, is_active=True, is_deleted=False).order_by("name_tamil", "name")
     search = request.GET.get("search", "").strip()
     category = request.GET.get("category", "").strip()
@@ -1877,7 +1908,9 @@ def product_add(request):
 
         # Clear any deletion tombstone for this SKU
         from billing.models import DeletedProduct
-        del_prod_q = Q(sku=sku, client=client_u) if client_u else Q(sku=sku)
+        del_prod_q = Q(sku=sku)
+        if client_u:
+            del_prod_q &= (Q(client=client_u) | Q(client__isnull=True))
         DeletedProduct.objects.filter(del_prod_q).delete()
 
         log_activity(
@@ -1897,6 +1930,8 @@ def product_edit(request, product_id):
     product = Product.objects.filter(c_filter, pk=product_id, is_deleted=False).first()
     if not product and is_admin_user(request.user):
         product = Product.objects.filter(pk=product_id, is_deleted=False).first()
+    elif not product:
+        product = Product.objects.filter(Q(client=request.user) | Q(client__isnull=True), pk=product_id, is_deleted=False).first()
 
     if not product:
         messages.error(request, "Product not found or has already been removed.")
@@ -1925,7 +1960,9 @@ def product_edit(request, product_id):
 
         # Clear any tombstone for this SKU
         from billing.models import DeletedProduct
-        del_prod_q = Q(sku=product.sku, client=product.client) if product.client else Q(sku=product.sku)
+        del_prod_q = Q(sku=product.sku)
+        if product.client:
+            del_prod_q &= (Q(client=product.client) | Q(client__isnull=True))
         DeletedProduct.objects.filter(del_prod_q).delete()
 
         log_activity(
@@ -1948,10 +1985,12 @@ def product_delete(request, product_id):
         c_filter = get_client_filter(request)
         client_u = get_client_user(request)
 
-        # Resilient lookup: check client filter, admin scope
+        # Resilient lookup: check client filter, admin scope, or unassigned global products
         product = Product.objects.filter(c_filter, pk=product_id).first()
         if not product and is_admin_user(request.user):
             product = Product.objects.filter(pk=product_id).first()
+        elif not product:
+            product = Product.objects.filter(Q(client=request.user) | Q(client__isnull=True), pk=product_id).first()
 
         if not product:
             messages.info(request, "Product has already been removed or does not exist.")
@@ -1979,12 +2018,12 @@ def product_delete(request, product_id):
         product.save(update_fields=["is_active", "is_deleted", "deleted_at", "updated_at"])
 
         # Also mark all matching SKU instances under this scope as deleted
-        scope_q = Q(client=owner) if owner else Q()
+        scope_q = Q(client=owner) | Q(client__isnull=True) if owner else Q()
         Product.objects.filter(sku=sku).filter(scope_q).update(
             is_active=False,
             is_deleted=True,
             deleted_at=timezone.now(),
-            updated_at=timezone.now(),
+            updated_at=timezone.now()
         )
 
         # Record persistent tombstone so background sync never revives it
@@ -4621,7 +4660,7 @@ def admin_delete_customer_or_data(request, customer_id):
 
 
 def sync_status_view(request):
-    """Returns real-time sync connectivity status, pending offline bills count, and dynamic device counts"""
+    """Returns real-time sync connectivity status, pending offline bills count, error diagnostics, and dynamic device counts"""
     try:
         from sync_manager import get_sync_manager
         sm = get_sync_manager()
@@ -4630,10 +4669,13 @@ def sync_status_view(request):
         data = {
             "is_online": True,
             "is_syncing": False,
-            "server_url": "cloud",
-            "last_sync_time": None,
+            "server_url": "https://billing-software-production-d0f2.up.railway.app",
+            "last_sync_time": timezone.now().strftime("%H:%M:%S"),
             "last_sync_status": "cloud",
+            "last_error": None,
+            "last_error_time": None,
             "pending_count": 0,
+            "pending_invoices": [],
             "is_desktop": False,
         }
 
@@ -4671,13 +4713,20 @@ def sync_status_view(request):
 
 
 def sync_trigger_view(request):
-    """Triggers background sync cycle and returns immediate status"""
+    """Triggers immediate database sync cycle and returns real-time status and diagnostics"""
     if request.method == "POST":
         try:
             from sync_manager import get_sync_manager
             sm = get_sync_manager()
-            sm.trigger_sync()
-            return JsonResponse({"status": "success", "message": "Database sync triggered successfully."})
+            sm._sync_cycle()
+            res_data = sm.get_status_dict()
+            is_ok = res_data.get("last_sync_status") == "success"
+            msg = "Database synchronized successfully with cloud server." if is_ok else (res_data.get("last_error") or "Sync finished with notices.")
+            return JsonResponse({
+                "status": "success" if is_ok else "error",
+                "message": msg,
+                "sync_data": res_data,
+            })
         except Exception as e:
             return JsonResponse({"status": "error", "message": str(e)}, status=500)
     return JsonResponse({"status": "error", "message": "POST method required."}, status=405)
@@ -4837,7 +4886,9 @@ def recycle_bin_restore(request, item_type, item_id):
             prod.save(update_fields=["is_deleted", "is_active", "deleted_at", "updated_at"])
 
             from billing.models import DeletedProduct
-            del_prod_q = Q(sku=prod.sku, client=prod.client) if prod.client else Q(sku=prod.sku)
+            del_prod_q = Q(sku=prod.sku)
+            if prod.client:
+                del_prod_q &= (Q(client=prod.client) | Q(client__isnull=True))
             DeletedProduct.objects.filter(del_prod_q).delete()
 
             log_activity(

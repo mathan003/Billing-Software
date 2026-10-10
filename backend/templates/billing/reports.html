@@ -169,17 +169,17 @@
         </div>
     </div>
 
-    <!-- Main Content Grid: Invoices Table (Left) + Customer Footfall Analytics Side Section (Right) -->
-    <div class="col-lg-8 col-12">
-        <div class="card border-0 shadow-sm rounded-4 overflow-hidden h-100">
-            <div class="card-header bg-white border-0 pt-4 px-4 pb-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <!-- Main Content: Full-Width Invoices Table (Fit in Display) -->
+    <div class="col-12">
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden bg-white">
+            <div class="card-header bg-white border-0 pt-3 px-3 px-md-4 pb-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div>
                     <h5 class="fw-bold mb-0 text-dark">
                         <i class="fa-solid fa-receipt text-primary me-2"></i> Invoices & Transaction History
                     </h5>
-                    <small class="text-muted">Showing {{ bills|length }} invoices for {{ period_label }}</small>
+                    <small class="text-muted" id="repBillsCountSummary">Showing {{ bills|length }} invoices for {{ period_label }}</small>
                 </div>
-                <div class="text-muted small">
+                <div class="d-flex align-items-center gap-2">
                     <span class="badge bg-light text-secondary border px-3 py-2">
                         <i class="fa-solid fa-calendar-range me-1"></i> {{ period_label }}
                     </span>
@@ -187,68 +187,74 @@
             </div>
 
             <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="bg-light text-secondary small text-uppercase">
+                <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                    <table class="table table-hover align-middle mb-0 text-nowrap w-100" style="font-size: 0.85rem;" id="reportsInvoicesTable">
+                        <thead class="bg-light text-secondary small text-uppercase position-sticky top-0 bg-white" style="z-index: 2; font-size: 0.75rem;">
                             <tr>
-                                <th class="ps-4">Bill #</th>
-                                <th>Date & Time</th>
-                                <th>Customer Name</th>
-                                <th>Branch</th>
-                                <th class="text-end">Subtotal</th>
-                                <th class="text-end">Discount</th>
-                                <th class="text-end">Grand Total</th>
-                                <th class="text-end">Paid</th>
-                                <th class="text-end">Pending</th>
-                                <th class="text-center">Status</th>
-                                <th class="text-center pe-4">Actions</th>
+                                <th class="ps-3 py-2">Bill #</th>
+                                <th class="py-2">Date & Time</th>
+                                <th class="py-2">Customer Name</th>
+                                <th class="py-2">Branch</th>
+                                <th class="text-end py-2">Subtotal</th>
+                                <th class="text-end py-2">Discount</th>
+                                <th class="text-end py-2">Grand Total</th>
+                                <th class="text-end py-2">Paid</th>
+                                <th class="text-end py-2">Pending</th>
+                                <th class="text-center py-2">Status</th>
+                                <th class="text-center pe-3 py-2">Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="reportsInvoicesTbody">
                             {% for bill in bills %}
-                                <tr>
-                                    <td class="ps-4">
+                                <tr class="report-bill-row" {% if forloop.counter > 10 %}style="display: none;"{% endif %}>
+                                    <td class="ps-3 py-2">
                                         <a href="{% url 'billing:invoice_detail' bill.id %}" class="fw-bold text-decoration-none text-primary font-monospace">
                                             {{ bill.invoice_number }}
                                         </a>
                                     </td>
-                                    <td class="small text-secondary">{{ bill.created_at|date:"d M Y, h:i A" }}</td>
-                                    <td>
-                                        <div class="fw-semibold text-dark">{{ bill.customer_name|default:"Cash Customer" }}</div>
+                                    <td class="text-secondary py-2" style="font-size: 0.8rem;">
+                                        {{ bill.created_at|date:"d M Y, h:i A" }}
+                                    </td>
+                                    <td class="py-2" style="max-width: 160px; white-space: normal;">
+                                        <div class="fw-semibold text-dark text-truncate" title="{{ bill.customer_name|default:'Cash Customer' }}">
+                                            {{ bill.customer_name|default:"Cash Customer" }}
+                                        </div>
                                         {% if bill.customer_phone %}
-                                            <div class="text-muted small"><i class="fa-solid fa-phone me-1"></i>{{ bill.customer_phone }}</div>
+                                            <div class="text-muted" style="font-size: 0.75rem;">
+                                                <i class="fa-solid fa-phone me-1"></i>{{ bill.customer_phone }}
+                                            </div>
                                         {% endif %}
                                     </td>
-                                    <td class="small text-secondary">{{ bill.branch_name }}</td>
-                                    <td class="text-end small font-monospace">₹{{ bill.subtotal|floatformat:2 }}</td>
-                                    <td class="text-end small font-monospace text-warning">₹{{ bill.discount_amount|floatformat:2 }}</td>
-                                    <td class="text-end fw-bold font-monospace text-dark">₹{{ bill.grand_total|floatformat:2 }}</td>
-                                    <td class="text-end fw-semibold font-monospace text-success">₹{{ bill.paid_amount|floatformat:2 }}</td>
-                                    <td class="text-end fw-bold font-monospace {% if bill.balance_amount > 0 %}text-danger{% else %}text-muted{% endif %}">
+                                    <td class="text-secondary py-2" style="font-size: 0.8rem;">{{ bill.branch_name }}</td>
+                                    <td class="text-end font-monospace py-2">₹{{ bill.subtotal|floatformat:2 }}</td>
+                                    <td class="text-end font-monospace text-warning py-2">₹{{ bill.discount_amount|floatformat:2 }}</td>
+                                    <td class="text-end fw-bold font-monospace text-dark py-2">₹{{ bill.grand_total|floatformat:2 }}</td>
+                                    <td class="text-end fw-semibold font-monospace text-success py-2">₹{{ bill.paid_amount|floatformat:2 }}</td>
+                                    <td class="text-end fw-bold font-monospace py-2 {% if bill.balance_amount > 0 %}text-danger{% else %}text-muted{% endif %}">
                                         ₹{{ bill.balance_amount|floatformat:2 }}
                                     </td>
-                                    <td class="text-center">
-                                        {% if bill.payment_status == 'paid' %}
-                                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1">Paid</span>
-                                        {% elif bill.payment_status == 'partially_paid' %}
-                                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2 py-1">Partial</span>
+                                    <td class="text-center py-2">
+                                        {% if bill.payment_status == 'paid' or bill.payment_status == 'Paid' %}
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">Paid</span>
+                                        {% elif bill.payment_status == 'partially_paid' or bill.payment_status == 'Partial' %}
+                                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">Partial</span>
                                         {% else %}
-                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1">Unpaid</span>
+                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1" style="font-size: 0.72rem;">Unpaid</span>
                                         {% endif %}
                                     </td>
                                     <!-- High-Visibility Action & Download Icons -->
-                                    <td class="text-center pe-4">
+                                    <td class="text-center pe-3 py-2">
                                         <div class="d-inline-flex gap-1">
                                             <!-- View Receipt -->
-                                            <a href="{% url 'billing:invoice_detail' bill.id %}" class="btn btn-sm btn-outline-primary rounded-circle" title="View Receipt" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;">
+                                            <a href="{% url 'billing:invoice_detail' bill.id %}" class="btn btn-sm btn-outline-primary rounded-circle" title="View Receipt" style="width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem;">
                                                 <i class="fa-solid fa-eye"></i>
                                             </a>
                                             <!-- PDF Download -->
-                                            <a href="{% url 'billing:invoice_download_pdf' bill.id %}" class="btn btn-sm btn-outline-danger rounded-circle" title="Download PDF" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;">
+                                            <a href="{% url 'billing:invoice_download_pdf' bill.id %}" class="btn btn-sm btn-outline-danger rounded-circle" title="Download PDF" style="width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem;">
                                                 <i class="fa-solid fa-file-pdf"></i>
                                             </a>
                                             <!-- Edit Bill -->
-                                            <a href="{% url 'billing:invoice_edit' bill.id %}" class="btn btn-sm btn-outline-secondary rounded-circle" title="Edit Bill" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;">
+                                            <a href="{% url 'billing:invoice_edit' bill.id %}" class="btn btn-sm btn-outline-secondary rounded-circle" title="Edit Bill" style="width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem;">
                                                 <i class="fa-solid fa-pen"></i>
                                             </a>
                                         </div>
@@ -266,13 +272,22 @@
                         </tbody>
                     </table>
                 </div>
+
+                {% if bills|length > 10 %}
+                <div class="p-2 px-3 text-center border-top bg-light rounded-bottom d-flex justify-content-between align-items-center">
+                    <span class="small text-muted" id="repBillsCountInfo">Showing 10 of {{ bills|length }} invoices</span>
+                    <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" id="loadMoreRepBillsBtn" onclick="loadMoreReportBills()">
+                        <i class="fa-solid fa-chevron-down me-1"></i> Load More (மேலும் பார்க்க)
+                    </button>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
 
-    <!-- SIDE SECTION: Customer Footfall & Visits Analytics (வாடிக்கையாளர்கள் வருகை அறிக்கை) -->
-    <div class="col-lg-4 col-12">
-        <div class="card border-0 shadow-sm rounded-4 h-100 bg-white">
+    <!-- Analytics & Customer Footfall Section (Beneath Invoices Table) -->
+    <div class="col-12">
+        <div class="card border-0 shadow-sm rounded-4 bg-white">
             <div class="card-header bg-white border-0 pt-4 px-4 pb-2">
                 <div class="d-flex align-items-center gap-2">
                     <div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width: 42px; height: 42px; background: linear-gradient(135deg, #0d9488 0%, #06b6d4 100%);">
@@ -410,6 +425,31 @@
                 </div>
             </div>
         </div>
-    </div>
 </div>
+
+<script>
+    function loadMoreReportBills() {
+        const rows = document.querySelectorAll('.report-bill-row');
+        const total = rows.length;
+        let visibleCount = 0;
+        rows.forEach(r => {
+            if (r.style.display !== 'none') visibleCount++;
+        });
+
+        const targetCount = Math.min(total, visibleCount + 10);
+        for (let i = 0; i < targetCount; i++) {
+            if (rows[i]) rows[i].style.display = '';
+        }
+
+        const infoEl = document.getElementById('repBillsCountInfo');
+        if (infoEl) {
+            infoEl.innerText = `Showing ${targetCount} of ${total} invoices`;
+        }
+
+        const btnEl = document.getElementById('loadMoreRepBillsBtn');
+        if (btnEl && targetCount >= total) {
+            btnEl.style.display = 'none';
+        }
+    }
+</script>
 {% endblock %}

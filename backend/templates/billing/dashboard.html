@@ -411,9 +411,9 @@
                 </a>
             </div>
 
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light small text-muted">
+            <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+                <table class="table table-hover align-middle mb-0" id="todayBillsTable">
+                    <thead class="table-light small text-muted position-sticky top-0 bg-white" style="z-index: 2;">
                         <tr>
                             <th>Invoice #</th>
                             <th>Time</th>
@@ -427,9 +427,9 @@
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="todayBillsTbody">
                         {% for tb in today_invoices %}
-                        <tr>
+                        <tr class="today-bill-row" {% if forloop.counter > 10 %}style="display: none;"{% endif %}>
                             <td>
                                 <a href="{% url 'billing:invoice_detail' tb.id %}" class="fw-bold text-primary text-decoration-none">
                                     {{ tb.invoice_number }}
@@ -492,6 +492,14 @@
                     </tbody>
                 </table>
             </div>
+            {% if today_invoices|length > 10 %}
+            <div class="p-2 text-center border-top bg-light rounded-bottom d-flex justify-content-between align-items-center">
+                <span class="small text-muted" id="todayBillsCountInfo">Showing 10 of {{ today_invoices|length }} bills</span>
+                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" id="loadMoreTodayBillsBtn" onclick="loadMoreRows('today-bill-row', 'loadMoreTodayBillsBtn', 'todayBillsCountInfo', 10, {{ today_invoices|length }})">
+                    <i class="fa-solid fa-chevron-down me-1"></i> Load More (மேலும் பார்க்க)
+                </button>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -516,9 +524,9 @@
                 </a>
             </div>
 
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light small text-muted">
+            <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+                <table class="table table-hover align-middle mb-0" id="pendingCustomersTable">
+                    <thead class="table-light small text-muted position-sticky top-0 bg-white" style="z-index: 2;">
                         <tr>
                             <th>Customer Name</th>
                             <th>Contact Phone</th>
@@ -530,9 +538,9 @@
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="pendingCustomersTbody">
                         {% for pc in pending_customers %}
-                        <tr>
+                        <tr class="pending-cust-row" {% if forloop.counter > 10 %}style="display: none;"{% endif %}>
                             <td>
                                 <div class="fw-bold text-dark">{{ pc.name }}</div>
                             </td>
@@ -574,6 +582,17 @@
                     </tbody>
                 </table>
             </div>
+            {% if pending_customers|length > 10 %}
+            <div class="p-2 text-center border-top bg-light rounded-bottom d-flex justify-content-between align-items-center">
+                <span class="small text-muted" id="pendingCustCountInfo">Showing 10 of {{ pending_customers|length }} customers</span>
+                <button type="button" class="btn btn-sm btn-outline-danger fw-semibold" id="loadMorePendingCustBtn" onclick="loadMoreRows('pending-cust-row', 'loadMorePendingCustBtn', 'pendingCustCountInfo', 10, {{ pending_customers|length }})">
+                    <i class="fa-solid fa-chevron-down me-1"></i> Load More (மேலும் பார்க்க)
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
         </div>
     </div>
 </div>
@@ -1001,6 +1020,28 @@
             // Server temporarily offline or disconnected
         }
     }
-    setInterval(pollLiveDashboard, 6000);
+    // Progressive row loader for dashboard tables
+    window.loadMoreRows = function(rowClass, btnId, infoId, step, total) {
+        const rows = document.querySelectorAll('.' + rowClass);
+        let visibleCount = 0;
+        rows.forEach(r => {
+            if (r.style.display !== 'none') visibleCount++;
+        });
+
+        const targetCount = Math.min(total, visibleCount + step);
+        for (let i = 0; i < targetCount; i++) {
+            if (rows[i]) rows[i].style.display = '';
+        }
+
+        const infoEl = document.getElementById(infoId);
+        if (infoEl) {
+            infoEl.innerText = `Showing ${targetCount} of ${total} records`;
+        }
+
+        const btnEl = document.getElementById(btnId);
+        if (btnEl && targetCount >= total) {
+            btnEl.style.display = 'none';
+        }
+    };
 </script>
 {% endblock %}

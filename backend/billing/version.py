@@ -3,15 +3,14 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.8.1"
-APP_TITLE = "Manual Grand Total Editing, Live Change/Return Amount & Real-Time Sync"
+APP_VERSION = "v2.8.2"
+APP_TITLE = "Add Button Fix, 10-Item Progressive Display & Customer Returns Stock Adjustment"
 APP_RELEASE_NOTES = (
-    "• Manual Grand Total Editing: Cashiers can freely adjust, increase, or decrease the final bill total with dedicated +/- buttons and manual typing\n"
-    "• Live Change & Return Amount: Automatically calculates and displays the exact change to return when the customer pays more than the grand total\n"
-    "• Quick Payment Shortcuts: Quick currency buttons (Exact, ₹100, ₹500) for rapid transaction processing\n"
-    "• Dashboard & Metrics Integration: Dashboard today's sales, payments collected, and balance due reflect manual totals seamlessly\n"
-    "• Real-Time Stock Updates & Desktop Sync: Automatic stock decrement upon sale and instant multi-device cloud synchronization\n"
-    "• 100% Data Preservation: All client records, customer data, invoices, and reports remain completely safe and untouched"
+    "• Add Product Button Fix: Resolved JavaScript reference error on Add Product button across all screen sizes and terminals\n"
+    "• Initial 10-Record Display with Load-More: Today's Sales & Bills, Pending Customers, and Invoice History initially load 10 records with scrollable tables and Load More (மேலும் பார்க்க) buttons\n"
+    "• Customer Product Returns: Dedicated edit functionality allows reducing returned quantities, restoring items into inventory stock, recalculating paid/refund amounts, and adjusting customer balance dues\n"
+    "• Complete Data Protection: All admin accounts, client records, products, customer dues, reports, and transaction histories are 100% preserved and intact\n"
+    "• Synchronized Web & Desktop POS: Seamless multi-device sync keeps Web application and Windows Desktop executable in continuous parity"
 )
 
 

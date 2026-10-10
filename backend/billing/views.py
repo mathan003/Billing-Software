@@ -1572,13 +1572,23 @@ def invoice_edit(request, invoice_id):
         else:
             invoice.grand_total = max(Decimal("0.00"), subtotal + total_tax - invoice.discount_amount)
 
+        # Allow cashier to adjust paid_amount (e.g. refunded customer on product returns)
+        manual_paid = request.POST.get("paid_amount", "").strip()
+        if manual_paid != "":
+            invoice.paid_amount = max(Decimal("0.00"), parse_decimal(manual_paid, str(invoice.paid_amount)))
+
         invoice.notes = (invoice.notes or "").replace("[CLOUD_SYNCED]", "").strip()
         invoice.save()  # Auto updates grand_total, balance_amount, and payment_status
+
+        return_msg = ""
+        if old_total > invoice.grand_total:
+            return_diff = old_total - invoice.grand_total
+            return_msg = f" (Returned goods value: ₹{return_diff:.2f} safely returned to stock)"
 
         log_activity(
             request,
             "INVOICE_EDIT",
-            f"Altered/edited bill #{invoice.invoice_number} for customer '{invoice.customer_name}'. Grand Total changed from ₹{old_total} to ₹{invoice.grand_total}. Remaining Balance: ₹{invoice.balance_amount}"
+            f"Altered/edited bill #{invoice.invoice_number} for customer '{invoice.customer_name}'. Grand Total: ₹{old_total} -> ₹{invoice.grand_total}{return_msg}. Paid: ₹{invoice.paid_amount}, Remaining Balance: ₹{invoice.balance_amount}"
         )
 
         trigger_desktop_sync_safe()

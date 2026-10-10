@@ -180,14 +180,27 @@
                         </div>
                         <div class="small text-muted mt-1" style="font-size: 0.72rem;">Manual adjustment / Round-off</div>
                     </div>
-                    <div class="d-flex justify-content-between text-success fw-semibold small mb-1">
-                        <span>Amount Already Paid:</span>
-                        <span>₹{{ invoice.paid_amount|floatformat:2 }}</span>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-success mb-1">Customer Paid Amount (செலுத்திய தொகை) (₹):</label>
+                        <input type="number" step="0.01" min="0" name="paid_amount" class="form-control text-success fw-bold text-center fs-5" id="editPaidAmountInput" value="{{ invoice.paid_amount|floatformat:2 }}">
+                        <div class="small text-muted mt-1" style="font-size: 0.72rem;">Adjust if customer was refunded for returned goods or made additional payment</div>
                     </div>
+
+                    <div class="p-2 rounded-3 mb-2" id="returnRefundBox" style="background: #ecfdf5; border: 1px solid #a7f3d0; display: none;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small fw-bold text-success"><i class="fa-solid fa-arrow-rotate-left me-1"></i>Refund to Customer (திரும்ப செலுத்த வேண்டியது):</span>
+                            <span class="fs-6 fw-bold text-success" id="dispReturnAmount">₹0.00</span>
+                        </div>
+                    </div>
+
                     <div class="d-flex justify-content-between fs-6 fw-bold text-danger">
                         <span>Remaining Balance:</span>
                         <span id="dispBalance">₹{{ invoice.balance_amount|floatformat:2 }}</span>
                     </div>
+                </div>
+
+                <div class="alert alert-info py-2 px-3 small border-0 mb-3 rounded-3">
+                    <i class="fa-solid fa-boxes-packing me-1 text-primary"></i> <strong>Stock Auto-Return:</strong> Any returned items or reduced quantities are automatically returned back to available inventory stock!
                 </div>
 
                 <div class="mb-3">
@@ -200,13 +213,13 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label small fw-semibold">Order / Alteration Notes</label>
-                    <textarea name="notes" class="form-control" rows="2">{{ invoice.notes|default:'' }}</textarea>
+                    <label class="form-label small fw-semibold">Order / Return / Alteration Notes</label>
+                    <textarea name="notes" class="form-control" rows="2" placeholder="e.g. Returned 1 item, refunded ₹100">{{ invoice.notes|default:'' }}</textarea>
                 </div>
 
                 <div class="d-grid gap-2">
                     <button type="submit" class="btn btn-primary-custom py-2 fw-bold">
-                        <i class="fa-solid fa-floppy-disk me-1"></i> Save Altered Bill
+                        <i class="fa-solid fa-floppy-disk me-1"></i> Save Altered Bill & Return Stock
                     </button>
                     <a href="{% url 'billing:invoice_detail' invoice.id %}" class="btn btn-light border py-2">
                         Cancel Changes
@@ -296,7 +309,16 @@
                 editGrandTotalInput.value = computedGrandTotal.toFixed(2);
             }
         }
-        const balance = Math.max(0, effectiveGrandTotal - paidAmount);
+
+        const editPaidAmountInput = document.getElementById('editPaidAmountInput');
+        let currentPaid = 0;
+        if (editPaidAmountInput) {
+            const pVal = parseFloat(editPaidAmountInput.value);
+            currentPaid = (!isNaN(pVal) && pVal >= 0) ? pVal : 0;
+        }
+
+        const balance = Math.max(0, effectiveGrandTotal - currentPaid);
+        const returnAmount = (currentPaid > effectiveGrandTotal) ? (currentPaid - effectiveGrandTotal) : 0;
 
         document.getElementById('dispSubtotal').textContent = '₹' + subtotal.toFixed(2);
         const dispTaxRow = document.getElementById('dispTaxRow');
@@ -310,14 +332,29 @@
             }
         }
         document.getElementById('dispBalance').textContent = '₹' + balance.toFixed(2);
+
+        const refundBox = document.getElementById('returnRefundBox');
+        const dispReturnAmount = document.getElementById('dispReturnAmount');
+        if (refundBox && dispReturnAmount) {
+            if (returnAmount > 0) {
+                refundBox.style.display = 'block';
+                dispReturnAmount.textContent = '₹' + returnAmount.toFixed(2);
+            } else {
+                refundBox.style.display = 'none';
+            }
+        }
     }
 
     const editGrandTotalInput = document.getElementById('editGrandTotalInput');
+    const editPaidAmountInput = document.getElementById('editPaidAmountInput');
     const editIncTotalBtn = document.getElementById('editIncTotalBtn');
     const editDecTotalBtn = document.getElementById('editDecTotalBtn');
 
     if (editGrandTotalInput) {
         editGrandTotalInput.addEventListener('input', recalculate);
+    }
+    if (editPaidAmountInput) {
+        editPaidAmountInput.addEventListener('input', recalculate);
     }
     if (editIncTotalBtn) {
         editIncTotalBtn.addEventListener('click', function() {

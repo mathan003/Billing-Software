@@ -137,13 +137,13 @@
                         <h6 class="fw-bold text-dark mb-0"><i class="fa-solid fa-boxes-stacked me-2 text-primary"></i>Bill Items (பொருட்கள்)</h6>
                     </div>
                     <div class="d-flex gap-2 flex-wrap">
-                        <button type="button" class="btn btn-primary-custom btn-sm" id="addProductRowBtn">
+                        <button type="button" class="btn btn-primary-custom btn-sm" id="addProductRowBtn" onclick="window.terminalAddProductRow ? window.terminalAddProductRow() : null;">
                             <i class="fa-solid fa-plus me-1"></i> Add Product (+ பொருள் சேர்க்க)
                         </button>
-                        <button type="button" class="btn btn-outline-primary btn-sm fw-semibold" id="openQuickAddProdBtn">
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-semibold" id="openQuickAddProdBtn" onclick="window.openQuickAddModal ? window.openQuickAddModal() : null;">
                             <i class="fa-solid fa-circle-plus me-1"></i> New Product (+ புதிய பொருள்)
                         </button>
-                        <button type="button" class="btn btn-success btn-sm fw-semibold" id="addOtherProductBtn">
+                        <button type="button" class="btn btn-success btn-sm fw-semibold" id="addOtherProductBtn" onclick="window.terminalAddOtherProductRow ? window.terminalAddOtherProductRow() : null;">
                             <i class="fa-solid fa-pen-to-square me-1"></i> Other Product (+ மற்ற பொருள் சேர்க்க)
                         </button>
                     </div>
@@ -189,13 +189,13 @@
 
                 <!-- Bottom Add Product Shortcut -->
                 <div class="mt-2 d-flex justify-content-start align-items-center flex-wrap gap-2">
-                    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3" id="addProductRowBtn2">
+                    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3" id="addProductRowBtn2" onclick="window.terminalAddProductRow ? window.terminalAddProductRow() : null;">
                         <i class="fa-solid fa-circle-plus me-1"></i> Add Another Product (+ மேலும் பொருள் சேர்க்க)
                     </button>
-                    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-semibold" id="openQuickAddProdBtn2">
+                    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-semibold" id="openQuickAddProdBtn2" onclick="window.openQuickAddModal ? window.openQuickAddModal() : null;">
                         <i class="fa-solid fa-plus-circle me-1"></i> + New Product (புதிய பொருள் உருவாக்க)
                     </button>
-                    <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold" id="addOtherProductBtn2">
+                    <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold" id="addOtherProductBtn2" onclick="window.terminalAddOtherProductRow ? window.terminalAddOtherProductRow() : null;">
                         <i class="fa-solid fa-pen-to-square me-1"></i> + Other Product (மற்ற பொருள் சேர்க்க)
                     </button>
                 </div>
@@ -539,6 +539,8 @@
         const initialId = initialProd ? initialProd.id : "";
         const initialPrice = initialProd ? initialProd.price.toFixed(2) : "0.00";
         const initialUnit = initialProd ? initialProd.unit : "KG";
+        const initialTax = (initialProd && hasShopGst) ? initialProd.tax : 0;
+        const initialCatText = initialProd ? `Category: ${escapeHtml(initialProd.category)}${initialProd.sku ? ' • SKU: ' + escapeHtml(initialProd.sku) : ''}` : "";
         const initialStock = initialProd ? (parseFloat(initialProd.stock) || 0) : null;
         let initialStockTag = '';
         if (initialProd) {
@@ -1092,10 +1094,14 @@
         });
     }
 
-    addRowBtn.addEventListener("click", () => addProductRow());
-    addRowBtn2.addEventListener("click", () => addProductRow());
+    if (addRowBtn) addRowBtn.addEventListener("click", () => addProductRow());
+    if (addRowBtn2) addRowBtn2.addEventListener("click", () => addProductRow());
     if (addOtherBtn) addOtherBtn.addEventListener("click", () => addOtherProductRow());
     if (addOtherBtn2) addOtherBtn2.addEventListener("click", () => addOtherProductRow());
+
+    // Expose functions globally on window object for inline onclick fallbacks
+    window.terminalAddProductRow = addProductRow;
+    window.terminalAddOtherProductRow = addOtherProductRow;
 
     // 3. Customer Selection with Instant Typing Filter
     const custNameInput = document.getElementById("customerNameInput");
@@ -1280,6 +1286,7 @@
     const openQuickBtn2 = document.getElementById("openQuickAddProdBtn2");
     if (openQuickBtn) openQuickBtn.addEventListener("click", openQuickAddModal);
     if (openQuickBtn2) openQuickBtn2.addEventListener("click", openQuickAddModal);
+    window.openQuickAddModal = openQuickAddModal;
 
     // Quick Add Product Form Submission via AJAX (instant creation and automatic bill selection)
     const quickAddForm = document.getElementById("quickAddProductForm");

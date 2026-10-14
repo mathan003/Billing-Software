@@ -305,6 +305,11 @@
                                     <span class="small text-muted" style="font-size: 0.72rem;"><i class="fa-solid fa-pen text-primary me-1"></i>Manual Edit (தொகையை மாற்றலாம்)</span>
                                     <span class="small text-muted" id="calcTotalHint" style="font-size: 0.72rem;">Computed: ₹0.00</span>
                                 </div>
+                                <!-- Total Amount in Words (Letters) Row -->
+                                <div class="p-1 px-2 mt-2 rounded bg-white border small text-muted d-flex justify-content-between align-items-baseline flex-wrap" id="billingTotalWordsRow" style="font-size: 0.76rem;">
+                                    <span class="fw-semibold me-1">Total in Words (எழுத்தால்):</span>
+                                    <span class="fw-bold text-dark fst-italic text-end" id="billingTotalWords">Rupees Zero Only</span>
+                                </div>
                             </div>
                             <div class="d-flex justify-content-between small text-success fw-bold mb-1">
                                 <span>Customer Paid (பெற்றது):</span>
@@ -928,6 +933,51 @@
 
     let isGrandTotalManuallyModified = false;
 
+    function amountToWordsINR(amount) {
+        amount = parseFloat(amount || 0);
+        if (isNaN(amount) || amount <= 0) return "Rupees Zero Only";
+        const ones = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+            "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+        const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+        function twoDigits(n) {
+            if (n < 20) return ones[n];
+            const div = Math.floor(n / 10), rem = n % 10;
+            return tens[div] + (rem ? " " + ones[rem] : "");
+        }
+        function threeDigits(n) {
+            if (n >= 100) {
+                const div = Math.floor(n / 100), rem = n % 100;
+                return ones[div] + " Hundred" + (rem ? " " + twoDigits(rem) : "");
+            }
+            return twoDigits(n);
+        }
+
+        const rupees = Math.floor(amount);
+        const paise = Math.round((amount - rupees) * 100);
+        if (rupees === 0 && paise === 0) return "Rupees Zero Only";
+
+        const parts = [];
+        let rem = rupees;
+        const crores = Math.floor(rem / 10000000);
+        rem %= 10000000;
+        const lakhs = Math.floor(rem / 100000);
+        rem %= 100000;
+        const thousands = Math.floor(rem / 1000);
+        rem %= 1000;
+        const hundreds = rem;
+
+        if (crores) parts.push((crores >= 100 ? threeDigits(crores) : twoDigits(crores)) + " Crore");
+        if (lakhs) parts.push(twoDigits(lakhs) + " Lakh");
+        if (thousands) parts.push(twoDigits(thousands) + " Thousand");
+        if (hundreds) parts.push(threeDigits(hundreds));
+
+        let res = "Rupees " + (parts.length ? parts.join(" ") : "Zero");
+        if (paise > 0) res += " and " + twoDigits(paise) + " Paise";
+        res += " Only";
+        return res;
+    }
+
     function recalculateGrandTotals(source = "items") {
         let subtotal = 0;
         let totalTax = 0;
@@ -980,6 +1030,12 @@
             }
         } else if (grandTotalInput) {
             grandTotalInput.value = computedGrandTotal.toFixed(2);
+        }
+
+        // Update Total Amount in Words (Letters)
+        const billingTotalWords = document.getElementById("billingTotalWords");
+        if (billingTotalWords) {
+            billingTotalWords.textContent = amountToWordsINR(effectiveGrandTotal);
         }
 
         // Show/hide auto reset button

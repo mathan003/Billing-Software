@@ -405,7 +405,21 @@ def generate_invoice_pdf(invoice, client_profile=None, print_status_override=Non
     page.draw_rect(gt_rect, color=None, fill=(0.92, 0.95, 1.0))
     _safe_insert_text(page, pymupdf.Point(box_total_left, y + (gt_h - 6)), "GRAND TOTAL:", fontsize=fs_body, fontname="helv", color=color_primary)
     _safe_insert_textbox(page, pymupdf.Rect(box_total_left + 60, y + 2, box_total_right, y + gt_h - 2), f"Rs. {invoice.grand_total:.2f}", fontsize=fs_total, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
-    y += (gt_h + 4)
+    y += (gt_h + 3)
+
+    # Total in Words (Letters) Row
+    total_words = getattr(invoice, "total_in_words", "")
+    if total_words:
+        _safe_insert_textbox(
+            page,
+            pymupdf.Rect(box_total_left, y, box_total_right, y + 11),
+            f"Total in Words: {total_words}",
+            fontsize=fs_small - 0.5,
+            fontname="helv",
+            color=color_dark,
+            align=pymupdf.TEXT_ALIGN_RIGHT
+        )
+        y += 13
 
     # Customer Paid
     _safe_insert_text(page, pymupdf.Point(box_total_left, y + 9), "Paid:", fontsize=fs_small, fontname="helv", color=color_success)

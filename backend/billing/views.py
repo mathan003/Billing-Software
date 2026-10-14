@@ -1359,6 +1359,7 @@ def invoice_detail(request, invoice_id):
         "company": company,
         "profile": profile,
         "print_status_override": print_status,
+        "total_in_words": invoice.total_in_words,
         "print_paper_size": paper_size,
         "print_paper_width_mm": paper_width_mm,
         "print_paper_height_mode": paper_height_mode,

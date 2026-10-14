@@ -157,6 +157,76 @@ class Purchase(models.Model):
         return f"Purchase #{self.purchase_number} - ₹{self.total_amount}"
 
 
+def amount_to_words_inr(amount):
+    """
+    Converts a numeric amount into Indian currency in words (letters).
+    Example: 1250.50 -> "Rupees One Thousand Two Hundred Fifty and Fifty Paise Only"
+             500 -> "Rupees Five Hundred Only"
+             0 -> "Rupees Zero Only"
+    """
+    try:
+        amount = float(amount or 0)
+    except (TypeError, ValueError):
+        return ""
+
+    if amount < 0:
+        return "Minus " + amount_to_words_inr(-amount)
+
+    ones = {
+        0: "Zero", 1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five",
+        6: "Six", 7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten",
+        11: "Eleven", 12: "Twelve", 13: "Thirteen", 14: "Fourteen", 15: "Fifteen",
+        16: "Sixteen", 17: "Seventeen", 18: "Eighteen", 19: "Nineteen"
+    }
+    tens = {
+        2: "Twenty", 3: "Thirty", 4: "Forty", 5: "Fifty",
+        6: "Sixty", 7: "Seventy", 8: "Eighty", 9: "Ninety"
+    }
+
+    def two_digits(n):
+        if n < 20:
+            return ones.get(n, "")
+        div, rem = divmod(n, 10)
+        return tens.get(div, "") + ((" " + ones.get(rem, "")) if rem else "")
+
+    def three_digits(n):
+        if n >= 100:
+            div, rem = divmod(n, 100)
+            return ones.get(div, "") + " Hundred" + ((" " + two_digits(rem)) if rem else "")
+        return two_digits(n)
+
+    rupees = int(amount)
+    paise = int(round((amount - rupees) * 100))
+
+    if rupees == 0 and paise == 0:
+        return "Rupees Zero Only"
+
+    parts = []
+    crores, rem = divmod(rupees, 10000000)
+    lakhs, rem = divmod(rem, 100000)
+    thousands, rem = divmod(rem, 1000)
+    hundreds = rem
+
+    if crores:
+        if crores >= 100:
+            parts.append(three_digits(crores) + " Crore")
+        else:
+            parts.append(two_digits(crores) + " Crore")
+    if lakhs:
+        parts.append(two_digits(lakhs) + " Lakh")
+    if thousands:
+        parts.append(two_digits(thousands) + " Thousand")
+    if hundreds:
+        parts.append(three_digits(hundreds))
+
+    rupees_str = " ".join(parts).strip() if parts else "Zero"
+    res = f"Rupees {rupees_str}"
+    if paise > 0:
+        res += f" and {two_digits(paise)} Paise"
+    res += " Only"
+    return res
+
+
 class Invoice(models.Model):
     PAYMENT_METHODS = (
         ("Cash", "Cash"),
@@ -291,6 +361,11 @@ class Invoice(models.Model):
         if self.paid_amount and self.grand_total and self.paid_amount > self.grand_total:
             return self.paid_amount - self.grand_total
         return Decimal("0.00")
+
+    @property
+    def total_in_words(self):
+        """Amount in words (letters) formatted in standard Indian currency system"""
+        return amount_to_words_inr(self.grand_total)
 
     def __str__(self):
         return f"{self.invoice_number} - {self.customer_name} - ₹{self.grand_total} (Bal: ₹{self.balance_amount})"

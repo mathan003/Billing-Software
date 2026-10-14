@@ -1054,7 +1054,11 @@ def billing_page(request):
         trigger_desktop_sync_safe()
 
         messages.success(request, f"Invoice {inv_number} created successfully! Grand Total: ₹{grand_total}")
-        return redirect(f"/invoices/{invoice.id}/?autoprint=1")
+        print_status = request.POST.get("print_status", "").strip().upper()
+        redirect_url = f"/invoices/{invoice.id}/?autoprint=1"
+        if print_status in ("PAID", "UNPAID"):
+            redirect_url += f"&print_status={print_status}"
+        return redirect(redirect_url)
 
     # GET request
     c_filter = get_client_filter(request)
@@ -1245,7 +1249,11 @@ def quick_bill_create(request):
             trigger_desktop_sync_safe()
 
             messages.success(request, f"Invoice {inv_number} created successfully! Grand Total: ₹{grand_total}")
-            return redirect(f"/invoices/{invoice.id}/?autoprint=1")
+            print_status = request.POST.get("print_status", "").strip().upper()
+            redirect_url = f"/invoices/{invoice.id}/?autoprint=1"
+            if print_status in ("PAID", "UNPAID"):
+                redirect_url += f"&print_status={print_status}"
+            return redirect(redirect_url)
 
         except Exception as e:
             messages.error(request, f"Error generating bill: {str(e)}")
@@ -1340,11 +1348,17 @@ def invoice_detail(request, invoice_id):
     auto_expand = profile.print_auto_expand_height if profile else True
     font_scaling = profile.print_font_scaling if profile else "auto"
     dimensions_display = profile.paper_dimensions_display if profile else "80mm × Auto-Fit"
+    print_status = request.GET.get("print_status") or request.GET.get("status")
+    if print_status:
+        print_status = print_status.strip().upper()
+        if print_status not in ("PAID", "UNPAID"):
+            print_status = None
 
     return render(request, "billing/invoice_detail.html", {
         "invoice": invoice,
         "company": company,
         "profile": profile,
+        "print_status_override": print_status,
         "print_paper_size": paper_size,
         "print_paper_width_mm": paper_width_mm,
         "print_paper_height_mode": paper_height_mode,
@@ -1626,7 +1640,12 @@ def invoice_download_pdf(request, invoice_id):
     profile = getattr(request.user, "profile", None) if request.user.is_authenticated else None
     if not profile and invoice.client and hasattr(invoice.client, "profile"):
         profile = invoice.client.profile
-    pdf_bytes = generate_invoice_pdf(invoice, client_profile=profile)
+    print_status = request.GET.get("print_status") or request.GET.get("status")
+    if print_status:
+        print_status = print_status.strip().upper()
+        if print_status not in ("PAID", "UNPAID"):
+            print_status = None
+    pdf_bytes = generate_invoice_pdf(invoice, client_profile=profile, print_status_override=print_status)
 
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     filename = f"Receipt_{invoice.invoice_number}.pdf"

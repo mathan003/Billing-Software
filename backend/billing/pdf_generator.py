@@ -64,7 +64,7 @@ def _safe_insert_textbox(page, rect, text, fontsize=9, fontname="helv", color=(0
         page.insert_textbox(rect, _clean_str(text), fontsize=fontsize, fontname=fontname, color=color, align=align)
 
 
-def generate_invoice_pdf(invoice, client_profile=None):
+def generate_invoice_pdf(invoice, client_profile=None, print_status_override=None):
     """
     Generates a professional PDF receipt modeled after user's bill design specification:
     - Top center: 'Invoice' (underlined)
@@ -293,8 +293,16 @@ def generate_invoice_pdf(invoice, client_profile=None):
     if cust_addr:
         _safe_insert_text(page, pymupdf.Point(margin + 6, y + 37), f"Address: {cust_addr[:36]}", fontsize=fs_small, fontname="helv", color=color_muted)
 
-    status_str = f"Status: {invoice.payment_status.upper()}"
-    status_col = color_success if invoice.payment_status == "Paid" else color_danger
+    effective_status = invoice.payment_status
+    if print_status_override:
+        ov = str(print_status_override).strip().upper()
+        if ov == "PAID":
+            effective_status = "Paid"
+        elif ov == "UNPAID":
+            effective_status = "Pending"
+
+    status_str = f"Status: {effective_status.upper()}"
+    status_col = color_success if effective_status == "Paid" else color_danger
     _safe_insert_textbox(
         page,
         pymupdf.Rect(page_width - margin - 110, y + 4, page_width - margin - 6, y + 18),

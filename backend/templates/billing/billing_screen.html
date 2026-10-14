@@ -247,9 +247,22 @@
                             </div>
                         </div>
 
-                        <div class="mb-2">
-                            <label class="form-label small fw-semibold">Notes / Remarks</label>
-                            <input type="text" name="notes" class="form-control form-control-sm" value="">
+                        <div class="row g-2 mb-2">
+                            <div class="col-sm-6">
+                                <label class="form-label small fw-semibold">Notes / Remarks</label>
+                                <input type="text" name="notes" class="form-control form-control-sm" value="">
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label small fw-semibold text-muted d-flex justify-content-between align-items-center">
+                                    <span><i class="fa-solid fa-stamp text-primary me-1"></i>Print Status</span>
+                                    <span class="badge bg-light text-muted border" style="font-size: 9px;">Print Only</span>
+                                </label>
+                                <select name="print_status" class="form-select form-select-sm" id="billingPrintStatusSelect" title="Select PAID or UNPAID status strictly for the printed receipt without modifying database records">
+                                    <option value="" selected>Default (Auto)</option>
+                                    <option value="PAID">PAID (செலுத்தியவை)</option>
+                                    <option value="UNPAID">UNPAID (நிலுவை)</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 

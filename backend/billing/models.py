@@ -402,6 +402,17 @@ class InvoiceItem(models.Model):
     def __str__(self):
         return f"{self.product_name} ({self.quantity} {self.unit}) = ₹{self.total_price}"
 
+    @property
+    def returned_quantity(self):
+        from decimal import Decimal
+        res = self.returns.filter(is_deleted=False).aggregate(total=models.Sum("return_quantity"))["total"]
+        return res or Decimal("0.00")
+
+    @property
+    def remaining_returnable_quantity(self):
+        from decimal import Decimal
+        return max(Decimal("0.00"), self.quantity - self.returned_quantity)
+
 
 class StockLog(models.Model):
     """
@@ -413,6 +424,7 @@ class StockLog(models.Model):
         ("RESTOCK", "Stock Inward / Addition"),
         ("MANUAL_ADJUSTMENT", "Manual Stock Quantity Adjustment"),
         ("BILLING_RESTORE", "Bill Edit / Stock Restored"),
+        ("PRODUCT_RETURN", "Customer Product Return"),
     )
 
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="stock_logs")
@@ -430,6 +442,61 @@ class StockLog(models.Model):
 
     def __str__(self):
         return f"{self.product.display_name} [{self.change_type}]: {self.quantity_change:+} (Now: {self.new_quantity})"
+
+
+class ProductReturn(models.Model):
+    """
+    Tracks customer product returns, restocking, balance adjustments, and cash refunds.
+    """
+    ADJUSTMENT_CHOICES = (
+        ("BALANCE_DUE_REDUCTION", "Balance Due Adjusted"),
+        ("CASH_REFUND", "Cash / Payment Refund"),
+        ("PARTIAL_ADJUSTMENT", "Balance Adjusted & Refund Given"),
+    )
+
+    return_uuid = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
+    return_number = models.CharField(max_length=50, unique=True, db_index=True)
+    client = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="product_returns")
+    customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name="product_returns")
+    customer_name = models.CharField(max_length=150, default="Cash Customer")
+    customer_phone = models.CharField(max_length=20, blank=True, default="")
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="returns")
+    invoice_item = models.ForeignKey(InvoiceItem, on_delete=models.SET_NULL, null=True, blank=True, related_name="returns")
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name="returns")
+    product_name = models.CharField(max_length=200)
+    product_sku = models.CharField(max_length=50, blank=True, default="")
+    unit = models.CharField(max_length=20, default="KG")
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    return_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1.00)
+    refund_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, help_text="Total value of returned quantity")
+    balance_reduced = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, help_text="Amount subtracted from invoice/customer pending balance")
+    cash_refunded = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, help_text="Actual refund given back to customer")
+    adjustment_type = models.CharField(max_length=30, choices=ADJUSTMENT_CHOICES, default="CASH_REFUND")
+    reason = models.CharField(max_length=255, blank=True, default="Customer return")
+    created_by = models.CharField(max_length=150, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    is_deleted = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @classmethod
+    def generate_return_number(cls, date_str=None):
+        if not date_str:
+            date_str = timezone.localtime().strftime("%Y%m%d")
+        prefix = f"RET-{date_str}-"
+        last = cls.objects.filter(return_number__startswith=prefix).order_by("-return_number").first()
+        if last:
+            try:
+                seq = int(last.return_number.split("-")[-1]) + 1
+            except Exception:
+                seq = 1
+        else:
+            seq = 1
+        return f"{prefix}{seq:04d}"
+
+    def __str__(self):
+        return f"{self.return_number} - {self.product_name} ({self.return_quantity} {self.unit}) = ₹{self.refund_amount}"
 
 
 class ActiveUserSession(models.Model):

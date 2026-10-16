@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     Product, Customer, Invoice, InvoiceItem, Purchase, PaymentRecord,
     ActiveUserSession, SyncLog, UserProfile, ActivityLog, CompanySettings,
-    Branch, StockLog, SoftwareUpdate
+    Branch, StockLog, SoftwareUpdate, ProductReturn
 )
 
 
@@ -107,3 +107,11 @@ class StockLogAdmin(admin.ModelAdmin):
     list_filter = ("change_type", "created_at")
     search_fields = ("product__name", "product__name_tamil", "product__sku", "notes", "created_by")
     readonly_fields = ("created_at",)
+
+
+@admin.register(ProductReturn)
+class ProductReturnAdmin(admin.ModelAdmin):
+    list_display = ("return_number", "created_at", "customer_name", "product_name", "return_quantity", "unit", "refund_amount", "adjustment_type", "created_by")
+    list_filter = ("adjustment_type", "created_at")
+    search_fields = ("return_number", "customer_name", "customer_phone", "product_name", "product_sku", "invoice__invoice_number")
+    readonly_fields = ("created_at", "return_uuid")

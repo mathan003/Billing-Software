@@ -7,6 +7,7 @@ from decimal import Decimal
 from functools import wraps
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Sum, Count, Q, F
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
@@ -18,7 +19,7 @@ from .models import (
     Product, ProductCategory, Customer, Invoice, InvoiceItem, Purchase,
     PaymentRecord, ActiveUserSession, RegisteredDevice, UserProfile, ActivityLog,
     CompanySettings, Branch, StockLog, SoftwareUpdate, purge_old_customer_data, log_activity,
-    SavedReport, purge_expired_deleted_items, DeletedClient
+    SavedReport, purge_expired_deleted_items, DeletedClient, ProductReturn
 )
 from .device_utils import (
     get_hardware_device_id, get_desktop_pos_config, save_desktop_pos_config,
@@ -743,6 +744,12 @@ def dashboard(request):
     walkin_pending = client_invoices_all.filter(customer__isnull=True, balance_amount__gt=0).order_by("-created_at")[:20]
 
     recent_invoices = client_invoices_all.select_related("customer", "branch").prefetch_related("items").order_by("-created_at")[:10]
+    recent_returns = ProductReturn.objects.filter(
+        c_filter, is_deleted=False
+    ).select_related("invoice", "customer", "product").order_by("-created_at")[:30]
+    total_returns_count = ProductReturn.objects.filter(c_filter, is_deleted=False).count()
+    total_refunded_amount = ProductReturn.objects.filter(c_filter, is_deleted=False).aggregate(total=Sum("refund_amount"))["total"] or Decimal("0.00")
+
     customers = Customer.objects.filter(c_filter, is_deleted=False).order_by("name")
     products = Product.objects.filter(c_filter, is_deleted=False, is_active=True).order_by("name_tamil", "name")
     categories = get_available_categories(request)
@@ -761,6 +768,9 @@ def dashboard(request):
         "total_invoices_count": total_invoices_count,
         "low_stock_count": low_stock_count,
         "recent_invoices": recent_invoices,
+        "recent_returns": recent_returns,
+        "total_returns_count": total_returns_count,
+        "total_refunded_amount": total_refunded_amount,
         "customers": customers,
         "products": products,
         "categories": categories,
@@ -855,12 +865,13 @@ def billing_page(request):
             elif customer_address and cust_obj.address != customer_address:
                 cust_obj.address = customer_address
                 cust_obj.save(update_fields=["address", "updated_at"])
-        elif customer_name and customer_name != "Cash Customer" and customer_address:
+        elif customer_name and customer_name != "Cash Customer":
             cust_obj = Customer.objects.filter(c_filter, is_deleted=False, name__iexact=customer_name).first()
             if not cust_obj:
                 cust_obj = Customer.objects.create(
                     name=customer_name,
                     client=client_user,
+                    phone=customer_phone,
                     address=customer_address
                 )
             elif customer_address and cust_obj.address != customer_address:
@@ -972,7 +983,10 @@ def billing_page(request):
         else:
             grand_total = computed_grand_total
 
-        paid_amount = parse_decimal(paid_amount_str, str(grand_total))
+        if payment_method == "Credit":
+            paid_amount = parse_decimal(paid_amount_str, "0.00") if paid_amount_str.strip() else Decimal("0.00")
+        else:
+            paid_amount = parse_decimal(paid_amount_str, str(grand_total))
 
         # Create Invoice
         invoice = Invoice.objects.create(
@@ -1136,7 +1150,9 @@ def quick_bill_create(request):
             grand_total = max(Decimal("0.00"), subtotal + tax_amount - discount_amount)
 
             # Parse paid amount
-            if paid_amount_str.strip():
+            if payment_method == "Credit":
+                paid_amount = parse_decimal(paid_amount_str, "0.00") if paid_amount_str.strip() else Decimal("0.00")
+            elif paid_amount_str.strip():
                 paid_amount = parse_decimal(paid_amount_str, str(grand_total))
             else:
                 paid_amount = grand_total  # Defaults to full payment if not specified
@@ -1167,6 +1183,14 @@ def quick_bill_create(request):
                         phone=customer_phone,
                         client=client_user,
                         name=customer_name or "Cash Customer"
+                    )
+            elif customer_name and customer_name != "Cash Customer":
+                cust_obj = Customer.objects.filter(c_filter, is_deleted=False, name__iexact=customer_name).first()
+                if not cust_obj:
+                    cust_obj = Customer.objects.create(
+                        name=customer_name,
+                        client=client_user,
+                        phone=customer_phone
                     )
 
             final_customer_name = cust_obj.name if cust_obj else (customer_name or "Cash Customer")
@@ -5240,5 +5264,340 @@ def recycle_bin_empty(request):
         messages.success(request, "Recycle Bin was emptied successfully. All deleted records permanently purged.")
 
     return redirect("billing:recycle_bin")
+
+
+# ==========================================
+# PRODUCT RETURNS & RESTOCKING MANAGEMENT
+# ==========================================
+
+def return_search_invoices(request):
+    """
+    AJAX endpoint to search customer invoices for product return.
+    Filters by customer_id and/or query (invoice number or customer details).
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"success": False, "error": "Authentication required"}, status=401)
+
+    c_filter = get_client_filter(request)
+    invoices = Invoice.objects.filter(c_filter, is_deleted=False)
+
+    customer_id = request.GET.get("customer_id", "").strip()
+    if customer_id:
+        invoices = invoices.filter(customer_id=customer_id)
+
+    query = request.GET.get("q", "").strip()
+    if query:
+        invoices = invoices.filter(
+            Q(invoice_number__icontains=query)
+            | Q(customer_name__icontains=query)
+            | Q(customer_phone__icontains=query)
+        )
+
+    invoices = invoices.select_related("customer").order_by("-created_at")[:30]
+
+    data = []
+    for inv in invoices:
+        data.append({
+            "id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "customer_name": inv.customer_name,
+            "customer_phone": inv.customer_phone or "",
+            "created_at": inv.created_at.strftime("%d-%m-%Y %I:%M %p"),
+            "grand_total": float(inv.grand_total),
+            "paid_amount": float(inv.paid_amount),
+            "balance_amount": float(inv.balance_amount),
+            "payment_method": inv.payment_method,
+            "payment_status": inv.payment_status,
+        })
+
+    return JsonResponse({"success": True, "invoices": data})
+
+
+def return_get_invoice_items(request):
+    """
+    AJAX endpoint returning purchased line items for a chosen invoice,
+    including already returned quantities and remaining returnable quantities.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"success": False, "error": "Authentication required"}, status=401)
+
+    c_filter = get_client_filter(request)
+    invoice_id = request.GET.get("invoice_id")
+    if not invoice_id:
+        return JsonResponse({"success": False, "error": "Invoice ID required"}, status=400)
+
+    invoice = get_object_or_404(
+        Invoice.objects.filter(c_filter, is_deleted=False).prefetch_related("items__returns"),
+        pk=invoice_id
+    )
+
+    items_data = []
+    for item in invoice.items.all():
+        already_ret = float(item.returned_quantity)
+        remain_ret = float(item.remaining_returnable_quantity)
+        items_data.append({
+            "id": item.id,
+            "product_id": item.product_id,
+            "product_name": item.product_name,
+            "sku": item.product_sku,
+            "unit": item.unit,
+            "unit_price": float(item.unit_price),
+            "purchased_quantity": float(item.quantity),
+            "total_price": float(item.total_price),
+            "already_returned": already_ret,
+            "remaining_returnable": remain_ret,
+            "can_return": remain_ret > 0,
+        })
+
+    inv_data = {
+        "id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "customer_name": invoice.customer_name,
+        "customer_phone": invoice.customer_phone or "",
+        "created_at": invoice.created_at.strftime("%d-%m-%Y %I:%M %p"),
+        "grand_total": float(invoice.grand_total),
+        "paid_amount": float(invoice.paid_amount),
+        "balance_amount": float(invoice.balance_amount),
+        "payment_method": invoice.payment_method,
+        "payment_status": invoice.payment_status,
+    }
+
+    return JsonResponse({"success": True, "invoice": inv_data, "items": items_data})
+
+
+def return_process(request):
+    """
+    Processes a product return:
+    1. Validates return quantity does not exceed original purchased or remaining returnable quantity.
+    2. Calculates refundable value based on original invoice item price * return_quantity.
+    3. Adjusts customer pending balance or calculates remaining refund amount based on invoice payment method & outstanding balance.
+    4. Automatically restocks inventory by +return_quantity and logs StockLog.
+    5. Saves ProductReturn audit record.
+    6. Returns real-time JSON or redirects with success message.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"success": False, "error": "Authentication required"}, status=401)
+
+    if request.method != "POST":
+        return redirect("billing:dashboard")
+
+    c_filter = get_client_filter(request)
+    invoice_id = request.POST.get("invoice_id")
+    item_id = request.POST.get("invoice_item_id")
+    qty_str = request.POST.get("return_quantity", "1").strip()
+    reason = request.POST.get("reason", "").strip()
+
+    invoice = get_object_or_404(Invoice.objects.filter(c_filter, is_deleted=False), pk=invoice_id)
+    item = get_object_or_404(InvoiceItem.objects.filter(invoice=invoice), pk=item_id)
+
+    try:
+        return_qty = Decimal(qty_str)
+        if return_qty <= Decimal("0.00"):
+            raise ValueError("Return quantity must be greater than zero.")
+    except Exception as e:
+        msg = f"Invalid return quantity: {str(e)}"
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({"success": False, "error": msg}, status=400)
+        messages.error(request, msg)
+        return redirect("billing:dashboard")
+
+    max_returnable = item.remaining_returnable_quantity
+    if return_qty > max_returnable:
+        msg = f"Cannot return {return_qty} {item.unit}. Maximum remaining returnable quantity is {max_returnable} {item.unit}."
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({"success": False, "error": msg}, status=400)
+        messages.error(request, msg)
+        return redirect("billing:dashboard")
+
+    with transaction.atomic():
+        # Calculate refund value
+        refund_amount = round(return_qty * item.unit_price, 2)
+
+        # Balance Adjustment vs Cash Refund calculation
+        if invoice.balance_amount >= refund_amount:
+            # Customer has enough balance due on this bill; wipe off that portion of due!
+            balance_reduced = refund_amount
+            cash_refunded = Decimal("0.00")
+            adj_type = "BALANCE_DUE_REDUCTION"
+            invoice.balance_amount -= balance_reduced
+            invoice.grand_total = max(Decimal("0.00"), invoice.grand_total - refund_amount)
+        elif invoice.balance_amount > Decimal("0.00"):
+            # Customer has partial due; wipe out due completely and refund remainder cash/payment!
+            balance_reduced = invoice.balance_amount
+            cash_refunded = refund_amount - balance_reduced
+            adj_type = "PARTIAL_ADJUSTMENT"
+            invoice.balance_amount = Decimal("0.00")
+            invoice.paid_amount = max(Decimal("0.00"), invoice.paid_amount - cash_refunded)
+            invoice.grand_total = max(Decimal("0.00"), invoice.grand_total - refund_amount)
+        else:
+            # Bill was fully paid; full refund issued to customer!
+            balance_reduced = Decimal("0.00")
+            cash_refunded = refund_amount
+            adj_type = "CASH_REFUND"
+            invoice.paid_amount = max(Decimal("0.00"), invoice.paid_amount - cash_refunded)
+            invoice.grand_total = max(Decimal("0.00"), invoice.grand_total - refund_amount)
+
+        # Update invoice payment status
+        if invoice.balance_amount == Decimal("0.00"):
+            invoice.payment_status = "Paid"
+        elif invoice.paid_amount > Decimal("0.00"):
+            invoice.payment_status = "Partial"
+        else:
+            invoice.payment_status = "Pending"
+        invoice.save()
+
+        # Stock Restoration & StockLog
+        product_obj = item.product
+        new_stock = None
+        user_name = request.user.username if request.user.is_authenticated else "Operator"
+        if product_obj:
+            old_stock = product_obj.stock_quantity
+            new_stock = old_stock + return_qty
+            product_obj.stock_quantity = new_stock
+            product_obj.save(update_fields=["stock_quantity", "updated_at"])
+
+            try:
+                StockLog.objects.create(
+                    product=product_obj,
+                    change_type="PRODUCT_RETURN",
+                    quantity_change=return_qty,
+                    previous_quantity=old_stock,
+                    new_quantity=new_stock,
+                    invoice=invoice,
+                    notes=f"Customer return: {return_qty} {item.unit} from invoice #{invoice.invoice_number}",
+                    created_by=user_name,
+                )
+            except Exception:
+                pass
+
+        # Create ProductReturn audit record
+        ret_number = ProductReturn.generate_return_number()
+        ret_record = ProductReturn.objects.create(
+            return_number=ret_number,
+            client=invoice.client,
+            customer=invoice.customer,
+            customer_name=invoice.customer_name,
+            customer_phone=invoice.customer_phone,
+            invoice=invoice,
+            invoice_item=item,
+            product=product_obj,
+            product_name=item.product_name,
+            product_sku=item.product_sku,
+            unit=item.unit,
+            unit_price=item.unit_price,
+            return_quantity=return_qty,
+            refund_amount=refund_amount,
+            balance_reduced=balance_reduced,
+            cash_refunded=cash_refunded,
+            adjustment_type=adj_type,
+            reason=reason or "Customer product return",
+            created_by=user_name,
+        )
+
+        # Negative payment record if cash was refunded
+        if cash_refunded > Decimal("0.00"):
+            PaymentRecord.objects.create(
+                invoice=invoice,
+                amount=-cash_refunded,
+                payment_method=invoice.payment_method,
+                notes=f"Refund payout for returned item ({ret_number})"
+            )
+
+        # Audit log
+        log_activity(
+            request,
+            "PRODUCT_RETURN",
+            f"Processed return #{ret_number} for bill #{invoice.invoice_number} ({invoice.customer_name}). "
+            f"Returned {return_qty} {item.unit} of '{item.product_name}'. Total Refund: ₹{refund_amount} "
+            f"(Balance Adjusted: ₹{balance_reduced}, Cash Refunded: ₹{cash_refunded})."
+        )
+
+        trigger_desktop_sync_safe()
+
+    success_msg = (
+        f"Return #{ret_number} confirmed! Restocked {return_qty} {item.unit} of '{item.product_name}'. "
+        + (f"Deducted ₹{balance_reduced} from customer pending balance. " if balance_reduced > 0 else "")
+        + (f"Refunded ₹{cash_refunded} to customer." if cash_refunded > 0 else "")
+    )
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JsonResponse({
+            "success": True,
+            "message": success_msg,
+            "return_number": ret_number,
+            "refund_amount": float(refund_amount),
+            "balance_reduced": float(balance_reduced),
+            "cash_refunded": float(cash_refunded),
+            "new_stock": float(new_stock) if new_stock is not None else None,
+            "invoice_balance": float(invoice.balance_amount),
+            "invoice_grand_total": float(invoice.grand_total),
+        })
+
+    messages.success(request, success_msg)
+    return redirect("billing:dashboard")
+
+
+def return_cancel(request, return_id):
+    """
+    Safely cancels/reverses a product return:
+    - Decrements the restored stock.
+    - Restores the invoice balance and grand total.
+    - Soft-deletes the ProductReturn record.
+    """
+    if not request.user.is_authenticated:
+        return redirect("billing:login")
+
+    if request.method == "POST":
+        c_filter = get_client_filter(request)
+        ret_record = get_object_or_404(
+            ProductReturn.objects.filter(c_filter, is_deleted=False).select_related("invoice", "product"),
+            pk=return_id
+        )
+
+        with transaction.atomic():
+            invoice = ret_record.invoice
+            # Reverse invoice adjustments
+            invoice.grand_total += ret_record.refund_amount
+            invoice.balance_amount += ret_record.balance_reduced
+            invoice.paid_amount += ret_record.cash_refunded
+            if invoice.balance_amount == Decimal("0.00"):
+                invoice.payment_status = "Paid"
+            elif invoice.paid_amount > Decimal("0.00"):
+                invoice.payment_status = "Partial"
+            else:
+                invoice.payment_status = "Pending"
+            invoice.save()
+
+            # Reverse stock restoration
+            if ret_record.product:
+                old_stock = ret_record.product.stock_quantity
+                new_stock = max(Decimal("0.00"), old_stock - ret_record.return_quantity)
+                ret_record.product.stock_quantity = new_stock
+                ret_record.product.save(update_fields=["stock_quantity", "updated_at"])
+
+                StockLog.objects.create(
+                    product=ret_record.product,
+                    change_type="MANUAL_ADJUSTMENT",
+                    quantity_change=-ret_record.return_quantity,
+                    previous_quantity=old_stock,
+                    new_quantity=new_stock,
+                    invoice=invoice,
+                    notes=f"Reversed product return #{ret_record.return_number}",
+                    created_by=request.user.username,
+                )
+
+            # Soft delete return record
+            ret_record.is_deleted = True
+            ret_record.save(update_fields=["is_deleted"])
+
+            log_activity(
+                request,
+                "PRODUCT_RETURN_CANCEL",
+                f"Reversed product return #{ret_record.return_number} for bill #{invoice.invoice_number}."
+            )
+            trigger_desktop_sync_safe()
+            messages.success(request, f"Product return #{ret_record.return_number} was successfully reversed.")
+
+    return redirect("billing:dashboard")
 
 

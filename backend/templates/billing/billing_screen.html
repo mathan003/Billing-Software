@@ -215,6 +215,9 @@
                                     <option value="Online">Online Payment (UPI / Card)</option>
                                     <option value="Credit">Credit / Due (கடன்)</option>
                                 </select>
+                                <div id="creditNoticePill" class="text-danger fw-semibold mt-1" style="display: none; font-size: 0.72rem;">
+                                    <i class="fa-solid fa-clock-rotate-left me-1"></i>Unpaid balance will be added to Customer's Pending Account.
+                                </div>
                             </div>
                             <div class="col-6">
                                 <label class="form-label small fw-semibold text-success">Discount / Offer (₹)</label>
@@ -1163,6 +1166,33 @@
         });
     }
 
+    const paymentMethodSelect = document.getElementById("paymentMethodSelect");
+    const creditNoticePill = document.getElementById("creditNoticePill");
+
+    if (paymentMethodSelect) {
+        paymentMethodSelect.addEventListener("change", function() {
+            if (this.value === "Credit") {
+                if (creditNoticePill) creditNoticePill.style.display = "block";
+                // Default paid amount to 0.00 for Credit so full grand total is tracked as balance due
+                if (!isPaidCustom || parseFloat(paidInput.value || 0) === parseFloat(grandTotalInput?.value || 0)) {
+                    paidInput.value = "0.00";
+                    recalculateGrandTotals("creditMode");
+                }
+                const cName = custNameInput ? custNameInput.value.trim() : "";
+                if (!cName && custNameInput) {
+                    custNameInput.focus();
+                    showBillingToast("Credit Mode: Please enter or select Customer Name so due balance is tracked.", "info");
+                }
+            } else {
+                if (creditNoticePill) creditNoticePill.style.display = "none";
+                if (parseFloat(paidInput.value || 0) === 0 && !isPaidCustom) {
+                    paidInput.value = (parseFloat(grandTotalInput?.value || 0)).toFixed(2);
+                    recalculateGrandTotals("cashMode");
+                }
+            }
+        });
+    }
+
     if (addRowBtn) addRowBtn.addEventListener("click", () => addProductRow());
     if (addRowBtn2) addRowBtn2.addEventListener("click", () => addProductRow());
     if (addOtherBtn) addOtherBtn.addEventListener("click", () => addOtherProductRow());
@@ -1437,6 +1467,17 @@
     const mainBillingForm = document.getElementById("mainBillingForm");
     if (mainBillingForm) {
         mainBillingForm.addEventListener("submit", function(e) {
+            // Check Credit payment mode customer requirement
+            if (paymentMethodSelect && paymentMethodSelect.value === "Credit") {
+                const cName = custNameInput ? custNameInput.value.trim() : "";
+                if (!cName) {
+                    e.preventDefault();
+                    alert("Customer Name is required for Credit / Due sales so that the outstanding balance can be tracked in the customer's account.\n(கடன் விற்பனைக்கு வாடிக்கையாளர் பெயர் கட்டாயம்)");
+                    if (custNameInput) custNameInput.focus();
+                    return false;
+                }
+            }
+
             let hasStockError = false;
             let errorMsg = "";
 

@@ -34,6 +34,12 @@ urlpatterns = [
     path("invoices/<int:invoice_id>/pay/", views.invoice_update_payment, name="invoice_update_payment"),
     path("invoices/<int:invoice_id>/discount/", views.invoice_apply_discount, name="invoice_apply_discount"),
 
+    # Product Returns & Exchanges & Inventory Restocking
+    path("returns/search-invoices/", views.return_search_invoices, name="return_search_invoices"),
+    path("returns/invoice-items/", views.return_get_invoice_items, name="return_get_invoice_items"),
+    path("returns/process/", views.return_process, name="return_process"),
+    path("returns/cancel/<int:return_id>/", views.return_cancel, name="return_cancel"),
+
     # Recycle Bin / Deleted Items (3-Day Recovery Lifecycle)
     path("recycle-bin/", views.recycle_bin_view, name="recycle_bin"),
     path("recycle-bin/restore/<str:item_type>/<int:item_id>/", views.recycle_bin_restore, name="recycle_bin_restore"),

@@ -36,7 +36,8 @@ urlpatterns = [
 
     # Product Returns & Exchanges & Inventory Restocking
     path("returns/search-invoices/", views.return_search_invoices, name="return_search_invoices"),
-    path("returns/invoice-items/", views.return_get_invoice_items, name="return_get_invoice_items"),
+    path("returns/invoice-items/", views.return_get_invoice_items, name="return_invoice_items"),
+    path("returns/invoice-items/get/", views.return_get_invoice_items, name="return_get_invoice_items"),
     path("returns/process/", views.return_process, name="return_process"),
     path("returns/cancel/<int:return_id>/", views.return_cancel, name="return_cancel"),
 

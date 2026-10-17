@@ -45,9 +45,15 @@
             <i class="fa-solid fa-bolt"></i>
             <span>Quick Bill (துரித பில்லிங்)</span>
         </a>
-        <span id="liveSyncStatusBadge" class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill shadow-xs">
-            <i class="fa-solid fa-cloud-arrow-down me-1"></i> Live Cloud Sync Active
-        </span>
+        {% if is_desktop_app or not is_admin_user %}
+            <span id="liveSyncStatusBadge" class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 rounded-pill shadow-xs">
+                <i class="fa-solid fa-hard-drive me-1"></i> Local POS Database Active
+            </span>
+        {% else %}
+            <span id="liveSyncStatusBadge" class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill shadow-xs">
+                <i class="fa-solid fa-cloud-arrow-down me-1"></i> Live Cloud Sync Active
+            </span>
+        {% endif %}
     </div>
 </div>
 
@@ -1293,7 +1299,8 @@
                 pendingEl.innerText = "₹" + parseFloat(data.total_pending_amount).toFixed(2);
             }
 
-            // Pulse badge when new offline bills are synced
+            // Pulse badge when new bills are synced (only for cloud/admin users)
+            {% if not is_desktop_app and is_admin_user %}
             if (_lastLiveInvoicesCount !== null && data.total_invoices > _lastLiveInvoicesCount) {
                 const badge = document.getElementById("liveSyncStatusBadge");
                 if (badge) {
@@ -1305,6 +1312,7 @@
                     }, 4000);
                 }
             }
+            {% endif %}
             _lastLiveInvoicesCount = data.total_invoices;
         } catch (err) {
             // Server temporarily offline or disconnected

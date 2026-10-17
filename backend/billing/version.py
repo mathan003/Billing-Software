@@ -3,12 +3,11 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.9.0"
-APP_TITLE = "Credit Payment Mode & Comprehensive Product Return Management"
+APP_VERSION = "v2.9.1"
+APP_TITLE = "Local Offline POS Enforcement & Return URL Name Resolution"
 APP_RELEASE_NOTES = (
-    "• Credit Payment Mode: Added Credit / Due payment mode. Automatically records unpaid credit amounts in customer pending / outstanding balances.\n"
-    "• Product Return Management: Added interactive Product Return section on Dashboard to return items, calculate refunds, adjust pending balances or cash refunds, and maintain full return history.\n"
-    "• Automatic Inventory Restocking: Automatically restores product stock quantities upon confirmed returns with comprehensive StockLog audit tracking.\n"
-    "• Strict Quantity & Integrity Validation: Prevents returns exceeding original or remaining returnable quantity.\n"
-    "• Zero Data Loss: 100% preservation of all existing client, customer, product, invoice, and transactional database records."
+    "• Resolved Return Items URL Lookup: Fixed NoReverseMatch for 'return_invoice_items' across dashboard return console.\n"
+    "• Strict Local Offline Execution: Offline POS users strictly use local SQLite database with zero cloud push/pull.\n"
+    "• First-Login Device Authorization: Only admin-created accounts on allowed systems can log in via Admin OTP verification on first login.\n"
+    "• Zero Data Loss & Backward Compatibility: Complete preservation of all customer data, products, and invoices."
 )

@@ -169,7 +169,16 @@ def _check_port_open(host, port, timeout=0.8):
     except Exception:
         return False
 
-if DATABASE_URL:
+# Force strictly local SQLite when running Desktop App / Offline POS (unless deployed inside Cloud Container IS_CLOUD)
+if (USE_SQLITE or os.getenv("IS_DESKTOP_APP") == "True") and not IS_CLOUD:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": sqlite_db_file,
+        }
+    }
+
+elif DATABASE_URL:
     db_config = dj_database_url.config(
         default=DATABASE_URL,
         conn_max_age=600,
@@ -197,9 +206,8 @@ elif DB_HOST and DB_HOST not in ("127.0.0.1", "localhost"):
         }
     }
 
-elif USE_SQLITE or IS_CLOUD:
-    # On Cloud (Railway / Render) without an attached remote database, or when requested:
-    # Use SQLite so migrations and server run cleanly without connection errors.
+elif IS_CLOUD:
+    # On Cloud (Railway / Render) without an attached remote database fallback
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",

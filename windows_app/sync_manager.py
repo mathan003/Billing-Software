@@ -126,6 +126,25 @@ class SyncManager:
             self._manual_trigger.clear()
 
     def _sync_cycle(self):
+        # 0. Check if active client is an offline user: offline users strictly use local DB and do not sync to cloud
+        try:
+            from billing.device_utils import get_desktop_pos_config
+            pos_cfg = get_desktop_pos_config()
+            client_username = pos_cfg.get("last_logged_in_client") or pos_cfg.get("remembered_username") or ""
+            if client_username and client_username not in ("admin", "Mathan003"):
+                from django.contrib.auth.models import User
+                u = User.objects.filter(username=client_username).first()
+                if u and hasattr(u, "profile"):
+                    # Offline users must NOT use cloud or main database
+                    if u.profile.access_mode == "offline_only" or not pos_cfg.get("enable_cloud_sync", False):
+                        self.is_online = False
+                        self.is_syncing = False
+                        self.last_sync_status = "offline_local_mode"
+                        self.last_error = None
+                        return
+        except Exception:
+            pass
+
         # 1. Probe candidate servers to find a responsive endpoint
         active_url = None
         candidates = self.get_candidate_urls()

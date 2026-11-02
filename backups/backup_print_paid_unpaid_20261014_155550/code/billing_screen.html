@@ -1,0 +1,1421 @@
+{% extends "billing/base.html" %}
+
+{% block title %}Billing POS | MathanHub{% endblock %}
+
+{% block extra_css %}
+<style>
+    .billing-card {
+        border-radius: 16px;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+    .table-items th {
+        background-color: #f8fafc;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #475569;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .remove-row-btn {
+        color: #ef4444;
+        border: 1px solid #fecaca;
+        background-color: #fef2f2;
+        transition: all 0.2s;
+    }
+    .remove-row-btn:hover {
+        background-color: #ef4444;
+        color: #ffffff;
+    }
+    .prod-dropdown {
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        border: 1px solid #cbd5e1;
+    }
+    .prod-item:hover, .cust-suggest-item:hover {
+        background-color: #f1f5f9;
+    }
+    .cat-pill.active {
+        background-color: #0284c7 !important;
+        color: #ffffff !important;
+        border-color: #0284c7 !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-xl-11">
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h4 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-receipt text-primary me-2"></i>Billing Terminal</h4>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'billing:invoice_list' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fa-solid fa-list me-1"></i> Invoices
+                </a>
+                <a href="{% url 'billing:dashboard' %}" class="btn btn-light border btn-sm">
+                    <i class="fa-solid fa-arrow-left me-1"></i> Dashboard
+                </a>
+            </div>
+        </div>
+
+        <form method="post" action="{% url 'billing:billing_page' %}" id="mainBillingForm">
+            {% csrf_token %}
+
+            <!-- SECTION 1: SHOP BRANCH & CUSTOMER SELECTION -->
+            <div class="card billing-card p-3 p-md-4 mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="fw-bold text-primary mb-0"><i class="fa-solid fa-shop me-2"></i>Branch & Customer Information</h6>
+                    <a href="{% url 'billing:customer_list' %}" target="_blank" class="btn btn-sm btn-link text-decoration-none">
+                        <i class="fa-solid fa-address-book me-1"></i> Customers Directory
+                    </a>
+                </div>
+
+                <div class="row g-2 align-items-center mb-2">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-semibold text-secondary">Shop Branch (கடை கிளை) *</label>
+                        <select name="branch_id" class="form-select bg-light" id="billingBranchSelect">
+                            {% for b in branches %}
+                                <option value="{{ b.id }}" {% if b.is_default %}selected{% endif %}>
+                                    {{ b.name }} ({{ b.branch_code }}) {% if b.is_default %}[Default]{% endif %}
+                                </option>
+                            {% empty %}
+                                <option value="">Main Shop Branch</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-12 col-md-4 position-relative">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label small fw-semibold text-secondary mb-1">Customer (வாடிக்கையாளர்)</label>
+                            <span class="badge bg-light text-muted border small">{{ customers|length }} Customers</span>
+                        </div>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light text-muted"><i class="fa-solid fa-user"></i></span>
+                            <input type="text" name="customer_name" class="form-control" id="customerNameInput" value="" autocomplete="off">
+                            <input type="hidden" name="customer_id" id="customerIdInput" value="">
+                            <button class="btn btn-outline-secondary" type="button" id="clearCustomerBtn" title="Clear customer"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div id="customerSuggestions" class="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-1 mt-1" style="max-height: 220px; overflow-y: auto; z-index: 1055; display: none;"></div>
+                    </div>
+
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-semibold text-secondary">Quick Choose Existing</label>
+                        <select class="form-select bg-light" id="existingCustomerSelect">
+                            <option value="">-- Choose Existing or Enter --</option>
+                            {% for c in customers %}
+                                <option value="{{ c.id }}" data-name="{{ c.name }}" data-phone="{{ c.phone|default:'' }}" data-address="{{ c.address|default:'' }}">
+                                    {{ c.name }} {% if c.phone %}({{ c.phone }}){% endif %}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row g-2 align-items-center mt-1">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-semibold text-secondary">Mobile Phone Number</label>
+                        <input type="tel" name="customer_phone" class="form-control" id="customerPhoneInput" placeholder="Mobile phone number">
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-semibold text-secondary"><i class="fa-solid fa-location-dot text-primary me-1"></i>Customer Address (வாடிக்கையாளர் முகவரி)</label>
+                        <input type="text" name="customer_address" class="form-control" id="customerAddressInput" placeholder="Street / Area / Address..." autocomplete="off">
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-semibold text-secondary">Bill Notes / Order Reference</label>
+                        <input type="text" name="notes" class="form-control" placeholder="Optional notes / remarks...">
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: PRODUCTS TABLE -->
+            <div class="card billing-card p-3 p-md-4 mb-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                        <h6 class="fw-bold text-dark mb-0"><i class="fa-solid fa-boxes-stacked me-2 text-primary"></i>Bill Items (பொருட்கள்)</h6>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="button" class="btn btn-primary-custom btn-sm" id="addProductRowBtn" onclick="window.terminalAddProductRow ? window.terminalAddProductRow() : null;">
+                            <i class="fa-solid fa-plus me-1"></i> Add Product (+ பொருள் சேர்க்க)
+                        </button>
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-semibold" id="openQuickAddProdBtn" onclick="window.openQuickAddModal ? window.openQuickAddModal() : null;">
+                            <i class="fa-solid fa-circle-plus me-1"></i> New Product (+ புதிய பொருள்)
+                        </button>
+                        <button type="button" class="btn btn-success btn-sm fw-semibold" id="addOtherProductBtn" onclick="window.terminalAddOtherProductRow ? window.terminalAddOtherProductRow() : null;">
+                            <i class="fa-solid fa-pen-to-square me-1"></i> Other Product (+ மற்ற பொருள் சேர்க்க)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Category Filter Toolbar -->
+                <div class="p-2 px-3 bg-light rounded-3 border mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-grow-1 flex-wrap">
+                        <span class="small fw-bold text-secondary text-nowrap"><i class="fa-solid fa-filter text-primary me-1"></i>Category Filter (வகை):</span>
+                        <select class="form-select form-select-sm bg-white" id="terminalCategorySelect" style="max-width: 240px;">
+                            <option value="">-- All Categories (அனைத்து வகைகள்) --</option>
+                            {% for cat in categories %}
+                                <option value="{{ cat }}">{{ cat }}</option>
+                            {% endfor %}
+                        </select>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle" id="catalogCountBadge">{{ products|length }} Products</span>
+                    </div>
+                    <div class="d-flex gap-1 flex-wrap" id="quickCategoryPills">
+                        <button type="button" class="btn btn-sm btn-outline-primary active cat-pill" data-cat="">All</button>
+                        {% for cat in categories|slice:":6" %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary cat-pill" data-cat="{{ cat }}">{{ cat }}</button>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle table-items" id="billItemsTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 36%;">Product (பொருள் பெயர்)</th>
+                                <th style="width: 14%;">Unit Type</th>
+                                <th style="width: 16%;">Rate / Price (₹)</th>
+                                <th style="width: 15%;">Quantity (அளவு)</th>
+                                <th style="width: 13%;">Total (₹)</th>
+                                <th style="width: 6%;" class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="billItemsBody">
+                            <!-- Dynamic rows injected here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Bottom Add Product Shortcut -->
+                <div class="mt-2 d-flex justify-content-start align-items-center flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3" id="addProductRowBtn2" onclick="window.terminalAddProductRow ? window.terminalAddProductRow() : null;">
+                        <i class="fa-solid fa-circle-plus me-1"></i> Add Another Product (+ மேலும் பொருள் சேர்க்க)
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-semibold" id="openQuickAddProdBtn2" onclick="window.openQuickAddModal ? window.openQuickAddModal() : null;">
+                        <i class="fa-solid fa-plus-circle me-1"></i> + New Product (புதிய பொருள் உருவாக்க)
+                    </button>
+                    <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold" id="addOtherProductBtn2" onclick="window.terminalAddOtherProductRow ? window.terminalAddOtherProductRow() : null;">
+                        <i class="fa-solid fa-pen-to-square me-1"></i> + Other Product (மற்ற பொருள் சேர்க்க)
+                    </button>
+                </div>
+            </div>
+
+            <!-- SECTION 3: BILL SUMMARY, PAYMENT & PRINT & SAVE -->
+            <div class="card billing-card p-3 p-md-4 mb-4">
+                <div class="row g-4 align-items-center">
+                    <!-- Left: Payment details -->
+                    <div class="col-12 col-lg-6">
+                        <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-credit-card me-2"></i>Payment Details</h6>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Payment Mode</label>
+                                <select name="payment_method" class="form-select bg-light" id="paymentMethodSelect">
+                                    <option value="Cash" selected>Cash (ரொக்கம்)</option>
+                                    <option value="Online">Online Payment (UPI / Card)</option>
+                                    <option value="Credit">Credit / Due (கடன்)</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold text-success">Discount / Offer (₹)</label>
+                                <input type="number" step="0.01" min="0" name="discount_amount" class="form-control text-success fw-bold" id="discountAmountInput" value="">
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-2">
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label small fw-semibold mb-0">Customer Paid Amount (பெற்ற தொகை) (₹)</label>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary py-0 px-2" id="exactPaidBtn" title="Customer paid exact grand total">Exact</button>
+                                        <button type="button" class="btn btn-outline-secondary py-0 px-2" id="quickPaid100" data-val="100">₹100</button>
+                                        <button type="button" class="btn btn-outline-secondary py-0 px-2" id="quickPaid500" data-val="500">₹500</button>
+                                    </div>
+                                </div>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-muted">₹</span>
+                                    <input type="number" step="0.01" min="0" name="paid_amount" class="form-control text-success fw-bold fs-6" id="paidAmountInput" value="">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Left-side Return Amount Alert Pill -->
+                        <div class="p-2 px-3 rounded-3 mb-3 border bg-success-subtle border-success-subtle" id="leftReturnBox" style="display: none !important;">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="small fw-bold text-success"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Return to Customer (மீதி கொடுக்க வேண்டியது):</span>
+                                <span class="fs-5 fw-bold text-success" id="leftReturnAmount">₹0.00</span>
+                            </div>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-semibold">Notes / Remarks</label>
+                            <input type="text" name="notes" class="form-control form-control-sm" value="">
+                        </div>
+                    </div>
+
+                    <!-- Right: Summary Box & Print & Save Button -->
+                    <div class="col-12 col-lg-6">
+                        <div class="p-3 bg-light rounded-4 border">
+                            <div class="d-flex justify-content-between mb-1 small text-muted">
+                                <span>Subtotal:</span>
+                                <span class="fw-semibold text-dark" id="summarySubtotal">₹0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1 small text-muted" id="summaryTaxRow" style="display: none !important;">
+                                <span>Total Tax / GST:</span>
+                                <span class="fw-semibold text-dark" id="summaryTax">₹0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1 small text-success fw-semibold" id="summaryDiscountRow" style="display: none !important;">
+                                <span>Discount / Offer Applied:</span>
+                                <span id="summaryDiscount">- ₹0.00</span>
+                            </div>
+                            <hr class="my-2">
+                            <div class="mb-2">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="fw-bold fs-5 text-dark mb-0" for="grandTotalInput">
+                                        Grand Total (மொத்தத் தொகை):
+                                    </label>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 small" id="resetGrandTotalBtn" title="Reset to auto-calculated total" style="display: none; font-size: 0.72rem;">
+                                        <i class="fa-solid fa-rotate-left me-1"></i>Auto
+                                    </button>
+                                </div>
+                                <div class="input-group input-group-lg">
+                                    <span class="input-group-text bg-primary text-white fw-bold">₹</span>
+                                    <button type="button" class="btn btn-outline-secondary px-3" id="decGrandTotalBtn" title="Decrease Total (₹1 குறைக்கவும்)">
+                                        <i class="fa-solid fa-minus"></i>
+                                    </button>
+                                    <input type="number" step="0.01" min="0" name="grand_total" class="form-control text-primary fw-bold fs-4 text-center" id="grandTotalInput" value="0.00" title="Manually edit or adjust grand total anytime">
+                                    <button type="button" class="btn btn-outline-secondary px-3" id="incGrandTotalBtn" title="Increase Total (₹1 கூட்டவும்)">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                    <span class="small text-muted" style="font-size: 0.72rem;"><i class="fa-solid fa-pen text-primary me-1"></i>Manual Edit (தொகையை மாற்றலாம்)</span>
+                                    <span class="small text-muted" id="calcTotalHint" style="font-size: 0.72rem;">Computed: ₹0.00</span>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between small text-success fw-bold mb-1">
+                                <span>Customer Paid (பெற்றது):</span>
+                                <span id="summaryPaid">₹0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between small fw-bold mb-1" id="summaryReturnRow" style="display: none !important;">
+                                <span class="text-success"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Return Amount (மீதி தர வேண்டியது):</span>
+                                <span id="summaryReturn" class="text-success fs-6">₹0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between small fw-bold" id="summaryBalanceRow">
+                                <span>Remaining Balance Due (நிலுவை):</span>
+                                <span id="summaryBalance" class="text-danger">₹0.00</span>
+                            </div>
+                        </div>
+
+                        <!-- Main Submit Button -->
+                        <div class="d-grid mt-3">
+                            <button type="submit" class="btn btn-primary-custom py-3 fs-5 shadow" id="submitBillBtn">
+                                <i class="fa-solid fa-print me-2"></i> Print & Save Bill (பில் அச்சிட்டு சேமிக்க)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ======================================================== -->
+<!-- MODAL: QUICK ADD PRODUCT (நேரடியாக புதிய பொருள் சேர்க்க)  -->
+<!-- ======================================================== -->
+<div class="modal fade" id="quickAddProductModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold"><i class="fa-solid fa-plus-circle text-primary me-2"></i>Create New Product (புதிய பொருள் உருவாக்க)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'billing:product_add' %}" id="quickAddProductForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tamil Product Name (தமிழ் பெயர்) *</label>
+                        <input type="text" name="name_tamil" id="quickAddNameTamil" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">English Product Name (Optional)</label>
+                        <input type="text" name="name" id="quickAddNameEnglish" class="form-control">
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Unit Type (அளவீடு) *</label>
+                            <select name="unit" id="quickAddUnitSelect" class="form-select" onchange="toggleQuickCustomUnitField()">
+                                <option value="KG">KG (கிலோ)</option>
+                                <option value="Gram">Gram (கிராம்)</option>
+                                <option value="Pack">Pack / Bag (பேக்)</option>
+                                <option value="Box">Box (பெட்டி)</option>
+                                <option value="Pcs" selected>Pcs (எண்ணிக்கை)</option>
+                                <option value="Ltr">Liter (லிட்டர்)</option>
+                                <option value="Set">Set (செட்)</option>
+                                <option value="Nos">Nos (எண்கள்)</option>
+                                <option value="Unit">Unit (யூனிட்)</option>
+                                <option value="Other">+ Other / மற்றவை...</option>
+                            </select>
+                            <div id="quickCustomUnitContainer" class="mt-1" style="display: none;">
+                                <input type="text" name="custom_unit" id="quickCustomUnitInput" class="form-control form-control-sm border-primary">
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold mb-1">Category (வகை) *</label>
+                            <select name="category" id="quickAddCategorySelect" class="form-select form-select-sm" required>
+                                <option value="">-- Select Category --</option>
+                                {% for cat in categories %}
+                                    <option value="{{ cat }}" {% if cat == 'General' %}selected{% endif %}>{{ cat }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Selling Price (₹) *</label>
+                            <input type="number" step="0.01" min="0" name="price" id="quickAddPrice" class="form-control" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Buy / Cost Price (₹)</label>
+                            <input type="number" step="0.01" min="0" name="cost_price" id="quickAddCostPrice" class="form-control">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Opening Stock</label>
+                            <input type="number" step="any" min="0" name="stock_quantity" id="quickAddStock" class="form-control" value="100">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Tax / GST %</label>
+                            <input type="number" step="0.01" min="0" name="tax_percent" id="quickAddTax" class="form-control" value="0.00">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom px-4" id="btnSubmitQuickAddProduct">Create & Add to Bill</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Products Catalog Data serialized for instant lookup
+    const catalog = [
+        {% for p in products %}
+        {
+            id: {{ p.id }},
+            name_tamil: "{{ p.name_tamil|escapejs }}",
+            name_english: "{{ p.name|escapejs }}",
+            display_name: "{{ p.display_name|escapejs }}",
+            category: "{{ p.category|default:'General'|escapejs }}",
+            sku: "{{ p.sku|default:''|escapejs }}",
+            unit: "{{ p.unit }}",
+            price: {{ p.price }},
+            tax: {{ p.tax_percent }},
+            stock: {{ p.stock_quantity }}
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    // Customers Data serialized for instant lookup
+    const terminalCustomers = [
+        {% for c in customers %}
+        {
+            id: {{ c.id }},
+            name: "{{ c.name|escapejs }}",
+            phone: "{{ c.phone|default:''|escapejs }}",
+            address: "{{ c.address|default:''|escapejs }}"
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    const itemsBody = document.getElementById("billItemsBody");
+    const addRowBtn = document.getElementById("addProductRowBtn");
+    const addRowBtn2 = document.getElementById("addProductRowBtn2");
+    const addOtherBtn = document.getElementById("addOtherProductBtn");
+    const addOtherBtn2 = document.getElementById("addOtherProductBtn2");
+    const paidInput = document.getElementById("paidAmountInput");
+    const termCategory = document.getElementById("terminalCategorySelect");
+    const catalogCountBadge = document.getElementById("catalogCountBadge");
+    let isPaidCustom = false;
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    const hasShopGst = {% if active_shop_gst %}true{% else %}false{% endif %};
+
+    // Helper to generate <select> options for all products or filtered by category
+    function buildProductOptionsHtml(selectedId = null, filterCategory = "") {
+        let matches = catalog;
+        if (filterCategory) {
+            matches = matches.filter(p => p.category === filterCategory);
+        }
+
+        let html = '<option value="">-- Select Product (பொருள் தேர்வு செய்) --</option>';
+        matches.forEach(p => {
+            const isSel = (selectedId && selectedId == p.id) ? 'selected' : '';
+            const stockNum = parseFloat(p.stock) || 0;
+            const isOut = stockNum <= 0;
+            const stockBadge = isOut ? ' [❌ Out of Stock (0)]' : ` [Stock: ${stockNum} ${p.unit}]`;
+            html += `<option value="${p.id}" data-price="${p.price}" data-unit="${p.unit}" data-tax="${p.tax}" data-category="${escapeHtml(p.category)}" data-sku="${escapeHtml(p.sku)}" data-stock="${stockNum}" class="${isOut ? 'text-danger font-monospace' : ''}" ${isSel}>${escapeHtml(p.display_name)} (₹${p.price.toFixed(2)} / ${escapeHtml(p.unit)})${stockBadge}</option>`;
+        });
+        return html;
+    }
+
+    function refreshAllProductSelects() {
+        const activeCat = getSelectedCategory();
+        document.querySelectorAll(".product-select").forEach(sel => {
+            const currentVal = sel.value;
+            sel.innerHTML = buildProductOptionsHtml(currentVal, activeCat);
+            if (currentVal) sel.value = currentVal;
+        });
+    }
+
+    // 1. Category Filter Management
+    function getSelectedCategory() {
+        return termCategory ? termCategory.value.trim() : "";
+    }
+
+    function updateCategoryFilter(cat) {
+        if (termCategory) {
+            termCategory.value = cat;
+        }
+        // Update pills
+        document.querySelectorAll("#quickCategoryPills .cat-pill").forEach(btn => {
+            if (btn.getAttribute("data-cat") === cat) {
+                btn.classList.add("active");
+                btn.classList.remove("btn-outline-secondary");
+                btn.classList.add("btn-outline-primary");
+            } else {
+                btn.classList.remove("active");
+                btn.classList.remove("btn-outline-primary");
+                btn.classList.add("btn-outline-secondary");
+            }
+        });
+
+        // Update count badge
+        const count = cat ? catalog.filter(p => p.category === cat).length : catalog.length;
+        if (catalogCountBadge) {
+            catalogCountBadge.innerText = `${count} Products${cat ? ' in ' + cat : ''}`;
+        }
+
+        refreshAllProductSelects();
+    }
+
+    if (termCategory) {
+        termCategory.addEventListener("change", function() {
+            updateCategoryFilter(this.value);
+        });
+    }
+
+    document.querySelectorAll("#quickCategoryPills .cat-pill").forEach(btn => {
+        btn.addEventListener("click", function() {
+            const cat = this.getAttribute("data-cat");
+            updateCategoryFilter(cat);
+        });
+    });
+
+    // 2. Add dynamic standard product row
+    function addProductRow(selectedId = null) {
+        const tr = document.createElement("tr");
+        tr.className = "item-row";
+
+        let initialProd = null;
+        if (selectedId) {
+            initialProd = catalog.find(p => p.id == selectedId);
+        }
+
+        const initialId = initialProd ? initialProd.id : "";
+        const initialPrice = initialProd ? initialProd.price.toFixed(2) : "0.00";
+        const initialUnit = initialProd ? initialProd.unit : "KG";
+        const initialTax = (initialProd && hasShopGst) ? initialProd.tax : 0;
+        const initialCatText = initialProd ? `Category: ${escapeHtml(initialProd.category)}${initialProd.sku ? ' • SKU: ' + escapeHtml(initialProd.sku) : ''}` : "";
+        const initialStock = initialProd ? (parseFloat(initialProd.stock) || 0) : null;
+        let initialStockTag = '';
+        if (initialProd) {
+            if (initialStock <= 0) {
+                initialStockTag = `<span class="badge bg-danger mt-1 stock-badge"><i class="fa-solid fa-triangle-exclamation me-1"></i>Out of Stock (0 ${escapeHtml(initialProd.unit)})</span>`;
+            } else {
+                initialStockTag = `<span class="badge bg-success-subtle text-success border border-success-subtle mt-1 stock-badge"><i class="fa-solid fa-boxes-stacked me-1"></i>Available: ${initialStock} ${escapeHtml(initialProd.unit)}</span>`;
+            }
+        }
+
+        tr.innerHTML = `
+            <td>
+                <select name="product_id[]" class="form-select form-select-sm product-select" required>
+                    ${buildProductOptionsHtml(initialId, getSelectedCategory())}
+                </select>
+                <input type="hidden" name="product_name[]" class="item-name-hidden" value="${initialProd ? escapeHtml(initialProd.display_name) : ''}">
+                <div class="prod-category-tag small text-muted mt-1" style="font-size: 0.75rem;">${initialCatText}</div>
+                <div class="row-stock-status">${initialStockTag}</div>
+            </td>
+            <td>
+                <select name="unit[]" class="form-select form-select-sm unit-select">
+                    <option value="KG">KG (கிலோ)</option>
+                    <option value="Gram">Gram (கிராம்)</option>
+                    <option value="Pack">Pack / Bag (பேக்)</option>
+                    <option value="Box">Box (பெட்டி)</option>
+                    <option value="Pcs">Pcs (எண்ணிக்கை)</option>
+                    <option value="Ltr">Liter (லிட்டர்)</option>
+                    <option value="Set">Set (செட்)</option>
+                    <option value="Nos">Nos (எண்கள்)</option>
+                    <option value="Unit">Unit (யூனிட்)</option>
+                    <option value="Other">+ Other / மற்றவை...</option>
+                </select>
+            </td>
+            <td>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light text-muted px-1" style="font-size:0.75rem;">₹</span>
+                    <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control form-control-sm price-input text-end fw-semibold" value="${initialPrice}" title="Edit price manually anytime" required>
+                </div>
+                <div class="small text-muted text-end mt-1" style="font-size: 0.70rem;"><i class="fa-solid fa-pen text-primary me-1"></i>Edit Price (மாற்றலாம்)</div>
+            </td>
+            <td>
+                <input type="number" step="any" min="0.001" name="quantity[]" class="form-control form-control-sm qty-input text-center fw-bold" value="1" required>
+                <div class="qty-stock-warning text-danger fw-bold small text-center mt-1" style="font-size: 0.72rem; display: none;"></div>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm total-input text-end fw-bold bg-light" readonly value="₹0.00">
+                <input type="hidden" class="tax-pct" value="${initialTax}">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm remove-row-btn" title="Remove Product (பொருளை நீக்கு)">
+                    <i class="fa-solid fa-trash text-danger"></i>
+                </button>
+            </td>
+        `;
+
+        itemsBody.appendChild(tr);
+
+        // Bind Row Elements
+        const prodSelect = tr.querySelector(".product-select");
+        const nameHidden = tr.querySelector(".item-name-hidden");
+        const catTag = tr.querySelector(".prod-category-tag");
+        const stockStatusDiv = tr.querySelector(".row-stock-status");
+        const unitSelect = tr.querySelector(".unit-select");
+        const priceInput = tr.querySelector(".price-input");
+        const qtyInput = tr.querySelector(".qty-input");
+        const qtyWarning = tr.querySelector(".qty-stock-warning");
+        const totalInput = tr.querySelector(".total-input");
+        const taxInput = tr.querySelector(".tax-pct");
+        const removeBtn = tr.querySelector(".remove-row-btn");
+
+        if (initialUnit) {
+            unitSelect.value = initialUnit;
+        }
+
+        function checkStockLimit() {
+            const pid = parseInt(prodSelect.value);
+            if (!pid) {
+                if (qtyWarning) qtyWarning.style.display = "none";
+                qtyInput.classList.remove("is-invalid");
+                prodSelect.classList.remove("is-invalid");
+                return true;
+            }
+
+            const p = catalog.find(x => x.id === pid);
+            if (!p) return true;
+
+            const availStock = parseFloat(p.stock) || 0;
+            // Sum all quantities for this same product across all rows in table
+            let totalRequestedForProduct = 0;
+            document.querySelectorAll("#billItemsBody tr").forEach(row => {
+                const rowPid = parseInt(row.querySelector(".product-select")?.value);
+                if (rowPid === pid) {
+                    const rowQty = parseFloat(row.querySelector(".qty-input")?.value || 0);
+                    totalRequestedForProduct += rowQty;
+                }
+            });
+
+            if (availStock <= 0) {
+                if (qtyWarning) {
+                    qtyWarning.innerHTML = `<i class="fa-solid fa-circle-exclamation me-1"></i>Out of Stock! (0 ${escapeHtml(p.unit)})`;
+                    qtyWarning.style.display = "block";
+                }
+                qtyInput.classList.add("is-invalid");
+                prodSelect.classList.add("is-invalid");
+                return false;
+            } else if (totalRequestedForProduct > availStock) {
+                if (qtyWarning) {
+                    qtyWarning.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-1"></i>Max: ${availStock} ${escapeHtml(p.unit)}`;
+                    qtyWarning.style.display = "block";
+                }
+                qtyInput.classList.add("is-invalid");
+                prodSelect.classList.remove("is-invalid");
+                return false;
+            } else {
+                if (qtyWarning) qtyWarning.style.display = "none";
+                qtyInput.classList.remove("is-invalid");
+                prodSelect.classList.remove("is-invalid");
+                return true;
+            }
+        }
+
+        function updateRow() {
+            const price = parseFloat(priceInput.value || 0);
+            const qty = parseFloat(qtyInput.value || 0);
+            const taxPct = hasShopGst ? parseFloat(taxInput.value || 0) : 0;
+
+            const rowSubtotal = price * qty;
+            const rowTax = (rowSubtotal * taxPct) / 100.0;
+            const rowTotal = rowSubtotal + rowTax;
+
+            totalInput.value = "₹" + rowTotal.toFixed(2);
+            checkStockLimit();
+            recalculateGrandTotals();
+        }
+
+        prodSelect.addEventListener("change", function() {
+            const pid = parseInt(this.value);
+            if (!pid) {
+                if (catTag) catTag.innerText = "";
+                if (stockStatusDiv) stockStatusDiv.innerHTML = "";
+                if (nameHidden) nameHidden.value = "";
+                priceInput.value = "0.00";
+                taxInput.value = "0";
+                updateRow();
+                return;
+            }
+            const p = catalog.find(x => x.id === pid);
+            if (p) {
+                if (nameHidden) nameHidden.value = p.display_name;
+                unitSelect.value = p.unit;
+                priceInput.value = p.price.toFixed(2);
+                taxInput.value = hasShopGst ? p.tax : 0;
+                if (catTag) {
+                    catTag.innerText = `Category: ${p.category}${p.sku ? ' • SKU: ' + p.sku : ''}`;
+                }
+
+                const sVal = parseFloat(p.stock) || 0;
+                if (stockStatusDiv) {
+                    if (sVal <= 0) {
+                        stockStatusDiv.innerHTML = `<span class="badge bg-danger mt-1 stock-badge"><i class="fa-solid fa-triangle-exclamation me-1"></i>Out of Stock (0 ${escapeHtml(p.unit)})</span>`;
+                    } else {
+                        stockStatusDiv.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle mt-1 stock-badge"><i class="fa-solid fa-boxes-stacked me-1"></i>Available: ${sVal} ${escapeHtml(p.unit)}</span>`;
+                    }
+                }
+
+                updateRow();
+                qtyInput.focus();
+                qtyInput.select();
+            }
+        });
+
+        unitSelect.addEventListener("change", function() {
+            unitSelect.dataset.modified = "true";
+            if (this.value === "Other") {
+                const custom = prompt("Enter Custom Unit Name (e.g. Roll, Bundle, Metre, Tin):");
+                if (custom && custom.trim()) {
+                    const opt = document.createElement("option");
+                    opt.value = custom.trim();
+                    opt.text = custom.trim();
+                    opt.selected = true;
+                    this.appendChild(opt);
+                } else {
+                    this.value = "Pcs";
+                }
+            }
+        });
+        priceInput.addEventListener("input", function() { priceInput.dataset.modified = "true"; updateRow(); });
+        qtyInput.addEventListener("input", function() {
+            updateRow();
+            // Also trigger stock checks across any other rows of the same product
+            document.querySelectorAll("#billItemsBody tr").forEach(r => {
+                if (r !== tr) {
+                    const otherPid = parseInt(r.querySelector(".product-select")?.value);
+                    if (otherPid && otherPid === parseInt(prodSelect.value)) {
+                        const otherQty = r.querySelector(".qty-input");
+                        const otherWarn = r.querySelector(".qty-stock-warning");
+                        const p = catalog.find(x => x.id === otherPid);
+                        if (p) {
+                            const avail = parseFloat(p.stock) || 0;
+                            let totalQ = 0;
+                            document.querySelectorAll("#billItemsBody tr").forEach(xRow => {
+                                if (parseInt(xRow.querySelector(".product-select")?.value) === otherPid) {
+                                    totalQ += parseFloat(xRow.querySelector(".qty-input")?.value || 0);
+                                }
+                            });
+                            if (totalQ > avail && otherWarn) {
+                                otherWarn.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-1"></i>Max: ${avail} ${escapeHtml(p.unit)}`;
+                                otherWarn.style.display = "block";
+                                otherQty?.classList.add("is-invalid");
+                            } else if (otherWarn) {
+                                otherWarn.style.display = "none";
+                                otherQty?.classList.remove("is-invalid");
+                            }
+                        }
+                    }
+                }
+            });
+        });
+
+        removeBtn.addEventListener("click", function() {
+            if (itemsBody.children.length > 1) {
+                tr.remove();
+                // Recheck stock on remaining rows
+                document.querySelectorAll("#billItemsBody tr").forEach(r => {
+                    const pid = parseInt(r.querySelector(".product-select")?.value);
+                    if (pid) {
+                        const p = catalog.find(x => x.id === pid);
+                        if (p) {
+                            const avail = parseFloat(p.stock) || 0;
+                            let totalQ = 0;
+                            document.querySelectorAll("#billItemsBody tr").forEach(xRow => {
+                                if (parseInt(xRow.querySelector(".product-select")?.value) === pid) {
+                                    totalQ += parseFloat(xRow.querySelector(".qty-input")?.value || 0);
+                                }
+                            });
+                            const rWarn = r.querySelector(".qty-stock-warning");
+                            const rQty = r.querySelector(".qty-input");
+                            if (avail > 0 && totalQ <= avail && rWarn) {
+                                rWarn.style.display = "none";
+                                rQty?.classList.remove("is-invalid");
+                            }
+                        }
+                    }
+                });
+                recalculateGrandTotals();
+            } else {
+                alert("An invoice must contain at least one product row.");
+            }
+        });
+
+        updateRow();
+    }
+
+    // 2.5. Add "Other Product" row for manual entry of product name and amount
+    function addOtherProductRow() {
+        const tr = document.createElement("tr");
+        tr.className = "item-row bg-warning-subtle bg-opacity-10";
+
+        tr.innerHTML = `
+            <td>
+                <div class="d-flex align-items-center gap-1 mb-1">
+                    <span class="badge bg-warning text-dark py-1 px-2" style="font-size: 0.72rem;">
+                        <i class="fa-solid fa-pen-to-square me-1"></i>Other Product (மற்ற பொருள்)
+                    </span>
+                </div>
+                <input type="hidden" name="product_id[]" value="custom">
+                <input type="text" name="product_name[]" class="form-control form-control-sm custom-prod-name fw-semibold" placeholder="Type Product Name (பொருள் பெயர் தட்டச்சு செய்க)..." required autocomplete="off">
+            </td>
+            <td>
+                <select name="unit[]" class="form-select form-select-sm unit-select">
+                    <option value="Pcs" selected>Pcs (எண்ணிக்கை)</option>
+                    <option value="Nos">Nos (எண்கள்)</option>
+                    <option value="Unit">Unit (யூனிட்)</option>
+                    <option value="KG">KG (கிலோ)</option>
+                    <option value="Gram">Gram (கிராம்)</option>
+                    <option value="Pack">Pack / Bag (பேக்)</option>
+                    <option value="Box">Box (பெட்டி)</option>
+                    <option value="Ltr">Liter (லிட்டர்)</option>
+                    <option value="Set">Set (செட்)</option>
+                    <option value="Other">+ Other / மற்றவை...</option>
+                </select>
+            </td>
+            <td>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light text-muted px-1" style="font-size:0.75rem;">₹</span>
+                    <input type="number" step="0.01" min="0" name="unit_price[]" class="form-control form-control-sm price-input text-end fw-bold" placeholder="0.00" value="" required>
+                </div>
+                <div class="small text-muted text-end mt-1" style="font-size: 0.70rem;">Manual Amount</div>
+            </td>
+            <td>
+                <input type="number" step="any" min="0.001" name="quantity[]" class="form-control form-control-sm qty-input text-center fw-bold" value="1" required>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm total-input text-end fw-bold bg-light" readonly value="₹0.00">
+                <input type="hidden" class="tax-pct" value="0">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm remove-row-btn" title="Remove (நீக்கு)">
+                    <i class="fa-solid fa-trash text-danger"></i>
+                </button>
+            </td>
+        `;
+
+        itemsBody.appendChild(tr);
+
+        const nameInput = tr.querySelector(".custom-prod-name");
+        const unitSelect = tr.querySelector(".unit-select");
+        const priceInput = tr.querySelector(".price-input");
+        const qtyInput = tr.querySelector(".qty-input");
+        const totalInput = tr.querySelector(".total-input");
+        const removeBtn = tr.querySelector(".remove-row-btn");
+
+        if (unitSelect) {
+            unitSelect.addEventListener("change", function() {
+                if (this.value === "Other") {
+                    const custom = prompt("Enter Custom Unit Name (e.g. Roll, Bundle, Metre, Tin):");
+                    if (custom && custom.trim()) {
+                        const opt = document.createElement("option");
+                        opt.value = custom.trim();
+                        opt.text = custom.trim();
+                        opt.selected = true;
+                        this.appendChild(opt);
+                    } else {
+                        this.value = "Pcs";
+                    }
+                }
+            });
+        }
+
+        function updateRow() {
+            const price = parseFloat(priceInput.value || 0);
+            const qty = parseFloat(qtyInput.value || 0);
+            const rowSubtotal = price * qty;
+            totalInput.value = "₹" + rowSubtotal.toFixed(2);
+            recalculateGrandTotals();
+        }
+
+        priceInput.addEventListener("input", updateRow);
+        qtyInput.addEventListener("input", updateRow);
+
+        removeBtn.addEventListener("click", function() {
+            if (itemsBody.children.length > 1) {
+                tr.remove();
+                recalculateGrandTotals();
+            } else {
+                alert("An invoice must contain at least one product row.");
+            }
+        });
+
+        updateRow();
+        if (nameInput) {
+            nameInput.focus();
+        }
+    }
+
+    // Recalculate Grand Totals & Manage Manual Override
+    const discountInput = document.getElementById("discountAmountInput");
+    const discountRow = document.getElementById("summaryDiscountRow");
+    const discountEl = document.getElementById("summaryDiscount");
+    const grandTotalInput = document.getElementById("grandTotalInput");
+    const calcTotalHint = document.getElementById("calcTotalHint");
+    const resetGrandTotalBtn = document.getElementById("resetGrandTotalBtn");
+    const incGrandTotalBtn = document.getElementById("incGrandTotalBtn");
+    const decGrandTotalBtn = document.getElementById("decGrandTotalBtn");
+    const summaryReturnRow = document.getElementById("summaryReturnRow");
+    const summaryReturn = document.getElementById("summaryReturn");
+    const leftReturnBox = document.getElementById("leftReturnBox");
+    const leftReturnAmount = document.getElementById("leftReturnAmount");
+    const exactPaidBtn = document.getElementById("exactPaidBtn");
+    const quickPaid100 = document.getElementById("quickPaid100");
+    const quickPaid500 = document.getElementById("quickPaid500");
+
+    let isGrandTotalManuallyModified = false;
+
+    function recalculateGrandTotals(source = "items") {
+        let subtotal = 0;
+        let totalTax = 0;
+
+        document.querySelectorAll("#billItemsBody tr").forEach(tr => {
+            const price = parseFloat(tr.querySelector(".price-input")?.value || 0);
+            const qty = parseFloat(tr.querySelector(".qty-input")?.value || 0);
+            const taxPct = hasShopGst ? parseFloat(tr.querySelector(".tax-pct")?.value || 0) : 0;
+
+            const rowSub = price * qty;
+            const rowTx = (rowSub * taxPct) / 100.0;
+            subtotal += rowSub;
+            totalTax += rowTx;
+        });
+
+        const discount = parseFloat(discountInput?.value || 0);
+        if (discount > 0) {
+            discountRow.style.setProperty("display", "flex", "important");
+            discountEl.innerText = "- ₹" + discount.toFixed(2);
+        } else {
+            discountRow.style.setProperty("display", "none", "important");
+        }
+
+        const computedGrandTotal = Math.max(0, subtotal + totalTax - discount);
+
+        document.getElementById("summarySubtotal").innerText = "₹" + subtotal.toFixed(2);
+        
+        const summaryTaxRow = document.getElementById("summaryTaxRow");
+        if (summaryTaxRow) {
+            if (hasShopGst && totalTax > 0) {
+                summaryTaxRow.style.setProperty("display", "flex", "important");
+                document.getElementById("summaryTax").innerText = "₹" + totalTax.toFixed(2);
+            } else {
+                summaryTaxRow.style.setProperty("display", "none", "important");
+            }
+        }
+
+        if (calcTotalHint) {
+            calcTotalHint.innerText = `Computed: ₹${computedGrandTotal.toFixed(2)}`;
+        }
+
+        // Determine effective Grand Total (manual override vs auto computed)
+        let effectiveGrandTotal = computedGrandTotal;
+        if (isGrandTotalManuallyModified && grandTotalInput) {
+            const entered = parseFloat(grandTotalInput.value);
+            if (!isNaN(entered) && entered >= 0) {
+                effectiveGrandTotal = entered;
+            } else {
+                effectiveGrandTotal = computedGrandTotal;
+            }
+        } else if (grandTotalInput) {
+            grandTotalInput.value = computedGrandTotal.toFixed(2);
+        }
+
+        // Show/hide auto reset button
+        if (resetGrandTotalBtn) {
+            if (isGrandTotalManuallyModified) {
+                resetGrandTotalBtn.style.display = "inline-block";
+            } else {
+                resetGrandTotalBtn.style.display = "none";
+            }
+        }
+
+        // Update paid & balance / return amount
+        if (!isPaidCustom) {
+            paidInput.value = effectiveGrandTotal.toFixed(2);
+        }
+
+        const paid = parseFloat(paidInput.value || 0);
+        const diff = paid - effectiveGrandTotal;
+
+        if (diff > 0) {
+            // Customer paid MORE than grand total -> Return change to customer!
+            const returnAmt = diff;
+            if (summaryReturnRow) summaryReturnRow.style.setProperty("display", "flex", "important");
+            if (summaryReturn) summaryReturn.innerText = "₹" + returnAmt.toFixed(2);
+            if (leftReturnBox) leftReturnBox.style.setProperty("display", "block", "important");
+            if (leftReturnAmount) leftReturnAmount.innerText = "₹" + returnAmt.toFixed(2);
+
+            const balEl = document.getElementById("summaryBalance");
+            balEl.innerText = "₹0.00";
+            balEl.className = "text-success fw-bold";
+        } else {
+            // Customer paid EXACT or LESS -> Balance due
+            const balanceDue = Math.abs(diff);
+            if (summaryReturnRow) summaryReturnRow.style.setProperty("display", "none", "important");
+            if (leftReturnBox) leftReturnBox.style.setProperty("display", "none", "important");
+
+            const balEl = document.getElementById("summaryBalance");
+            balEl.innerText = "₹" + balanceDue.toFixed(2);
+            if (balanceDue > 0) {
+                balEl.className = "text-danger fw-bold";
+            } else {
+                balEl.className = "text-success fw-bold";
+            }
+        }
+
+        document.getElementById("summaryPaid").innerText = "₹" + paid.toFixed(2);
+    }
+
+    if (grandTotalInput) {
+        grandTotalInput.addEventListener("input", function() {
+            isGrandTotalManuallyModified = true;
+            if (!isPaidCustom) {
+                paidInput.value = (parseFloat(this.value) || 0).toFixed(2);
+            }
+            recalculateGrandTotals("grandTotalInput");
+        });
+    }
+
+    if (incGrandTotalBtn) {
+        incGrandTotalBtn.addEventListener("click", function() {
+            isGrandTotalManuallyModified = true;
+            let current = parseFloat(grandTotalInput.value || 0);
+            grandTotalInput.value = (current + 1).toFixed(2);
+            if (!isPaidCustom) {
+                paidInput.value = grandTotalInput.value;
+            }
+            recalculateGrandTotals("incGrandTotal");
+        });
+    }
+
+    if (decGrandTotalBtn) {
+        decGrandTotalBtn.addEventListener("click", function() {
+            isGrandTotalManuallyModified = true;
+            let current = parseFloat(grandTotalInput.value || 0);
+            grandTotalInput.value = Math.max(0, current - 1).toFixed(2);
+            if (!isPaidCustom) {
+                paidInput.value = grandTotalInput.value;
+            }
+            recalculateGrandTotals("decGrandTotal");
+        });
+    }
+
+    if (resetGrandTotalBtn) {
+        resetGrandTotalBtn.addEventListener("click", function() {
+            isGrandTotalManuallyModified = false;
+            recalculateGrandTotals("resetGrandTotal");
+        });
+    }
+
+    if (exactPaidBtn) {
+        exactPaidBtn.addEventListener("click", function() {
+            isPaidCustom = false;
+            const eff = parseFloat(grandTotalInput?.value || 0);
+            paidInput.value = eff.toFixed(2);
+            recalculateGrandTotals("exactPaid");
+        });
+    }
+
+    if (quickPaid100) {
+        quickPaid100.addEventListener("click", function() {
+            isPaidCustom = true;
+            paidInput.value = "100.00";
+            recalculateGrandTotals("quick100");
+        });
+    }
+
+    if (quickPaid500) {
+        quickPaid500.addEventListener("click", function() {
+            isPaidCustom = true;
+            paidInput.value = "500.00";
+            recalculateGrandTotals("quick500");
+        });
+    }
+
+    if (paidInput) {
+        paidInput.addEventListener("input", function() {
+            isPaidCustom = true;
+            recalculateGrandTotals("paidInput");
+        });
+    }
+
+    if (discountInput) {
+        discountInput.addEventListener("input", function() {
+            recalculateGrandTotals("discountInput");
+        });
+    }
+
+    if (addRowBtn) addRowBtn.addEventListener("click", () => addProductRow());
+    if (addRowBtn2) addRowBtn2.addEventListener("click", () => addProductRow());
+    if (addOtherBtn) addOtherBtn.addEventListener("click", () => addOtherProductRow());
+    if (addOtherBtn2) addOtherBtn2.addEventListener("click", () => addOtherProductRow());
+
+    // Expose functions globally on window object for inline onclick fallbacks
+    window.terminalAddProductRow = addProductRow;
+    window.terminalAddOtherProductRow = addOtherProductRow;
+
+    // 3. Customer Selection with Instant Typing Filter
+    const custNameInput = document.getElementById("customerNameInput");
+    const custIdInput = document.getElementById("customerIdInput");
+    const custPhoneInput = document.getElementById("customerPhoneInput");
+    const custAddressInput = document.getElementById("customerAddressInput");
+    const custSuggestions = document.getElementById("customerSuggestions");
+    const existCustSelect = document.getElementById("existingCustomerSelect");
+    const clearCustBtn = document.getElementById("clearCustomerBtn");
+
+    function filterTerminalCustomers(query = "") {
+        if (!custSuggestions) return;
+        const q = (query || "").trim().toLowerCase();
+        if (!q) {
+            custSuggestions.style.display = "none";
+            return;
+        }
+
+        const matches = terminalCustomers.filter(c =>
+            c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q))
+        );
+
+        if (matches.length === 0) {
+            custSuggestions.innerHTML = `<div class="p-2 text-muted text-center small"><i class="fa-solid fa-user-plus me-1"></i> New customer "${escapeHtml(q)}" (will be recorded)</div>`;
+            custSuggestions.style.display = "block";
+            return;
+        }
+
+        let html = '';
+        matches.slice(0, 10).forEach(c => {
+            html += `
+                <div class="cust-suggest-item p-2 border-bottom d-flex justify-content-between align-items-center"
+                     style="cursor: pointer; transition: background 0.15s;"
+                     data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-phone="${escapeHtml(c.phone)}" data-address="${escapeHtml(c.address || '')}">
+                    <div>
+                        <strong class="text-dark">${escapeHtml(c.name)}</strong>
+                        ${c.address ? `<div class="text-muted small" style="font-size:0.75rem;"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(c.address)}</div>` : ''}
+                    </div>
+                    <span class="text-muted small font-monospace">${escapeHtml(c.phone || 'No phone')}</span>
+                </div>
+            `;
+        });
+        custSuggestions.innerHTML = html;
+        custSuggestions.style.display = "block";
+
+        custSuggestions.querySelectorAll(".cust-suggest-item").forEach(item => {
+            item.addEventListener("click", function(e) {
+                e.stopPropagation();
+                const id = this.getAttribute("data-id");
+                const name = this.getAttribute("data-name");
+                const phone = this.getAttribute("data-phone");
+                const address = this.getAttribute("data-address");
+                if (custNameInput) custNameInput.value = name;
+                if (custPhoneInput) custPhoneInput.value = phone || "";
+                if (custAddressInput) custAddressInput.value = address || "";
+                if (custIdInput) custIdInput.value = id;
+                if (existCustSelect) existCustSelect.value = id;
+                custSuggestions.style.display = "none";
+            });
+        });
+    }
+
+    if (custNameInput) {
+        custNameInput.addEventListener("input", function() {
+            custIdInput.value = ""; // clear ID if cashier types custom name
+            filterTerminalCustomers(this.value);
+        });
+        custNameInput.addEventListener("focus", function() {
+            filterTerminalCustomers(this.value);
+        });
+    }
+
+    if (clearCustBtn) {
+        clearCustBtn.addEventListener("click", function() {
+            if (custNameInput) custNameInput.value = "";
+            if (custPhoneInput) custPhoneInput.value = "";
+            if (custAddressInput) custAddressInput.value = "";
+            if (custIdInput) custIdInput.value = "";
+            if (existCustSelect) existCustSelect.value = "";
+            if (custSuggestions) custSuggestions.style.display = "none";
+        });
+    }
+
+    if (existCustSelect) {
+        existCustSelect.addEventListener("change", function() {
+            const opt = this.options[this.selectedIndex];
+            if (opt && opt.value) {
+                if (custNameInput) custNameInput.value = opt.getAttribute("data-name");
+                if (custPhoneInput) custPhoneInput.value = opt.getAttribute("data-phone") || "";
+                if (custAddressInput) custAddressInput.value = opt.getAttribute("data-address") || "";
+                if (custIdInput) custIdInput.value = opt.value;
+            } else {
+                if (custNameInput) custNameInput.value = "";
+                if (custPhoneInput) custPhoneInput.value = "";
+                if (custAddressInput) custAddressInput.value = "";
+                if (custIdInput) custIdInput.value = "";
+            }
+        });
+    }
+
+    // Hide dropdowns when clicking outside
+    document.addEventListener("click", function(e) {
+        if (custSuggestions && !custSuggestions.contains(e.target) && e.target !== custNameInput) {
+            custSuggestions.style.display = "none";
+        }
+    });
+
+    // Floating toast alert helper for billing screen
+    function showBillingToast(message, type = "success") {
+        let container = document.getElementById("billingToastContainer");
+        if (!container) {
+            container = document.createElement("div");
+            container.id = "billingToastContainer";
+            container.style.cssText = "position: fixed; top: 20px; right: 20px; z-index: 1090; min-width: 280px; max-width: 420px;";
+            document.body.appendChild(container);
+        }
+        const icon = type === "success" ? "fa-circle-check" : "fa-circle-info";
+        const alertEl = document.createElement("div");
+        alertEl.className = `alert alert-${type} shadow-lg rounded-3 py-2 px-3 mb-2 d-flex align-items-center gap-2 border-0 fade show`;
+        alertEl.style.transition = "all 0.3s ease";
+        alertEl.innerHTML = `
+            <i class="fa-solid ${icon} fa-lg"></i>
+            <div class="flex-grow-1 small fw-semibold">${message}</div>
+            <button type="button" class="btn-close btn-close-sm" style="font-size: 0.7rem;"></button>
+        `;
+        alertEl.querySelector(".btn-close").addEventListener("click", () => alertEl.remove());
+        container.appendChild(alertEl);
+        setTimeout(() => {
+            alertEl.classList.remove("show");
+            setTimeout(() => alertEl.remove(), 300);
+        }, 4000);
+    }
+
+    // Toggle custom unit field in quick add product modal
+    window.toggleQuickCustomUnitField = function() {
+        const sel = document.getElementById("quickAddUnitSelect");
+        const cont = document.getElementById("quickCustomUnitContainer");
+        const inp = document.getElementById("quickCustomUnitInput");
+        if (!sel || !cont) return;
+        if (sel.value === "Other") {
+            cont.style.display = "block";
+            if (inp) {
+                inp.focus();
+                inp.required = true;
+            }
+        } else {
+            cont.style.display = "none";
+            if (inp) {
+                inp.value = "";
+                inp.required = false;
+            }
+        }
+    };
+
+    // Quick Add Product Modal Opener
+    const quickModalEl = document.getElementById("quickAddProductModal");
+    function openQuickAddModal() {
+        if (!quickModalEl) return;
+        if (window.bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(quickModalEl);
+            modal.show();
+        } else {
+            quickModalEl.classList.add("show");
+            quickModalEl.style.display = "block";
+            quickModalEl.setAttribute("aria-modal", "true");
+            quickModalEl.removeAttribute("aria-hidden");
+        }
+    }
+    function closeQuickAddModal() {
+        if (!quickModalEl) return;
+        if (window.bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(quickModalEl);
+            modal.hide();
+        }
+        quickModalEl.classList.remove("show");
+        quickModalEl.style.display = "none";
+        document.querySelectorAll(".modal-backdrop").forEach(b => b.remove());
+        document.body.classList.remove("modal-open");
+    }
+
+    const openQuickBtn = document.getElementById("openQuickAddProdBtn");
+    const openQuickBtn2 = document.getElementById("openQuickAddProdBtn2");
+    if (openQuickBtn) openQuickBtn.addEventListener("click", openQuickAddModal);
+    if (openQuickBtn2) openQuickBtn2.addEventListener("click", openQuickAddModal);
+    window.openQuickAddModal = openQuickAddModal;
+
+    // Quick Add Product Form Submission via AJAX (instant creation and automatic bill selection)
+    const quickAddForm = document.getElementById("quickAddProductForm");
+    if (quickAddForm) {
+        quickAddForm.addEventListener("submit", function(e) {
+            e.preventDefault();
+            const tName = (document.getElementById("quickAddNameTamil")?.value || "").trim();
+            const eName = (document.getElementById("quickAddNameEnglish")?.value || "").trim();
+            if (!tName && !eName) {
+                alert("Please enter at least a Tamil or English product name (தமிழ் அல்லது ஆங்கிலப் பெயர் உள்ளிடவும்).");
+                document.getElementById("quickAddNameTamil")?.focus();
+                return false;
+            }
+
+            const submitBtn = document.getElementById("btnSubmitQuickAddProduct");
+            const origText = submitBtn ? submitBtn.innerHTML : "";
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Saving...';
+            }
+
+            const formData = new FormData(quickAddForm);
+            fetch(quickAddForm.action, {
+                method: "POST",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "success" && data.product) {
+                    closeQuickAddModal();
+                    quickAddForm.reset();
+
+                    // Prepend new product to local in-memory catalog
+                    const p = data.product;
+                    catalog.unshift({
+                        id: p.id,
+                        name_tamil: p.name_tamil,
+                        name_english: p.name,
+                        display_name: p.display_name,
+                        category: p.category || "General",
+                        sku: p.sku || "",
+                        unit: p.unit || "KG",
+                        price: parseFloat(p.price),
+                        tax: parseFloat(p.tax_percent) || 0,
+                        stock: parseFloat(p.stock_quantity) || 0
+                    });
+
+                    // Update catalog count badge
+                    if (catalogCountBadge) {
+                        catalogCountBadge.innerText = `${catalog.length} Products`;
+                    }
+
+                    // Refresh all product dropdowns across existing item rows
+                    refreshAllProductSelects();
+
+                    // Automatically add and select this newly created product in the bill!
+                    addProductRow(p.id);
+
+                    showBillingToast(`Product '${p.display_name}' created and added to bill!`, "success");
+                } else {
+                    alert(data.message || "Failed to create product.");
+                }
+            })
+            .catch(err => {
+                console.error("Quick product creation error:", err);
+                quickAddForm.submit();
+            })
+            .finally(() => {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = origText;
+                }
+            });
+        });
+    }
+
+    // 4. Intercept Bill Submission to enforce stock limits and prevent Out of Stock billing
+    const mainBillingForm = document.getElementById("mainBillingForm");
+    if (mainBillingForm) {
+        mainBillingForm.addEventListener("submit", function(e) {
+            let hasStockError = false;
+            let errorMsg = "";
+
+            // Aggregate quantities by product
+            const requestedByProduct = {};
+            const productNames = {};
+
+            document.querySelectorAll("#billItemsBody tr").forEach(row => {
+                const prodSel = row.querySelector(".product-select");
+                if (prodSel) {
+                    const pid = parseInt(prodSel.value);
+                    if (pid) {
+                        const qty = parseFloat(row.querySelector(".qty-input")?.value || 0);
+                        requestedByProduct[pid] = (requestedByProduct[pid] || 0) + qty;
+                        const pObj = catalog.find(x => x.id === pid);
+                        if (pObj) {
+                            productNames[pid] = pObj;
+                        }
+                    }
+                }
+            });
+
+            for (const [pidStr, totalQty] of Object.entries(requestedByProduct)) {
+                const pid = parseInt(pidStr);
+                const p = productNames[pid];
+                if (p) {
+                    const availStock = parseFloat(p.stock) || 0;
+                    if (availStock <= 0) {
+                        hasStockError = true;
+                        errorMsg = `Out of Stock: '${p.display_name}' is currently out of stock (0 ${p.unit} available).\nCannot create bill for this item.\n(பொருள் கையிருப்பில் இல்லை)`;
+                        break;
+                    } else if (totalQty > availStock) {
+                        hasStockError = true;
+                        errorMsg = `Insufficient Stock: '${p.display_name}' has only ${availStock} ${p.unit} available, but ${totalQty} ${p.unit} requested.\nCannot exceed available stock.\n(கையிருப்பு போதாது)`;
+                        break;
+                    }
+                }
+            }
+
+            if (hasStockError) {
+                e.preventDefault();
+                alert(errorMsg);
+                return false;
+            }
+        });
+    }
+
+    // Initialize with first empty row ready for cashier to choose from list
+    addProductRow();
+</script>
+{% endblock %}

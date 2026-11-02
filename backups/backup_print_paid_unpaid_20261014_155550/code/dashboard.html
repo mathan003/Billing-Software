@@ -1,0 +1,1050 @@
+{% extends "billing/base.html" %}
+{% load static %}
+
+{% block title %}Dashboard | MathanHub{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/client.css' %}">
+<style>
+    .metric-clickable {
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .metric-clickable:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 20px -3px rgba(79, 70, 229, 0.12);
+    }
+    .section-card {
+        border-radius: 16px;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Live Multi-Device Sync Indicator Bar & Quick Bill Access -->
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <h4 class="fw-bold mb-0 text-dark">Live Store Dashboard</h4>
+        <span class="text-muted small">Multi-device real-time sync with offline desktop POS & cloud</span>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        {% if is_admin_user %}
+            <a href="{% url 'billing:admin_panel' %}{{ sec_param }}" class="btn btn-danger fw-bold px-3 py-2 rounded-3 shadow-sm text-white d-flex align-items-center gap-2">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>Admin Panel (நிர்வாகம்)</span>
+            </a>
+        {% endif %}
+        <a href="{% url 'billing:billing_page' %}{{ sec_param }}" class="btn btn-warning fw-bold px-3 py-2 rounded-3 shadow-sm text-dark d-flex align-items-center gap-2">
+            <i class="fa-solid fa-bolt"></i>
+            <span>Quick Bill (துரித பில்லிங்)</span>
+        </a>
+        <span id="liveSyncStatusBadge" class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill shadow-xs">
+            <i class="fa-solid fa-cloud-arrow-down me-1"></i> Live Cloud Sync Active
+        </span>
+    </div>
+</div>
+
+<!-- Top 4 Metrics Cards -->
+<div class="row g-3 mb-4">
+    <!-- 1. Today's Total Sales Card (CLICKABLE -> Displays Today's Bills!) -->
+    <div class="col-6 col-lg-3">
+        <a href="#todayBillsSection" class="text-decoration-none text-reset">
+            <div class="card card-stat metric-clickable p-3 h-100 border-start border-primary border-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">TODAY'S SALES</span>
+                    <div class="stat-icon bg-primary-subtle text-primary">
+                        <i class="fa-solid fa-indian-rupee-sign"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-0 text-primary" id="dashTodaySales">₹{{ today_sales|floatformat:2 }}</h3>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <span class="text-muted small">Today's billing revenue</span>
+                    <span class="badge bg-primary text-white rounded-pill px-2 py-1" style="font-size: 11px;">
+                        <i class="fa-solid fa-arrow-down me-1"></i>View Bills
+                    </span>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- 2. Today's Bills Count Card -->
+    <div class="col-6 col-lg-3">
+        <a href="#todayBillsSection" class="text-decoration-none text-reset">
+            <div class="card card-stat metric-clickable p-3 h-100 border-start border-info border-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">TODAY'S BILLS</span>
+                    <div class="stat-icon bg-info-subtle text-info">
+                        <i class="fa-solid fa-file-invoice"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-0 text-dark" id="dashTodayBills">{{ today_bills_count }}</h3>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <span class="text-muted small">Bills issued today</span>
+                    <span class="badge bg-info-subtle text-info rounded-pill px-2 py-1" style="font-size: 11px;">Today</span>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- 3. Customer Paid (Today's Collections - Replaces previous Total Buy!) -->
+    <div class="col-6 col-lg-3">
+        <div class="card card-stat p-3 h-100 border-start border-success border-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-secondary small fw-bold">CUSTOMER PAID (TODAY)</span>
+                <div class="stat-icon bg-success-subtle text-success">
+                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                </div>
+            </div>
+            <h3 class="fw-bold mb-0 text-success" id="dashTodayPaid">₹{{ today_customer_paid|floatformat:2 }}</h3>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <span class="text-muted small">Collected payments today</span>
+                <span class="badge bg-success-subtle text-success rounded-pill px-2 py-1" style="font-size: 11px;">
+                    Total: ₹{{ all_time_customer_paid|floatformat:0 }}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Pending Amounts Card (CLICKABLE -> Displays Pending Customers Section) -->
+    <div class="col-6 col-lg-3">
+        <a href="#pendingAmountsSection" class="text-decoration-none text-reset">
+            <div class="card card-stat metric-clickable p-3 h-100 border-start border-danger border-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold">PENDING AMOUNTS</span>
+                    <div class="stat-icon bg-danger-subtle text-danger">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold mb-0 text-danger" id="dashTotalPending">₹{{ total_pending_amount|floatformat:2 }}</h3>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <span class="text-muted small">Outstanding customer dues</span>
+                    <span class="badge bg-danger text-white rounded-pill px-2 py-1" style="font-size: 11px;">
+                        <i class="fa-solid fa-arrow-down me-1"></i>View Dues
+                    </span>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<!-- Action Shortcuts: Add Customer & Quick Bill -->
+<div class="row g-3 mb-4">
+    <div class="col-12 col-md-6">
+        <div class="card border-0 shadow-sm rounded-4 p-4 text-white h-100" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="fw-bold mb-1"><i class="fa-solid fa-address-book me-2"></i>Customers Directory</h5>
+                    <p class="text-white-50 small mb-3">Add new customers, view balances, or alter customer information.</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-light fw-bold px-3 py-2 rounded-3 shadow-sm text-primary" data-bs-toggle="modal" data-bs-target="#customerManageModal">
+                            <i class="fa-solid fa-user-plus me-1"></i> Add / Alter Customer
+                        </button>
+                        <a href="{% url 'billing:customer_list' %}" class="btn btn-outline-light fw-semibold px-3 py-2 rounded-3">
+                            <i class="fa-solid fa-users me-1"></i> View All Customers
+                        </a>
+                    </div>
+                </div>
+                <div class="d-none d-sm-block text-white-50">
+                    <i class="fa-solid fa-users fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6">
+        <div class="card border-0 shadow-sm rounded-4 p-4 text-white h-100" style="background: linear-gradient(135deg, #065f46 0%, #10b981 100%);">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="fw-bold mb-1"><i class="fa-solid fa-wand-magic-sparkles me-2"></i>Store Actions & Management</h5>
+                    <p class="text-white-50 small mb-3">Manage store reports, inventory statements, and cleanup records.</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{% url 'billing:billing_page' %}" class="btn btn-light fw-bold px-3 py-2 rounded-3 shadow-sm text-success">
+                            <i class="fa-solid fa-receipt me-1"></i> Dedicated Terminal (Print & Save)
+                        </a>
+                        <a href="{% url 'billing:reports_dashboard' %}" class="btn btn-outline-light fw-semibold px-3 py-2 rounded-3">
+                            <i class="fa-solid fa-chart-column me-1"></i> Statements & Reports
+                        </a>
+                        <a href="{% url 'billing:reports_dashboard' %}?range=this_week" class="btn btn-warning fw-bold px-3 py-2 rounded-3 text-dark shadow-sm">
+                            <i class="fa-solid fa-calendar-week me-1"></i> Weekly Report
+                        </a>
+                        <button type="button" class="btn btn-danger fw-bold px-3 py-2 rounded-3 shadow-sm text-white delete-data-btn" data-bs-toggle="modal" data-bs-target="#deleteClientDataModal" onclick="window.openDeleteDataModal && window.openDeleteDataModal()">
+                            <i class="fa-solid fa-trash-can me-1"></i> Delete Data (தரவு நீக்கு)
+                        </button>
+                    </div>
+                </div>
+                <div class="d-none d-sm-block text-white-50">
+                    <i class="fa-solid fa-print fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Embedded Fast Quick Billing Box & Recent Invoices Section -->
+<div class="row g-3 mb-4">
+    <!-- Embedded Fast Express Billing Box -->
+    <div class="col-12 col-xl-5">
+        <div class="card section-card p-3 p-lg-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="fa-solid fa-calculator me-2 text-primary"></i>Express Bill Generator
+                </h5>
+                <span class="badge bg-primary-subtle text-primary small">Fast POS</span>
+            </div>
+
+            <form method="post" action="{% url 'billing:quick_bill_create' %}" id="dashQuickBillForm">
+                {% csrf_token %}
+
+                <!-- Branch Selector -->
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-secondary">Shop Branch (கடை கிளை)</label>
+                    <select name="branch_id" class="form-select bg-light">
+                        {% for b in branches %}
+                            <option value="{{ b.id }}" {% if b.is_default %}selected{% endif %}>
+                                {{ b.name }} ({{ b.branch_code }}) {% if b.is_default %}[Default]{% endif %}
+                            </option>
+                        {% empty %}
+                            <option value="">Main Shop Branch</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Customer Details with Live Search -->
+                <div class="row g-2 mb-3">
+                    <div class="col-7 position-relative">
+                        <label class="form-label small fw-semibold text-secondary">Customer Name</label>
+                        <input type="text" name="customer_name" id="dashCustomerName" class="form-control" value="" autocomplete="off">
+                        <input type="hidden" name="customer_id" id="dashCustomerId" value="">
+                        <div id="dashCustDropdown" class="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-1 mt-1" style="max-height: 200px; overflow-y: auto; z-index: 1050; display: none;"></div>
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label small fw-semibold text-secondary">Mobile</label>
+                        <input type="tel" name="customer_phone" id="dashCustomerPhone" class="form-control" value="">
+                    </div>
+                </div>
+
+                <!-- Category Filter -->
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold text-secondary mb-1"><i class="fa-solid fa-filter text-primary me-1"></i>Filter Category (வகை)</label>
+                    <select class="form-select form-select-sm bg-light" id="dashCategorySelect">
+                        <option value="">-- All Categories (அனைத்து வகைகள்) --</option>
+                        {% for cat in categories %}
+                            <option value="{{ cat }}">{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Product Selector (Visible List of Products) -->
+                <div class="mb-3 position-relative">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="form-label small fw-semibold text-secondary mb-0">Select Product (பொருள் தேர்வு செய்) *</label>
+                        <span class="text-primary small fw-semibold" id="dashProductCountBadge">{{ products|length }} Products</span>
+                    </div>
+
+                    <select name="product_id" class="form-select bg-light" id="dashProdSelect" required>
+                        <option value="">-- Choose Product (பொருள் தேர்வு செய்) --</option>
+                        {% for p in products %}
+                            <option value="{{ p.id }}" data-category="{{ p.category|default:'General' }}" data-price="{{ p.price }}" data-unit="{{ p.unit }}" data-tax="{{ p.tax_percent }}" data-sku="{{ p.sku }}" data-name="{{ p.name }}" data-tamil="{{ p.name_tamil }}" data-display="{{ p.display_name }}">
+                                {{ p.display_name }} ({{ p.category|default:'General' }}) - ₹{{ p.price }} / {{ p.unit }}
+                            </option>
+                        {% endfor %}
+                    </select>
+
+                    <div id="dashSelectedProdBadge" class="small text-success fw-bold mt-1 d-none">
+                        <i class="fa-solid fa-circle-check me-1"></i> Selected: <span id="dashSelectedProdName"></span>
+                    </div>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <!-- Unit Selector -->
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-secondary">Unit Type</label>
+                        <select name="unit_type" class="form-select bg-light" id="dashUnitSelect">
+                            <option value="KG">KG (கிலோ)</option>
+                            <option value="Gram">Gram (கிராம்)</option>
+                            <option value="Pack">Pack / Bag (பேக்)</option>
+                            <option value="Box">Box (பெட்டி)</option>
+                            <option value="Pcs">Pcs (எண்ணிக்கை)</option>
+                            <option value="Ltr">Liter (லிட்டர்)</option>
+                            <option value="Set">Set (செட்)</option>
+                            <option value="Nos">Nos (எண்கள்)</option>
+                            <option value="Unit">Unit (யூனிட்)</option>
+                        </select>
+                    </div>
+
+                    <!-- Quantity Input (Supports > 500) -->
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-secondary">Quantity *</label>
+                        <input type="number" step="any" min="0.01" name="quantity" class="form-control" id="dashQtyInput" value="" required>
+                    </div>
+                </div>
+
+                <!-- Payment Details & Discount -->
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-secondary">Payment Mode</label>
+                        <select name="payment_method" class="form-select bg-light">
+                            <option value="Cash" selected>Cash (ரொக்கம்)</option>
+                            <option value="Online">Online Payment (UPI/Card)</option>
+                            <option value="Credit">Credit / Pending Due</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-success">Discount (₹)</label>
+                        <input type="number" step="0.01" min="0" name="discount_amount" class="form-control text-success fw-bold" id="dashDiscountInput" value="">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-secondary">Customer Paid Amount (₹)</label>
+                    <input type="number" step="0.01" name="paid_amount" class="form-control text-success fw-bold" id="dashPaidInput" value="">
+                </div>
+
+                <!-- Calculation Summary Box -->
+                <div class="p-3 bg-light rounded-3 mb-3">
+                    <div class="d-flex justify-content-between mb-1 small text-muted">
+                        <span>Price Per Unit:</span>
+                        <span id="dashUnitRate">₹0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1 small text-muted" id="dashTaxRow" style="display: none !important;">
+                        <span>Tax / GST:</span>
+                        <span id="dashTaxAmount">₹0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1 small text-success fw-semibold" id="dashDiscountRow" style="display: none !important;">
+                        <span>Discount / Offer:</span>
+                        <span id="dashDiscountAmount">- ₹0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between fw-bold fs-5 text-dark border-top pt-2">
+                        <span>Grand Total:</span>
+                        <span id="dashGrandTotal" class="text-primary">₹0.00</span>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary-custom w-100 py-2 fs-6">
+                    <i class="fa-solid fa-print me-2"></i> Print & Save Bill
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Recent Invoices Table -->
+    <div class="col-12 col-xl-7">
+        <div class="card section-card p-3 p-lg-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-file-invoice-dollar me-2 text-primary"></i>Recent Invoices</h5>
+                <a href="{% url 'billing:invoice_list' %}" class="btn btn-sm btn-link text-decoration-none">View All Invoices <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light small text-muted">
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Customer</th>
+                            <th>Grand Total</th>
+                            <th>Paid</th>
+                            <th>Balance Due</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for inv in recent_invoices %}
+                        <tr>
+                            <td>
+                                <span class="fw-bold text-dark">{{ inv.invoice_number }}</span>
+                                <div class="text-muted" style="font-size: 11px;">{{ inv.created_at|date:"d M, h:i A" }}</div>
+                            </td>
+                            <td>
+                                <div class="fw-semibold">{{ inv.customer_name }}</div>
+                                <div class="text-muted small">{{ inv.customer_phone|default:"-" }}</div>
+                            </td>
+                            <td class="fw-bold">₹{{ inv.grand_total|floatformat:2 }}</td>
+                            <td class="text-success fw-semibold">₹{{ inv.paid_amount|floatformat:2 }}</td>
+                            <td>
+                                {% if inv.balance_amount > 0 %}
+                                    <span class="badge bg-danger-subtle text-danger px-2 py-1">₹{{ inv.balance_amount|floatformat:2 }}</span>
+                                {% else %}
+                                    <span class="badge bg-success-subtle text-success px-2 py-1">Paid</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a href="{% url 'billing:invoice_detail' inv.id %}" class="btn btn-sm btn-outline-secondary" title="View Receipt">
+                                    <i class="fa-solid fa-eye"></i>
+                                </a>
+                                <a href="{% url 'billing:invoice_download_pdf' inv.id %}" class="btn btn-sm btn-outline-primary" title="Download PDF">
+                                    <i class="fa-solid fa-file-pdf"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center py-4 text-muted">
+                                No invoices created yet. Issue your first bill from the terminal above!
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ======================================================== -->
+<!-- TODAY'S SALES & BILLS SECTION (Triggered on click!)      -->
+<!-- ======================================================== -->
+<div class="row g-3 mb-4" id="todayBillsSection">
+    <div class="col-12">
+        <div class="card section-card p-3 p-lg-4 border-top border-primary border-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
+                <div>
+                    <h5 class="fw-bold text-dark mb-1">
+                        <i class="fa-solid fa-calendar-day text-primary me-2"></i>Today's Sales & Generated Bills (இன்றைய விற்பனை பில்கள்)
+                    </h5>
+                    <p class="text-muted small mb-0">
+                        Bills generated today: <strong>{{ today_bills_count }}</strong> • Total Sales: <strong class="text-primary">₹{{ today_sales|floatformat:2 }}</strong> • Paid: <strong class="text-success">₹{{ today_customer_paid|floatformat:2 }}</strong>
+                    </p>
+                </div>
+                <a href="{% url 'billing:reports_dashboard' %}?range=today" class="btn btn-sm btn-outline-primary">
+                    <i class="fa-solid fa-chart-line me-1"></i> View in Reports
+                </a>
+            </div>
+
+            <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+                <table class="table table-hover align-middle mb-0" id="todayBillsTable">
+                    <thead class="table-light small text-muted position-sticky top-0 bg-white" style="z-index: 2;">
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Time</th>
+                            <th>Branch</th>
+                            <th>Customer Name</th>
+                            <th>Grand Total</th>
+                            <th>Paid Amount</th>
+                            <th>Remaining Balance</th>
+                            <th>Mode</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="todayBillsTbody">
+                        {% for tb in today_invoices %}
+                        <tr class="today-bill-row" {% if forloop.counter > 10 %}style="display: none;"{% endif %}>
+                            <td>
+                                <a href="{% url 'billing:invoice_detail' tb.id %}" class="fw-bold text-primary text-decoration-none">
+                                    {{ tb.invoice_number }}
+                                </a>
+                            </td>
+                            <td class="small text-muted">{{ tb.created_at|date:"h:i A" }}</td>
+                            <td><span class="badge bg-light text-dark border">{{ tb.branch_name }}</span></td>
+                            <td>
+                                <div class="fw-semibold text-dark">{{ tb.customer_name }}</div>
+                                {% if tb.customer_phone %}
+                                    <div class="text-muted small">{{ tb.customer_phone }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="fw-bold text-dark">₹{{ tb.grand_total|floatformat:2 }}</td>
+                            <td class="text-success fw-semibold">₹{{ tb.paid_amount|floatformat:2 }}</td>
+                            <td>
+                                {% if tb.balance_amount > 0 %}
+                                    <span class="badge bg-danger-subtle text-danger px-2 py-1 fw-bold">₹{{ tb.balance_amount|floatformat:2 }}</span>
+                                {% else %}
+                                    <span class="badge bg-success-subtle text-success px-2 py-1">Paid</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if tb.payment_method == 'Online' %}
+                                    <span class="badge bg-info-subtle text-info border border-info-subtle">Online</span>
+                                {% elif tb.payment_method == 'Credit' %}
+                                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Credit</span>
+                                {% else %}
+                                    <span class="badge bg-light text-dark border">Cash</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if tb.payment_status == 'Paid' %}
+                                    <span class="badge bg-success-subtle text-success px-2 py-1"><i class="fa-solid fa-circle-check me-1"></i>Paid</span>
+                                {% elif tb.payment_status == 'Partial' %}
+                                    <span class="badge bg-warning-subtle text-warning px-2 py-1">Partial</span>
+                                {% else %}
+                                    <span class="badge bg-danger-subtle text-danger px-2 py-1">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'billing:invoice_detail' tb.id %}" class="btn btn-outline-secondary" title="View Receipt">
+                                        <i class="fa-solid fa-eye"></i>
+                                    </a>
+                                    <a href="{% url 'billing:invoice_download_pdf' tb.id %}" class="btn btn-outline-primary" title="Download PDF">
+                                        <i class="fa-solid fa-file-pdf"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="text-center py-4 text-muted">
+                                <i class="fa-solid fa-receipt fs-1 mb-2 opacity-50"></i>
+                                <div>No bills issued today yet. Generate today's first bill from the terminal!</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if today_invoices|length > 10 %}
+            <div class="p-2 text-center border-top bg-light rounded-bottom d-flex justify-content-between align-items-center">
+                <span class="small text-muted" id="todayBillsCountInfo">Showing 10 of {{ today_invoices|length }} bills</span>
+                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" id="loadMoreTodayBillsBtn" onclick="loadMoreRows('today-bill-row', 'loadMoreTodayBillsBtn', 'todayBillsCountInfo', 10, {{ today_invoices|length }})">
+                    <i class="fa-solid fa-chevron-down me-1"></i> Load More (மேலும் பார்க்க)
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- ======================================================== -->
+<!-- PENDING AMOUNTS SECTION (Customers who have pending dues)-->
+<!-- ======================================================== -->
+<div class="row g-3 mb-4" id="pendingAmountsSection">
+    <div class="col-12">
+        <div class="card section-card p-3 p-lg-4 border-top border-danger border-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
+                <div>
+                    <h5 class="fw-bold text-danger mb-1">
+                        <i class="fa-solid fa-clock-rotate-left me-2"></i>Customers with Pending Amounts (நிலுவைத் தொகை உள்ள வாடிக்கையாளர்கள்)
+                    </h5>
+                    <p class="text-muted small mb-0">
+                        Total Pending Receivables: <strong class="text-danger">₹{{ total_pending_amount|floatformat:2 }}</strong> across customers
+                    </p>
+                </div>
+                <a href="{% url 'billing:customer_list' %}?pending_only=1" class="btn btn-sm btn-outline-danger">
+                    <i class="fa-solid fa-users me-1"></i> View All Due Customers
+                </a>
+            </div>
+
+            <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+                <table class="table table-hover align-middle mb-0" id="pendingCustomersTable">
+                    <thead class="table-light small text-muted position-sticky top-0 bg-white" style="z-index: 2;">
+                        <tr>
+                            <th>Customer Name</th>
+                            <th>Contact Phone</th>
+                            <th>Address</th>
+                            <th>Due Bills</th>
+                            <th>Total Billed</th>
+                            <th>Total Paid</th>
+                            <th>Remaining Balance Due</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pendingCustomersTbody">
+                        {% for pc in pending_customers %}
+                        <tr class="pending-cust-row" {% if forloop.counter > 10 %}style="display: none;"{% endif %}>
+                            <td>
+                                <div class="fw-bold text-dark">{{ pc.name }}</div>
+                            </td>
+                            <td>
+                                <span class="small text-muted">{{ pc.phone }}</span>
+                            </td>
+                            <td>
+                                <span class="small text-muted">{{ pc.address|truncatechars:35 }}</span>
+                            </td>
+                            <td>
+                                <span class="badge bg-danger-subtle text-danger">{{ pc.bills_count }} bill(s)</span>
+                            </td>
+                            <td class="fw-semibold text-dark">₹{{ pc.total_billed|floatformat:2 }}</td>
+                            <td class="text-success fw-semibold">₹{{ pc.total_paid|floatformat:2 }}</td>
+                            <td>
+                                <span class="badge bg-danger text-white px-2 py-1 fs-6 fw-bold">
+                                    ₹{{ pc.balance_amount|floatformat:2 }}
+                                </span>
+                            </td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'billing:customer_statement' pc.id %}" class="btn btn-outline-info" title="View Statement">
+                                        <i class="fa-solid fa-receipt me-1"></i> Statement
+                                    </a>
+                                    <a href="{% url 'billing:invoice_list' %}?customer={{ pc.id }}&status=Pending" class="btn btn-outline-primary" title="Settle Payments">
+                                        <i class="fa-solid fa-hand-holding-dollar me-1"></i> Settle
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-4 text-muted">
+                                <i class="fa-solid fa-circle-check fs-1 text-success mb-2"></i>
+                                <div class="fw-semibold text-success">All customer balances are clear! No pending payments.</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if pending_customers|length > 10 %}
+            <div class="p-2 text-center border-top bg-light rounded-bottom d-flex justify-content-between align-items-center">
+                <span class="small text-muted" id="pendingCustCountInfo">Showing 10 of {{ pending_customers|length }} customers</span>
+                <button type="button" class="btn btn-sm btn-outline-danger fw-semibold" id="loadMorePendingCustBtn" onclick="loadMoreRows('pending-cust-row', 'loadMorePendingCustBtn', 'pendingCustCountInfo', 10, {{ pending_customers|length }})">
+                    <i class="fa-solid fa-chevron-down me-1"></i> Load More (மேலும் பார்க்க)
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+        </div>
+    </div>
+</div>
+
+<!-- ======================================================== -->
+<!-- MODAL 1: ADD & ALTER CUSTOMER MODAL                      -->
+<!-- ======================================================== -->
+<div class="modal fade" id="customerManageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold"><i class="fa-solid fa-users me-2 text-primary"></i>Customer Directory</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Navigation Tabs -->
+                <ul class="nav nav-pills mb-3" id="custTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active rounded-pill px-3" id="add-cust-tab" data-bs-toggle="pill" data-bs-target="#add-cust-pane" type="button">
+                            <i class="fa-solid fa-user-plus me-1"></i> Add New Customer
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link rounded-pill px-3" id="view-cust-tab" data-bs-toggle="pill" data-bs-target="#view-cust-pane" type="button">
+                            <i class="fa-solid fa-list me-1"></i> View & Alter Existing ({{ customers|length }})
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content">
+                    <!-- Tab 1: Add New Customer -->
+                    <div class="tab-pane fade show active" id="add-cust-pane" role="tabpanel">
+                        <form method="post" action="{% url 'billing:customer_add' %}">
+                            {% csrf_token %}
+                            <div class="row g-2 mb-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small fw-semibold">Customer Name *</label>
+                                    <input type="text" name="name" class="form-control" required>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small fw-semibold">Mobile Phone</label>
+                                    <input type="tel" name="phone" class="form-control">
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small fw-semibold">Email (Optional)</label>
+                                    <input type="email" name="email" class="form-control">
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small fw-semibold">GSTIN / Tax ID</label>
+                                    <input type="text" name="gst_number" class="form-control">
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-3">
+                                <div class="col-12 col-md-8">
+                                    <label class="form-label small fw-semibold">Billing Address</label>
+                                    <input type="text" name="address" class="form-control">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label small fw-semibold">Notes</label>
+                                    <input type="text" name="notes" class="form-control">
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <button type="submit" class="btn btn-primary-custom px-4">
+                                    <i class="fa-solid fa-check me-1"></i> Save Customer
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Tab 2: View and Alter Existing Customers -->
+                    <div class="tab-pane fade" id="view-cust-pane" role="tabpanel">
+                        <div class="table-responsive" style="max-height: 380px;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light small">
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Phone</th>
+                                        <th>Total Billed</th>
+                                        <th>Paid</th>
+                                        <th>Due Balance</th>
+                                        <th class="text-end">Alter</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for c in customers %}
+                                    <tr>
+                                        <td class="fw-semibold">{{ c.name }}</td>
+                                        <td>{{ c.phone|default:"-" }}</td>
+                                        <td>₹{{ c.total_billed|floatformat:2 }}</td>
+                                        <td class="text-success">₹{{ c.total_paid|floatformat:2 }}</td>
+                                        <td>
+                                            {% if c.total_pending > 0 %}
+                                                <span class="badge bg-danger-subtle text-danger">₹{{ c.total_pending|floatformat:2 }}</span>
+                                            {% else %}
+                                                <span class="badge bg-success-subtle text-success">Clear</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-end">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editCust{{ c.id }}">
+                                                <i class="fa-solid fa-pen-to-square"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <!-- Collapsible Alter Form -->
+                                    <tr class="collapse bg-light" id="editCust{{ c.id }}">
+                                        <td colspan="6" class="p-3">
+                                            <form method="post" action="{% url 'billing:customer_edit' c.id %}">
+                                                {% csrf_token %}
+                                                <h6 class="fw-bold text-primary mb-2">Edit Customer: {{ c.name }}</h6>
+                                                <div class="row g-2 mb-2">
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small">Name</label>
+                                                        <input type="text" name="name" class="form-control form-control-sm" value="{{ c.name }}" required>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small">Phone</label>
+                                                        <input type="tel" name="phone" class="form-control form-control-sm" value="{{ c.phone|default:'' }}">
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small">GSTIN</label>
+                                                        <input type="text" name="gst_number" class="form-control form-control-sm" value="{{ c.gst_number|default:'' }}">
+                                                    </div>
+                                                </div>
+                                                <div class="row g-2 mb-2">
+                                                    <div class="col-md-8">
+                                                        <label class="form-label small">Address</label>
+                                                        <input type="text" name="address" class="form-control form-control-sm" value="{{ c.address|default:'' }}">
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small">Notes</label>
+                                                        <input type="text" name="notes" class="form-control form-control-sm" value="{{ c.notes|default:'' }}">
+                                                    </div>
+                                                </div>
+                                                <div class="text-end">
+                                                    <button type="submit" class="btn btn-sm btn-primary">Update Customer</button>
+                                                </div>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="6" class="text-center py-3 text-muted">No customers registered yet.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/client.js' %}"></script>
+<script>
+    // In-memory serialized catalogs for sub-millisecond instant search across 500+ items
+    const dashProducts = [
+        {% for p in products %}
+        {
+            id: {{ p.id }},
+            name: "{{ p.name|escapejs }}",
+            name_tamil: "{{ p.name_tamil|escapejs }}",
+            display_name: "{{ p.display_name|escapejs }}",
+            category: "{{ p.category|default:'General'|escapejs }}",
+            price: {{ p.price }},
+            tax: {{ p.tax_percent }},
+            unit: "{{ p.unit }}",
+            sku: "{{ p.sku|escapejs }}",
+            stock: {{ p.stock_quantity }}
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    const dashCustomers = [
+        {% for c in customers %}
+        {
+            id: {{ c.id }},
+            name: "{{ c.name|escapejs }}",
+            phone: "{{ c.phone|default:''|escapejs }}"
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    const dashProd = document.getElementById("dashProdSelect");
+    const dashProdSearch = document.getElementById("dashProdSearchInput");
+    const dashProdDropdown = document.getElementById("dashProdDropdown");
+    const dashCategory = document.getElementById("dashCategorySelect");
+    const dashCountBadge = document.getElementById("dashProductCountBadge");
+    const dashClearSearchBtn = document.getElementById("dashClearProdSearch");
+    const dashSelectedBadge = document.getElementById("dashSelectedProdBadge");
+    const dashSelectedName = document.getElementById("dashSelectedProdName");
+
+    const dashCustName = document.getElementById("dashCustomerName");
+    const dashCustPhone = document.getElementById("dashCustomerPhone");
+    const dashCustId = document.getElementById("dashCustomerId");
+    const dashCustDropdown = document.getElementById("dashCustDropdown");
+
+    const dashUnit = document.getElementById("dashUnitSelect");
+    const dashQty = document.getElementById("dashQtyInput");
+    const dashPaid = document.getElementById("dashPaidInput");
+    const dashRateLabel = document.getElementById("dashUnitRate");
+    const dashTaxLabel = document.getElementById("dashTaxAmount");
+    const dashTotalLabel = document.getElementById("dashGrandTotal");
+    const dashDiscount = document.getElementById("dashDiscountInput");
+    const dashDiscountRow = document.getElementById("dashDiscountRow");
+    const dashDiscountAmount = document.getElementById("dashDiscountAmount");
+
+    // 1. Live Instant Product Filter by Category for dashProdSelect
+    function filterDashProducts() {
+        if (!dashProd) return;
+        const selectedCat = (dashCategory?.value || "").trim().toLowerCase();
+        const currentVal = dashProd.value;
+        let count = 0;
+
+        let html = '<option value="">-- Choose Product (பொருள் தேர்வு செய்) --</option>';
+        dashProducts.forEach(p => {
+            const matchesCat = !selectedCat || (p.category && p.category.toLowerCase() === selectedCat);
+            if (matchesCat) {
+                count++;
+                const isSel = (p.id == currentVal) ? 'selected' : '';
+                html += `<option value="${p.id}" data-category="${p.category || 'General'}" data-price="${p.price}" data-unit="${p.unit}" data-tax="${p.tax}" ${isSel}>${p.display_name} (${p.category || 'General'}) - ₹${p.price.toFixed(2)} / ${p.unit}</option>`;
+            }
+        });
+
+        dashProd.innerHTML = html;
+        if (dashCountBadge) {
+            dashCountBadge.innerText = `${count} Products`;
+        }
+    }
+
+    if (dashCategory) {
+        dashCategory.addEventListener("change", () => {
+            filterDashProducts();
+            updateDashCalc();
+        });
+    }
+
+    if (dashProd) {
+        dashProd.addEventListener("change", function() {
+            const prod = dashProducts.find(p => p.id == dashProd.value);
+            if (prod) {
+                if (dashUnit) {
+                    dashUnit.value = prod.unit;
+                    dashUnit.dataset.userChanged = "false";
+                }
+                if (dashSelectedBadge && dashSelectedName) {
+                    dashSelectedName.innerText = `${prod.display_name} (₹${prod.price.toFixed(2)} / ${prod.unit})`;
+                    dashSelectedBadge.classList.remove("d-none");
+                }
+            } else {
+                if (dashSelectedBadge) {
+                    dashSelectedBadge.classList.add("d-none");
+                }
+            }
+            updateDashCalc();
+        });
+    }
+
+
+    // 2. Live Instant Customer Filter by typing any letter
+    function filterDashCustomers() {
+        if (!dashCustDropdown) return;
+        const query = (dashCustName?.value || "").trim().toLowerCase();
+        if (!query) {
+            dashCustDropdown.style.display = "none";
+            return;
+        }
+
+        const matches = dashCustomers.filter(c => 
+            c.name.toLowerCase().includes(query) || (c.phone && c.phone.includes(query))
+        );
+
+        if (matches.length === 0) {
+            dashCustDropdown.innerHTML = `<div class="p-2 text-muted text-center small"><i class="fa-solid fa-user-plus me-1"></i> New customer "${query}" (will be created automatically)</div>`;
+            dashCustDropdown.style.display = "block";
+            return;
+        }
+
+        let html = '';
+        matches.slice(0, 10).forEach(c => {
+            html += `
+                <div class="p-2 border-bottom d-flex justify-content-between align-items-center"
+                     style="cursor: pointer; transition: background 0.15s;"
+                     onmouseover="this.style.background='#f1f5f9'"
+                     onmouseout="this.style.background='transparent'"
+                     onclick="selectDashCustomer(${c.id}, '${escapeJsQuotes(c.name)}', '${escapeJsQuotes(c.phone)}')">
+                    <strong class="text-dark">${c.name}</strong>
+                    <span class="text-muted small font-monospace">${c.phone || 'No phone'}</span>
+                </div>
+            `;
+        });
+        dashCustDropdown.innerHTML = html;
+        dashCustDropdown.style.display = "block";
+    }
+
+    function escapeJsQuotes(s) {
+        return (s || "").replace(/'/g, "\\'");
+    }
+
+    function selectDashCustomer(id, name, phone) {
+        if (dashCustName) dashCustName.value = name;
+        if (dashCustPhone) dashCustPhone.value = phone || "";
+        if (dashCustId) dashCustId.value = id;
+        if (dashCustDropdown) dashCustDropdown.style.display = "none";
+    }
+
+    if (dashCustName) {
+        dashCustName.addEventListener("input", filterDashCustomers);
+        dashCustName.addEventListener("focus", filterDashCustomers);
+    }
+
+    // Hide customer dropdown when clicking outside
+    document.addEventListener("click", (e) => {
+        if (dashCustDropdown && !dashCustDropdown.contains(e.target) && e.target !== dashCustName) {
+            dashCustDropdown.style.display = "none";
+        }
+    });
+
+    // 3. Calculation Logic
+    function updateDashCalc() {
+        if (!dashProd || !dashProd.value) {
+            if (dashRateLabel) dashRateLabel.innerText = "₹0.00";
+            if (dashTaxLabel) dashTaxLabel.innerText = "₹0.00";
+            if (dashTotalLabel) dashTotalLabel.innerText = "₹0.00";
+            const dTaxRow = document.getElementById("dashTaxRow");
+            if (dTaxRow) dTaxRow.style.setProperty("display", "none", "important");
+            return;
+        }
+        const prod = dashProducts.find(p => p.id == dashProd.value);
+        if (!prod) return;
+
+        const price = prod.price || 0;
+        const unit = prod.unit || "KG";
+        const taxPct = prod.tax || 0;
+        const qty = parseFloat(dashQty?.value || 0);
+        const discount = parseFloat(dashDiscount?.value || 0);
+
+        if (unit && dashUnit && dashUnit.dataset.userChanged !== "true") {
+            dashUnit.value = unit;
+        }
+
+        const subtotal = price * qty;
+        const hasShopGst = {% if active_shop_gst %}true{% else %}false{% endif %};
+        const tax = hasShopGst ? ((subtotal * taxPct) / 100.0) : 0;
+        const total = Math.max(0, subtotal + tax - discount);
+
+        if (discount > 0 && dashDiscountRow) {
+            dashDiscountRow.style.setProperty("display", "flex", "important");
+            dashDiscountAmount.innerText = "- ₹" + discount.toFixed(2);
+        } else if (dashDiscountRow) {
+            dashDiscountRow.style.setProperty("display", "none", "important");
+        }
+
+        const dashTaxRow = document.getElementById("dashTaxRow");
+        if (dashTaxRow) {
+            if (hasShopGst && tax > 0) {
+                dashTaxRow.style.setProperty("display", "flex", "important");
+                if (dashTaxLabel) dashTaxLabel.innerText = "₹" + tax.toFixed(2);
+            } else {
+                dashTaxRow.style.setProperty("display", "none", "important");
+            }
+        }
+
+        if (dashRateLabel) dashRateLabel.innerText = "₹" + price.toFixed(2);
+        if (dashTotalLabel) dashTotalLabel.innerText = "₹" + total.toFixed(2);
+
+        if (dashPaid && (!dashPaid.value || dashPaid.dataset.autoFilled === "true")) {
+            dashPaid.value = total.toFixed(2);
+            dashPaid.dataset.autoFilled = "true";
+        }
+    }
+
+    if (dashQty) dashQty.addEventListener("input", updateDashCalc);
+    if (dashDiscount) dashDiscount.addEventListener("input", updateDashCalc);
+    if (dashPaid) dashPaid.addEventListener("input", () => { dashPaid.dataset.autoFilled = "false"; });
+    if (dashUnit) dashUnit.addEventListener("change", () => { dashUnit.dataset.userChanged = "true"; });
+
+    // Live Auto-Sync poller for real-time dashboard updates across offline apps and web
+    let _lastLiveInvoicesCount = null;
+    async function pollLiveDashboard() {
+        try {
+            const res = await fetch("{% url 'billing:api-live-status' %}");
+            if (!res.ok) return;
+            const data = await res.json();
+
+            const salesEl = document.getElementById("dashTodaySales");
+            if (salesEl && data.today_sales !== undefined) {
+                salesEl.innerText = "₹" + parseFloat(data.today_sales).toFixed(2);
+            }
+
+            const billsEl = document.getElementById("dashTodayBills");
+            if (billsEl && data.today_bills_count !== undefined) {
+                billsEl.innerText = data.today_bills_count;
+            }
+
+            const paidEl = document.getElementById("dashTodayPaid");
+            if (paidEl && data.today_customer_paid !== undefined) {
+                paidEl.innerText = "₹" + parseFloat(data.today_customer_paid).toFixed(2);
+            }
+
+            const pendingEl = document.getElementById("dashTotalPending");
+            if (pendingEl && data.total_pending_amount !== undefined) {
+                pendingEl.innerText = "₹" + parseFloat(data.total_pending_amount).toFixed(2);
+            }
+
+            // Pulse badge when new offline bills are synced
+            if (_lastLiveInvoicesCount !== null && data.total_invoices > _lastLiveInvoicesCount) {
+                const badge = document.getElementById("liveSyncStatusBadge");
+                if (badge) {
+                    badge.className = "badge bg-success text-white px-3 py-2 rounded-pill shadow-sm";
+                    badge.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin me-1"></i> Data Synced Just Now';
+                    setTimeout(() => {
+                        badge.className = "badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill shadow-xs";
+                        badge.innerHTML = '<i class="fa-solid fa-cloud-arrow-down me-1"></i> Live Cloud Sync Active';
+                    }, 4000);
+                }
+            }
+            _lastLiveInvoicesCount = data.total_invoices;
+        } catch (err) {
+            // Server temporarily offline or disconnected
+        }
+    }
+    // Progressive row loader for dashboard tables
+    window.loadMoreRows = function(rowClass, btnId, infoId, step, total) {
+        const rows = document.querySelectorAll('.' + rowClass);
+        let visibleCount = 0;
+        rows.forEach(r => {
+            if (r.style.display !== 'none') visibleCount++;
+        });
+
+        const targetCount = Math.min(total, visibleCount + step);
+        for (let i = 0; i < targetCount; i++) {
+            if (rows[i]) rows[i].style.display = '';
+        }
+
+        const infoEl = document.getElementById(infoId);
+        if (infoEl) {
+            infoEl.innerText = `Showing ${targetCount} of ${total} records`;
+        }
+
+        const btnEl = document.getElementById(btnId);
+        if (btnEl && targetCount >= total) {
+            btnEl.style.display = 'none';
+        }
+    };
+</script>
+{% endblock %}

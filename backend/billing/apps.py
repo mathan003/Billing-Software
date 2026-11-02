@@ -18,21 +18,7 @@ def auto_seed_default_users(sender, **kwargs):
         # 2. Initialize Default Branch
         Branch.get_default_branch()
 
-        # 3. Ensure 'admin' Superuser exists
-        admin_user, created = User.objects.get_or_create(username="admin")
-        if created or not admin_user.has_usable_password():
-            admin_user.set_password(os.getenv("ADMIN_PASSWORD", "admin123"))
-            admin_user.is_superuser = True
-            admin_user.is_staff = True
-            admin_user.email = "admin@mathanhub.com"
-            admin_user.save()
-
-        prof_admin, _ = UserProfile.objects.get_or_create(user=admin_user)
-        prof_admin.role = "admin"
-        prof_admin.device_limit = 2
-        prof_admin.save()
-
-        # 4. Ensure 'Mathan003' Admin exists
+        # 3. Ensure Primary 'Mathan003' Superuser exists (Single Primary Administrator)
         mathan_user, m_created = User.objects.get_or_create(username="Mathan003")
         if m_created or not mathan_user.has_usable_password():
             mathan_user.set_password(os.getenv("MATHAN_PASSWORD", "M@th@n93612003"))
@@ -46,7 +32,7 @@ def auto_seed_default_users(sender, **kwargs):
         prof_mathan.device_limit = 2
         prof_mathan.save()
 
-        # 5. Check DeletedClient blacklist to guarantee deleted clients are NEVER recreated on restart/migration
+        # 4. Check DeletedClient blacklist to guarantee deleted clients are NEVER recreated on restart/migration
         from .models import DeletedClient
         deleted_names = set(DeletedClient.objects.values_list("username", flat=True))
 
@@ -67,7 +53,7 @@ def auto_seed_default_users(sender, **kwargs):
             prof_op.is_deleted = False
             prof_op.save()
 
-        # 7. Auto-publish Current Code Version to SoftwareUpdate table
+        # 5. Auto-publish Current Code Version to SoftwareUpdate table
         from .version import APP_VERSION, APP_TITLE, APP_RELEASE_NOTES
         SoftwareUpdate.objects.update_or_create(
             version=APP_VERSION,
@@ -88,4 +74,3 @@ class BillingConfig(AppConfig):
 
     def ready(self):
         post_migrate.connect(auto_seed_default_users, sender=self)
-

@@ -19,7 +19,7 @@ from .models import (
     Product, ProductCategory, Customer, Invoice, InvoiceItem, Purchase,
     PaymentRecord, ActiveUserSession, RegisteredDevice, UserProfile, ActivityLog,
     CompanySettings, Branch, StockLog, SoftwareUpdate, purge_old_customer_data, log_activity,
-    SavedReport, purge_expired_deleted_items, DeletedClient, ProductReturn
+    SavedReport, purge_expired_deleted_items, DeletedClient, ProductReturn, amount_to_words_inr
 )
 from .device_utils import (
     get_hardware_device_id, get_desktop_pos_config, save_desktop_pos_config,
@@ -884,7 +884,7 @@ def billing_page(request):
 
         # Generate unique collision-free sequential Invoice Number
         prefix = "POS" if is_desktop_environment(request) else "WEB"
-        inv_number = Invoice.generate_invoice_number(prefix=prefix)
+        inv_number = Invoice.generate_invoice_number(prefix=prefix, user=client_user)
 
         # Calculate line items
         line_items = []
@@ -1198,7 +1198,7 @@ def quick_bill_create(request):
 
             # Generate collision-free sequential Invoice Number
             prefix = "POS" if is_desktop_environment(request) else "WEB"
-            inv_number = Invoice.generate_invoice_number(prefix=prefix)
+            inv_number = Invoice.generate_invoice_number(prefix=prefix, user=client_user)
 
             # Create Invoice
             invoice = Invoice.objects.create(
@@ -1378,12 +1378,124 @@ def invoice_detail(request, invoice_id):
         if print_status not in ("PAID", "UNPAID"):
             print_status = None
 
+    # Calculate GST Breakdown & Table items matching reference layout
+    items_data = []
+    gst_groups = {}
+    total_qty = Decimal("0.00")
+    total_taxable_value = Decimal("0.00")
+    total_cgst_amount = Decimal("0.00")
+    total_sgst_amount = Decimal("0.00")
+
+    for idx, item in enumerate(invoice.items.all(), 1):
+        qty = item.quantity if item.quantity is not None else Decimal("1.00")
+        total_qty += qty
+        tax_pct = item.tax_percent if item.tax_percent is not None else Decimal("0.00")
+        hsn = item.hsn_code or (item.product.hsn_code if item.product and getattr(item.product, "hsn_code", None) else "") or "N/A"
+
+        # Determine taxable amount & taxes
+        if item.taxable_amount and item.taxable_amount > Decimal("0.00"):
+            taxable_amt = item.taxable_amount
+            taxable_rt = item.taxable_rate or (taxable_amt / qty if qty else item.unit_price)
+            rate_incl = item.rate_incl_tax or (item.total_price / qty if qty else item.unit_price)
+            cgst_amt = item.cgst_amount
+            sgst_amt = item.sgst_amount
+            cgst_rt = item.cgst_rate
+            sgst_rt = item.sgst_rate
+        else:
+            if tax_pct > Decimal("0.00"):
+                if invoice.tax_amount > Decimal("0.00") and invoice.subtotal < invoice.grand_total:
+                    # tax exclusive unit price
+                    taxable_amt = item.unit_price * qty
+                    taxable_rt = item.unit_price
+                    rate_incl = taxable_rt + (taxable_rt * tax_pct / Decimal("100.00"))
+                    tot_tax = (taxable_amt * tax_pct) / Decimal("100.00")
+                    half_tax = tot_tax / Decimal("2.0")
+                    half_pct = tax_pct / Decimal("2.0")
+                    cgst_amt = half_tax
+                    sgst_amt = half_tax
+                    cgst_rt = half_pct
+                    sgst_rt = half_pct
+                else:
+                    # tax inclusive
+                    taxable_amt = (item.total_price * Decimal("100.00")) / (Decimal("100.00") + tax_pct)
+                    taxable_rt = taxable_amt / qty if qty else taxable_amt
+                    rate_incl = item.unit_price
+                    tot_tax = item.total_price - taxable_amt
+                    half_tax = tot_tax / Decimal("2.0")
+                    half_pct = tax_pct / Decimal("2.0")
+                    cgst_amt = half_tax
+                    sgst_amt = half_tax
+                    cgst_rt = half_pct
+                    sgst_rt = half_pct
+            else:
+                taxable_amt = item.total_price
+                taxable_rt = item.unit_price
+                rate_incl = item.unit_price
+                cgst_amt = Decimal("0.00")
+                sgst_amt = Decimal("0.00")
+                cgst_rt = Decimal("0.00")
+                sgst_rt = Decimal("0.00")
+
+        total_taxable_value += taxable_amt
+        total_cgst_amount += cgst_amt
+        total_sgst_amount += sgst_amt
+
+        items_data.append({
+            "sl_no": idx,
+            "product_name": item.product_name,
+            "item_notes": getattr(item, "item_notes", "") or item.product_sku or "",
+            "hsn_code": hsn,
+            "quantity": qty,
+            "unit": item.unit,
+            "rate_incl_tax": rate_incl,
+            "taxable_rate": taxable_rt,
+            "taxable_amount": taxable_amt,
+            "total_price": item.total_price,
+            "tax_percent": tax_pct,
+            "cgst_rate": cgst_rt,
+            "cgst_amount": cgst_amt,
+            "sgst_rate": sgst_rt,
+            "sgst_amount": sgst_amt,
+        })
+
+        if hsn not in gst_groups:
+            gst_groups[hsn] = {
+                "hsn_code": hsn,
+                "taxable_value": Decimal("0.00"),
+                "cgst_rate": cgst_rt,
+                "cgst_amount": Decimal("0.00"),
+                "sgst_rate": sgst_rt,
+                "sgst_amount": Decimal("0.00"),
+                "total_tax": Decimal("0.00"),
+            }
+        gst_groups[hsn]["taxable_value"] += taxable_amt
+        gst_groups[hsn]["cgst_amount"] += cgst_amt
+        gst_groups[hsn]["sgst_amount"] += sgst_amt
+        gst_groups[hsn]["total_tax"] += (cgst_amt + sgst_amt)
+
+    total_tax_amount = total_cgst_amount + total_sgst_amount
+    calculated_total = total_taxable_value + total_tax_amount
+    round_off = invoice.grand_total - calculated_total
+
+    tax_in_words = amount_to_words_inr(total_tax_amount, currency_name="INR")
+    amount_in_words = amount_to_words_inr(invoice.grand_total, currency_name="INR")
+
     return render(request, "billing/invoice_detail.html", {
         "invoice": invoice,
         "company": company,
         "profile": profile,
         "print_status_override": print_status,
-        "total_in_words": invoice.total_in_words,
+        "items_data": items_data,
+        "gst_groups": list(gst_groups.values()),
+        "total_qty": total_qty,
+        "total_taxable_value": total_taxable_value,
+        "total_cgst_amount": total_cgst_amount,
+        "total_sgst_amount": total_sgst_amount,
+        "total_tax_amount": total_tax_amount,
+        "round_off": round_off,
+        "tax_in_words": tax_in_words,
+        "amount_in_words": amount_in_words,
+        "total_in_words": amount_in_words,
         "print_paper_size": paper_size,
         "print_paper_width_mm": paper_width_mm,
         "print_paper_height_mode": paper_height_mode,
@@ -2012,6 +2124,7 @@ def product_add(request):
         price = parse_decimal(request.POST.get("price"), "0.00")
         cost_price = parse_decimal(request.POST.get("cost_price"), "0.00")
         tax_percent = parse_decimal(request.POST.get("tax_percent"), "0.00")
+        hsn_code = request.POST.get("hsn_code", "").strip()
         stock = parse_decimal(request.POST.get("stock_quantity"), "0.00")
 
         if not name_tamil and not name:
@@ -2051,6 +2164,7 @@ def product_add(request):
             prod.price = price
             prod.cost_price = cost_price
             prod.tax_percent = tax_percent
+            prod.hsn_code = hsn_code
             prod.stock_quantity = stock
             prod.is_active = True
             prod.is_deleted = False
@@ -2067,6 +2181,7 @@ def product_add(request):
                 price=price,
                 cost_price=cost_price,
                 tax_percent=tax_percent,
+                hsn_code=hsn_code,
                 stock_quantity=stock,
                 is_active=True,
                 is_deleted=False,
@@ -2146,6 +2261,7 @@ def product_edit(request, product_id):
         product.price = parse_decimal(request.POST.get("price"), str(product.price))
         product.cost_price = parse_decimal(request.POST.get("cost_price"), str(product.cost_price))
         product.tax_percent = parse_decimal(request.POST.get("tax_percent"), str(product.tax_percent))
+        product.hsn_code = request.POST.get("hsn_code", getattr(product, "hsn_code", "")).strip()
         product.stock_quantity = parse_decimal(request.POST.get("stock_quantity"), str(product.stock_quantity))
         product.is_active = True
         product.is_deleted = False
@@ -4447,6 +4563,11 @@ def client_profile_view(request):
         ifsc_code = request.POST.get("ifsc_code", "").strip()
         gst_number = request.POST.get("gst_number", "").strip().upper()
 
+        invoice_prefix = request.POST.get("invoice_prefix", "").strip().upper()
+        state_name = request.POST.get("state_name", "").strip()
+        state_code = request.POST.get("state_code", "").strip()
+        bank_branch = request.POST.get("bank_branch", "").strip()
+
         profile.shop_name = shop_name
         profile.shop_address = shop_address
         profile.phone = phone
@@ -4454,12 +4575,34 @@ def client_profile_view(request):
         profile.account_number = account_number
         profile.ifsc_code = ifsc_code
         profile.gst_number = gst_number
+        if invoice_prefix:
+            profile.invoice_prefix = invoice_prefix
+        if state_name:
+            profile.state_name = state_name
+        if state_code:
+            profile.state_code = state_code
+        if bank_branch:
+            profile.bank_branch = bank_branch
 
         if request.user.is_superuser or profile.role == "admin":
             comp = CompanySettings.get_settings()
+            comp.company_name = shop_name or comp.company_name
+            comp.address = shop_address or comp.address
+            comp.phone = phone or comp.phone
+            comp.bank_name = bank_name or comp.bank_name
+            comp.account_number = account_number or comp.account_number
+            comp.ifsc_code = ifsc_code or comp.ifsc_code
             if gst_number:
                 comp.gst_number = gst_number
-                comp.save(update_fields=["gst_number", "updated_at"])
+            if invoice_prefix:
+                comp.invoice_prefix = invoice_prefix
+            if state_name:
+                comp.state_name = state_name
+            if state_code:
+                comp.state_code = state_code
+            if bank_branch:
+                comp.bank_branch = bank_branch
+            comp.save()
 
         if email:
             request.user.email = email

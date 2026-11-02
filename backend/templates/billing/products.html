@@ -101,7 +101,7 @@
                                 data-price="{{ p.price }}"
                                 data-cost-price="{{ p.cost_price }}"
                                 data-stock="{{ p.stock_quantity }}"
-                                data-tax="{{ p.tax_percent }}"
+                                data-tax="{{ p.tax_percent }}" data-hsn="{{ p.hsn_code }}"
                                 title="Edit / Update Product">
                                 <i class="fa-solid fa-pen-to-square"></i> Edit
                             </button>
@@ -197,9 +197,13 @@
                             <label class="form-label small fw-semibold">Opening Stock</label>
                             <input type="number" step="any" min="0" name="stock_quantity" class="form-control" value="">
                         </div>
-                        <div class="col-6">
+                        <div class="col-3">
                             <label class="form-label small fw-semibold">Tax / GST %</label>
                             <input type="number" step="0.01" min="0" name="tax_percent" class="form-control" value="">
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label small fw-semibold">HSN/SAC</label>
+                            <input type="text" name="hsn_code" class="form-control font-monospace" placeholder="85258090">
                         </div>
                     </div>
                 </div>
@@ -281,9 +285,13 @@
                             <label class="form-label small fw-semibold">Stock Quantity</label>
                             <input type="number" step="any" min="0" name="stock_quantity" id="editStock" class="form-control">
                         </div>
-                        <div class="col-6">
+                        <div class="col-3">
                             <label class="form-label small fw-semibold">Tax / GST %</label>
                             <input type="number" step="0.01" min="0" name="tax_percent" id="editTax" class="form-control">
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label small fw-semibold">HSN/SAC</label>
+                            <input type="text" name="hsn_code" id="editHsn" class="form-control font-monospace" placeholder="85258090">
                         </div>
                     </div>
                 </div>

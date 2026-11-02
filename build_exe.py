@@ -70,6 +70,7 @@ def build():
         "--hidden-import=billing.migrations.0018_deletedinvoice",
         "--hidden-import=billing.migrations.0019_enforce_client_isolation",
         "--hidden-import=billing.migrations.0020_alter_stocklog_change_type_productreturn",
+        "--hidden-import=billing.migrations.0021_companysettings_bank_branch_and_more",
         # Hidden imports for Django dynamic loading
         "--hidden-import=billing",
         "--hidden-import=billing.models",

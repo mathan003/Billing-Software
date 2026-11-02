@@ -62,6 +62,22 @@
                             <input type="text" name="shop_name" class="form-control rounded-3" value="{{ profile.shop_name }}" required>
                         </div>
 
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold text-secondary small"><i class="fa-solid fa-hashtag me-1 text-primary"></i> Invoice Prefix (எ.கா. GC) *</label>
+                            <input type="text" name="invoice_prefix" class="form-control rounded-3 font-monospace text-uppercase fw-bold" value="{{ profile.invoice_prefix|default:active_invoice_prefix|default:'GC' }}" placeholder="GC" required>
+                            <div class="form-text small text-muted">Bill format: <code>{{ profile.invoice_prefix|default:'GC' }}/26/27/001</code></div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold text-secondary small">State Name (மாநிலம்)</label>
+                            <input type="text" name="state_name" class="form-control rounded-3" value="{{ profile.state_name|default:active_state_name|default:'Tamil Nadu' }}" placeholder="Tamil Nadu">
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold text-secondary small">GST State Code (குறியீடு)</label>
+                            <input type="text" name="state_code" class="form-control rounded-3 font-monospace" value="{{ profile.state_code|default:active_state_code|default:'33' }}" placeholder="33">
+                        </div>
+
                         <div class="col-md-6">
                             <label class="form-label fw-semibold text-secondary small">Contact Phone Number (தொலைபேசி எண்)</label>
                             <input type="tel" name="phone" class="form-control rounded-3" value="{{ profile.phone }}">
@@ -108,6 +124,11 @@
                         <div class="col-md-6">
                             <label class="form-label fw-semibold text-secondary small">IFSC Code (IFSC குறியீடு)</label>
                             <input type="text" name="ifsc_code" class="form-control rounded-3 text-uppercase font-monospace" value="{{ profile.ifsc_code }}">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-secondary small">Branch & Location (வங்கி கிளை)</label>
+                            <input type="text" name="bank_branch" class="form-control rounded-3" value="{{ profile.bank_branch|default:active_bank_branch|default:'SRIVAIKUNDAM' }}" placeholder="SRIVAIKUNDAM">
                         </div>
 
                         <div class="col-md-6">

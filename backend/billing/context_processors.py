@@ -43,6 +43,10 @@ def session_security_context(request):
             "active_account_number": company.account_number,
             "active_ifsc_code": company.ifsc_code,
             "active_shop_gst": company.gst_number if company else "",
+            "active_bank_branch": getattr(company, "bank_branch", "SRIVAIKUNDAM") if company else "SRIVAIKUNDAM",
+            "active_state_name": getattr(company, "state_name", "Tamil Nadu") if company else "Tamil Nadu",
+            "active_state_code": getattr(company, "state_code", "33") if company else "33",
+            "active_invoice_prefix": getattr(company, "invoice_prefix", "GC") if company else "GC",
             "business_type": "grocery",
             "current_app_version": APP_VERSION,
             "latest_update_version": latest_update.version if latest_update else APP_VERSION,
@@ -105,6 +109,10 @@ def session_security_context(request):
     shop_logo = (profile.shop_logo_url if (profile and profile.shop_logo_url) else company.logo_data_url)
     shop_gst = (profile.gst_number.strip() if (profile and profile.gst_number) else (company.gst_number.strip() if (is_admin and company and company.gst_number) else ""))
     bank_name = (profile.bank_name if (profile and profile.bank_name) else company.bank_name)
+    bank_branch = (profile.bank_branch if (profile and getattr(profile, "bank_branch", None)) else getattr(company, "bank_branch", "SRIVAIKUNDAM"))
+    state_name = (profile.state_name if (profile and getattr(profile, "state_name", None)) else getattr(company, "state_name", "Tamil Nadu"))
+    state_code = (profile.state_code if (profile and getattr(profile, "state_code", None)) else getattr(company, "state_code", "33"))
+    invoice_prefix = (profile.invoice_prefix if (profile and getattr(profile, "invoice_prefix", None)) else getattr(company, "invoice_prefix", "GC"))
     account_number = (profile.account_number if (profile and profile.account_number) else company.account_number)
     ifsc_code = (profile.ifsc_code if (profile and profile.ifsc_code) else company.ifsc_code)
     business_type = (profile.business_type if profile else "grocery")
@@ -231,6 +239,10 @@ def session_security_context(request):
         "active_bank_name": bank_name,
         "active_account_number": account_number,
         "active_ifsc_code": ifsc_code,
+        "active_bank_branch": bank_branch,
+        "active_state_name": state_name,
+        "active_state_code": state_code,
+        "active_invoice_prefix": invoice_prefix,
         "business_type": business_type,
         "recycle_bin_count": recycle_bin_count,
         "global_customers": global_customers,

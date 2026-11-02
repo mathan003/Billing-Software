@@ -3,11 +3,13 @@ Centralized Application Version & Release Metadata
 Used to coordinate simultaneous automatic updates across Web and Desktop POS.
 """
 
-APP_VERSION = "v2.9.1"
-APP_TITLE = "Local Offline POS Enforcement & Return URL Name Resolution"
+APP_VERSION = "v2.9.2"
+APP_TITLE = "Continuous GST Invoice Format (GC/26/27/001) & Bill Print Redesign"
 APP_RELEASE_NOTES = (
-    "• Resolved Return Items URL Lookup: Fixed NoReverseMatch for 'return_invoice_items' across dashboard return console.\n"
-    "• Strict Local Offline Execution: Offline POS users strictly use local SQLite database with zero cloud push/pull.\n"
-    "• First-Login Device Authorization: Only admin-created accounts on allowed systems can log in via Admin OTP verification on first login.\n"
-    "• Zero Data Loss & Backward Compatibility: Complete preservation of all customer data, products, and invoices."
+    "• Continuous GST Invoice Numbering: Format GC/26/27/001 with continuous sequence across both PC software and Web application.\n"
+    "• Automatic Indian Financial Year: Automatically updates financial year from April to March (e.g. 26/27 for 2026-2027).\n"
+    "• Dynamic Prefix from Profile: Change company prefix/name from Profile page, automatically used for all new invoices.\n"
+    "• GST Tax Invoice Print Layout: Exact match to physical tax invoice with HSN/SAC codes, CGST/SGST breakdown, amount in words, bank details, and signature box.\n"
+    "• Administrator Account Consolidation: Removed secondary 'admin' account; 'Mathan003' is the single Primary Administrator.\n"
+    "• Zero Data Loss Guarantee: All existing customer records, products, categories, invoices, and reports are 100% preserved."
 )

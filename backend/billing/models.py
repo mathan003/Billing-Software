@@ -27,6 +27,7 @@ class Product(models.Model):
     price = models.DecimalField(max_digits=12, decimal_places=2, help_text="Selling price")
     cost_price = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, help_text="Purchase / Buy price")
     tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, help_text="GST / Tax percentage")
+    hsn_code = models.CharField(max_length=50, blank=True, default="", help_text="HSN / SAC Code")
     stock_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default="KG")
     is_active = models.BooleanField(default=True)
@@ -71,6 +72,8 @@ class Customer(models.Model):
     email = models.EmailField(blank=True, null=True)
     address = models.TextField(blank=True, null=True)
     gst_number = models.CharField(max_length=30, blank=True, null=True)
+    state_name = models.CharField(max_length=100, default="Tamil Nadu", blank=True, help_text="State Name")
+    state_code = models.CharField(max_length=10, default="33", blank=True, help_text="State Code")
     notes = models.TextField(blank=True, default="")
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -157,7 +160,7 @@ class Purchase(models.Model):
         return f"Purchase #{self.purchase_number} - ₹{self.total_amount}"
 
 
-def amount_to_words_inr(amount):
+def amount_to_words_inr(amount, currency_name="INR"):
     """
     Converts a numeric amount into Indian currency in words (letters).
     Example: 1250.50 -> "Rupees One Thousand Two Hundred Fifty and Fifty Paise Only"
@@ -199,7 +202,7 @@ def amount_to_words_inr(amount):
     paise = int(round((amount - rupees) * 100))
 
     if rupees == 0 and paise == 0:
-        return "Rupees Zero Only"
+        return f"{currency_name} Zero Only" if currency_name else "Zero Only"
 
     parts = []
     crores, rem = divmod(rupees, 10000000)
@@ -220,7 +223,8 @@ def amount_to_words_inr(amount):
         parts.append(three_digits(hundreds))
 
     rupees_str = " ".join(parts).strip() if parts else "Zero"
-    res = f"Rupees {rupees_str}"
+    prefix = f"{currency_name} " if currency_name else ""
+    res = f"{prefix}{rupees_str}"
     if paise > 0:
         res += f" and {two_digits(paise)} Paise"
     res += " Only"
@@ -268,6 +272,23 @@ class Invoice(models.Model):
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS, default="Paid")
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="windows_app")
     notes = models.TextField(blank=True, default="")
+    order_number = models.CharField(max_length=100, blank=True, default="", help_text="Buyer's Order No.")
+    order_date = models.DateField(null=True, blank=True, help_text="Buyer's Order Date")
+    dispatch_doc_no = models.CharField(max_length=100, blank=True, default="", help_text="Dispatch Doc No.")
+    delivery_note_date = models.DateField(null=True, blank=True, help_text="Delivery Note Date")
+    dispatched_through = models.CharField(max_length=100, blank=True, default="", help_text="Dispatched through")
+    destination = models.CharField(max_length=100, blank=True, default="", help_text="Destination")
+    terms_of_delivery = models.TextField(blank=True, default="", help_text="Terms of Delivery")
+    seller_state_name = models.CharField(max_length=100, default="Tamil Nadu", blank=True, help_text="Seller State Name")
+    seller_state_code = models.CharField(max_length=10, default="33", blank=True, help_text="Seller State Code")
+    customer_state_name = models.CharField(max_length=100, default="Tamil Nadu", blank=True, help_text="Customer State Name")
+    customer_state_code = models.CharField(max_length=10, default="33", blank=True, help_text="Customer State Code")
+    customer_gstin = models.CharField(max_length=50, blank=True, default="", help_text="Customer GSTIN/UIN")
+    taxable_subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Total Taxable Value")
+    cgst_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="CGST Total")
+    sgst_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="SGST Total")
+    igst_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="IGST Total")
+    round_off = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("0.00"), help_text="Round Off (+ or -)")
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(default=timezone.now)
@@ -277,22 +298,69 @@ class Invoice(models.Model):
         ordering = ["-created_at"]
 
     @classmethod
-    def generate_invoice_number(cls, prefix="WEB", date_str=None):
+    def get_indian_financial_year(cls, dt=None):
         """
-        Generates a clean, consistent sequential invoice number.
-        Format:
-          Web application: WEB-YYYYMMDD-XXXX (e.g. WEB-20261010-0001)
-          POS system:      POS-YYYYMMDD-XXXX (e.g. POS-20261010-0018)
+        Determines the Indian financial year string (April to March).
+        Example: April 2026 to March 2027 -> '26/27'
+                 April 2027 to March 2028 -> '27/28'
+        """
+        if dt is None:
+            dt = timezone.localtime()
+        year = dt.year
+        month = dt.month
+        if month >= 4:
+            start_yy = year % 100
+            end_yy = (year + 1) % 100
+        else:
+            start_yy = (year - 1) % 100
+            end_yy = year % 100
+        return f"{start_yy:02d}/{end_yy:02d}"
+
+    @classmethod
+    def generate_invoice_number(cls, prefix=None, user=None, date_str=None):
+        """
+        Generates continuous sequential GST invoice number in format:
+          {PREFIX}/{FY}/{SEQ:03d} (e.g. GC/26/27/001)
         Guarantees:
-          - Strictly standard format with NO unwanted letters, extra characters, or hex suffixes.
-          - Never produces duplicate invoice numbers.
+          - Dynamic prefix editable from Profile page (e.g. 'GC' for Goutham Computers)
+          - Automatic financial year calculation based on Indian FY (April to March)
+          - One continuous sequential bill numbering across PC billing software & web billing application
+          - Zero duplicate invoice numbers
         """
         import re
-        clean_prefix = "POS" if str(prefix).upper().startswith("POS") else "WEB"
-        if not date_str:
-            date_str = timezone.localtime().strftime("%Y%m%d")
 
-        pattern_prefix = f"{clean_prefix}-{date_str}-"
+        # 1. Resolve Prefix
+        clean_prefix = ""
+        # If caller passed a custom prefix (not default internal tags)
+        if prefix and str(prefix).strip().upper() not in ("WEB", "POS", "DEFAULT", "NONE", ""):
+            clean_prefix = str(prefix).strip().upper()
+
+        # Check user profile prefix
+        if not clean_prefix and user:
+            prof = getattr(user, "profile", None)
+            if prof and getattr(prof, "invoice_prefix", ""):
+                clean_prefix = prof.invoice_prefix.strip().upper()
+
+        # Check CompanySettings
+        if not clean_prefix:
+            try:
+                comp = CompanySettings.get_settings()
+                if getattr(comp, "invoice_prefix", ""):
+                    clean_prefix = comp.invoice_prefix.strip().upper()
+                elif getattr(comp, "company_name", ""):
+                    parts = [w[0] for w in comp.company_name.split() if w]
+                    clean_prefix = "".join(parts)[:4].upper()
+            except Exception:
+                pass
+
+        if not clean_prefix:
+            clean_prefix = "GC"
+
+        # 2. Automatic Indian Financial Year (e.g. '26/27')
+        fy = cls.get_indian_financial_year()
+
+        # 3. Continuous sequence across PC & Web: search invoices for this prefix & FY
+        pattern_prefix = f"{clean_prefix}/{fy}/"
         existing_numbers = cls.objects.filter(
             invoice_number__startswith=pattern_prefix
         ).values_list("invoice_number", flat=True)
@@ -300,7 +368,7 @@ class Invoice(models.Model):
         max_seq = 0
         seq_regex = re.compile(rf"^{re.escape(pattern_prefix)}(\d+)")
         for num in existing_numbers:
-            m = seq_regex.match(num)
+            m = seq_regex.match(num.strip())
             if m:
                 try:
                     val = int(m.group(1))
@@ -310,10 +378,10 @@ class Invoice(models.Model):
                     pass
 
         next_seq = max_seq + 1
-        new_inv_num = f"{clean_prefix}-{date_str}-{next_seq:04d}"
+        new_inv_num = f"{clean_prefix}/{fy}/{next_seq:03d}"
         while cls.objects.filter(invoice_number=new_inv_num).exists():
             next_seq += 1
-            new_inv_num = f"{clean_prefix}-{date_str}-{next_seq:04d}"
+            new_inv_num = f"{clean_prefix}/{fy}/{next_seq:03d}"
 
         return new_inv_num
 
@@ -335,16 +403,23 @@ class Invoice(models.Model):
         self.tax_amount = Decimal(str(self.tax_amount or "0.00"))
         self.discount_amount = Decimal(str(self.discount_amount or "0.00"))
         self.paid_amount = Decimal(str(self.paid_amount or "0.00"))
+        self.grand_total = Decimal(str(self.grand_total or "0.00"))
 
         # Automatically calculate grand total taking discount into account if not manually overridden
         expected_grand = max(Decimal("0.00"), self.subtotal + self.tax_amount - self.discount_amount)
-        if self.grand_total is not None and self.grand_total > Decimal("0.00"):
+        if self.grand_total > Decimal("0.00"):
             # If manually specified (or pre-set), retain the custom grand total
             pass
         elif self.subtotal > Decimal("0.00") or self.discount_amount > Decimal("0.00"):
             self.grand_total = expected_grand
-        elif self.grand_total is None:
+        else:
             self.grand_total = Decimal("0.00")
+
+        # Calculate round off if applicable
+        if self.taxable_subtotal > Decimal("0.00") and self.grand_total > Decimal("0.00"):
+            calc_tax_sum = (self.taxable_subtotal + self.cgst_total + self.sgst_total + self.igst_total)
+            if self.round_off == Decimal("0.00") and calc_tax_sum > Decimal("0.00"):
+                self.round_off = self.grand_total - calc_tax_sum
 
         self.balance_amount = max(Decimal("0.00"), self.grand_total - self.paid_amount)
         if self.balance_amount == Decimal("0.00") and self.paid_amount > Decimal("0.00"):
@@ -398,6 +473,17 @@ class InvoiceItem(models.Model):
     tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     total_price = models.DecimalField(max_digits=12, decimal_places=2)
+    hsn_code = models.CharField(max_length=50, blank=True, default="", help_text="HSN / SAC Code")
+    taxable_rate = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Taxable Rate per unit without tax")
+    taxable_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Taxable amount without tax")
+    rate_incl_tax = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Rate inclusive of tax")
+    cgst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    cgst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    sgst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    sgst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    igst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    igst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    item_notes = models.CharField(max_length=200, blank=True, default="", help_text="Serial number or notes")
 
     def __str__(self):
         return f"{self.product_name} ({self.quantity} {self.unit}) = ₹{self.total_price}"
@@ -619,6 +705,10 @@ class UserProfile(models.Model):
     account_number = models.CharField(max_length=60, blank=True, default="", help_text="Bank Account Number")
     ifsc_code = models.CharField(max_length=30, blank=True, default="", help_text="Bank IFSC Code")
     gst_number = models.CharField(max_length=50, blank=True, default="", help_text="Client Business GSTIN Number")
+    invoice_prefix = models.CharField(max_length=20, default="GC", blank=True, help_text="Invoice prefix (e.g. GC for Goutham Computers)")
+    state_name = models.CharField(max_length=100, default="Tamil Nadu", blank=True, help_text="State Name")
+    state_code = models.CharField(max_length=10, default="33", blank=True, help_text="GST State Code")
+    bank_branch = models.CharField(max_length=100, default="SRIVAIKUNDAM", blank=True, help_text="Bank branch name")
     avatar_image = models.ImageField(upload_to="client_avatars/", blank=True, null=True)
     avatar_base64 = models.TextField(blank=True, default="", help_text="Base64 encoded client profile image")
     shop_logo_image = models.ImageField(upload_to="client_logos/", blank=True, null=True)
@@ -849,6 +939,10 @@ class CompanySettings(models.Model):
     phone = models.CharField(max_length=50, blank=True, default="+91 98765 43210")
     email = models.CharField(max_length=100, blank=True, default="contact@smartbilling.local")
     gst_number = models.CharField(max_length=50, blank=True, default="")
+    invoice_prefix = models.CharField(max_length=20, default="GC", blank=True, help_text="Invoice prefix (e.g. GC)")
+    state_name = models.CharField(max_length=100, default="Tamil Nadu", blank=True, help_text="State Name")
+    state_code = models.CharField(max_length=10, default="33", blank=True, help_text="State Code")
+    bank_branch = models.CharField(max_length=100, default="SRIVAIKUNDAM", blank=True, help_text="Bank branch name")
     bank_name = models.CharField(max_length=150, blank=True, default="State Bank of India", help_text="Bank Name")
     account_number = models.CharField(max_length=60, blank=True, default="30294819283", help_text="Bank Account Number")
     ifsc_code = models.CharField(max_length=30, blank=True, default="SBIN0001234", help_text="Bank IFSC Code")

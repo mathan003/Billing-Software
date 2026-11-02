@@ -185,11 +185,11 @@ def generate_invoice_pdf(invoice, client_profile=None, print_status_override=Non
 
     y = 10 if page_width < 210 else 12
 
-    # 2. Centered Top Title: 'Invoice' (underlined)
+    # 2. Centered Top Title: 'Tax Invoice'
     _safe_insert_textbox(
         page,
         pymupdf.Rect(0, y, page_width, y + 18),
-        "Invoice",
+        "Tax Invoice",
         fontsize=fs_title,
         fontname="helv",
         color=color_dark,
@@ -244,9 +244,15 @@ def generate_invoice_pdf(invoice, client_profile=None, print_status_override=Non
         _safe_insert_textbox(page, pymupdf.Rect(margin, y, text_right_bound, y + 12), f"Email  : {shop_email}", fontsize=fs_small, fontname="helv", color=color_dark)
         y += 12
 
+    state_name = getattr(client_profile, "state_name", None) or getattr(company, "state_name", "Tamil Nadu")
+    state_code = getattr(client_profile, "state_code", None) or getattr(company, "state_code", "33")
+    bank_branch = getattr(client_profile, "bank_branch", None) or getattr(company, "bank_branch", "SRIVAIKUNDAM")
+
     if shop_gst:
-        _safe_insert_textbox(page, pymupdf.Rect(margin, y, text_right_bound, y + 12), f"GSTIN  : {shop_gst}", fontsize=fs_small, fontname="helv", color=color_dark)
+        _safe_insert_textbox(page, pymupdf.Rect(margin, y, text_right_bound, y + 12), f"GSTIN/UIN: {shop_gst}", fontsize=fs_small, fontname="helv", color=color_dark)
         y += (11 if page_width < 210 else 12)
+    _safe_insert_textbox(page, pymupdf.Rect(margin, y, text_right_bound, y + 12), f"State Name: {state_name}, Code: {state_code}", fontsize=fs_small, fontname="helv", color=color_dark)
+    y += (11 if page_width < 210 else 12)
 
     if shop_phone:
         phone_box_w = min(avail_w * 0.65, 180.0)
@@ -407,19 +413,20 @@ def generate_invoice_pdf(invoice, client_profile=None, print_status_override=Non
     _safe_insert_textbox(page, pymupdf.Rect(box_total_left + 60, y + 2, box_total_right, y + gt_h - 2), f"Rs. {invoice.grand_total:.2f}", fontsize=fs_total, fontname="helv", color=color_primary, align=pymupdf.TEXT_ALIGN_RIGHT)
     y += (gt_h + 3)
 
-    # Total in Words (Letters) Row
-    total_words = getattr(invoice, "total_in_words", "")
+    # Amount Chargeable in Words
+    from .models import amount_to_words_inr
+    total_words = amount_to_words_inr(invoice.grand_total, currency_name="INR")
     if total_words:
         _safe_insert_textbox(
             page,
-            pymupdf.Rect(box_total_left, y, box_total_right, y + 11),
-            f"Total in Words: {total_words}",
-            fontsize=fs_small - 0.5,
+            pymupdf.Rect(margin + 4, y, page_width - margin - 4, y + 12),
+            f"Amount Chargeable (in words): {total_words}",
+            fontsize=fs_small,
             fontname="helv",
             color=color_dark,
-            align=pymupdf.TEXT_ALIGN_RIGHT
+            align=pymupdf.TEXT_ALIGN_LEFT
         )
-        y += 13
+        y += 15
 
     # Customer Paid
     _safe_insert_text(page, pymupdf.Point(box_total_left, y + 9), "Paid:", fontsize=fs_small, fontname="helv", color=color_success)
